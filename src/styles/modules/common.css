@@ -1,0 +1,86 @@
+/* Shared styles for the tabs: source chips, discrete selects, assign mode, status-line widgets. */
+
+.src-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 26px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--c-line-strong);
+  border-radius: 999px;
+  background: var(--c-panel-2);
+  color: var(--c-text-2);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono);
+  letter-spacing: var(--ls-label);
+  cursor: pointer;
+}
+.src-chip:hover { color: var(--c-text); border-color: var(--c-mod); }
+.src-chip:focus-visible { outline: 2px solid var(--c-mod); outline-offset: 2px; }
+.src-chip.is-armed { background: var(--c-mod-soft); border-color: var(--c-mod); color: var(--c-text); box-shadow: 0 0 0 3px var(--c-mod-soft); }
+.src-chip-meter { position: relative; width: 34px; height: 4px; border-radius: 2px; background: var(--c-well); overflow: hidden; }
+.src-chip-bar { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: var(--c-mod); }
+.src-chip.is-bipolar .src-chip-meter::after { content: ''; position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: var(--c-line-strong); }
+.src-chip-count:empty { display: none; }
+.src-chip-count { min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--c-mod); color: var(--c-bg); font-size: var(--fs-2xs); line-height: 14px; text-align: center; }
+
+.pselect { display: inline-flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
+.pselect-row { display: inline-flex; align-items: center; border: 1px solid var(--c-line-strong); border-radius: 6px; background: var(--c-well); }
+.pselect-native {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--c-accent);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-mono);
+  padding: 5px 2px;
+  text-align: center;
+  text-align-last: center;
+  min-width: 52px;
+  cursor: pointer;
+}
+.pselect-native:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.pselect-native option { background: var(--c-panel); color: var(--c-text); }
+.pselect-step { border: 0; background: none; color: var(--c-text-3); width: 18px; height: 24px; cursor: pointer; font-size: var(--fs-md); }
+.pselect-step:hover { color: var(--c-text); }
+.pselect.is-modulated .pselect-row { border-color: var(--c-mod); }
+
+/* armed route depth on a stepped control */
+.pselect-depth { margin-left: var(--sp-2); color: var(--c-mod); font-family: var(--font-mono); letter-spacing: 0; text-transform: none; }
+.pselect-depth[hidden] { display: none; }
+
+/* assign mode: controls that can / cannot take the armed source (state set by ui/mod/targets.ts) */
+body.is-assigning [data-param].is-assign-target { outline: 1px dashed var(--c-mod); outline-offset: 2px; cursor: crosshair; }
+body.is-assigning [data-param].is-assign-routed { outline-style: solid; background-color: var(--c-mod-soft); cursor: ns-resize; }
+body.is-assigning [data-param].is-assign-blocked { opacity: 0.35; }
+/* the stepper's buttons and native select must not grab the pointer while routing */
+body.is-assigning .pselect.is-assign-target .pselect-row > * { pointer-events: none; }
+
+/* ---------- status-line widgets (instance selector, value fields) ---------- */
+.inst { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-sm); background: var(--c-well); box-shadow: var(--sh-well); }
+.inst-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 18px; padding: 0 8px; border: 0; border-radius: 3px;
+  background: transparent; color: var(--c-text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono); letter-spacing: var(--ls-label);
+  cursor: pointer;
+}
+.inst-btn:hover { color: var(--c-text); }
+.inst-btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 0; }
+.inst-btn.is-selected { background: var(--c-raised); color: var(--c-text); box-shadow: var(--sh-raised); }
+.inst-led { width: 5px; height: 5px; border-radius: 50%; background: var(--c-text-4); }
+.inst-led.is-on { background: var(--c-accent); box-shadow: 0 0 5px var(--c-accent-glow); }
+.inst-led[hidden] { display: none; }
+
+.pfield {
+  position: relative;
+  display: inline-flex; align-items: baseline; gap: 5px;
+  height: 18px; padding: 0 7px; border-radius: 3px;
+  background: var(--c-well); box-shadow: var(--sh-well);
+  font-size: var(--fs-2xs); line-height: 18px;
+  cursor: ns-resize; user-select: none; -webkit-user-select: none; outline: none;
+}
+.pfield:hover, .pfield.is-active { box-shadow: var(--sh-well), 0 0 0 1px var(--c-line-strong); }
+.pfield:focus-visible { box-shadow: 0 0 0 2px var(--c-accent); }
+.pfield-label { color: var(--c-text-3); font-weight: var(--fw-medium); letter-spacing: var(--ls-label); text-transform: uppercase; }
+.pfield-value { color: var(--c-accent); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pfield-mod { position: absolute; left: 3px; right: 3px; bottom: 1px; height: 2px; background: var(--c-mod); transform: scaleX(0); transform-origin: 0 50%; border-radius: 1px; }

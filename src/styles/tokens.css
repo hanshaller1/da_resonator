@@ -1,0 +1,212 @@
+/* ==========================================================================
+   RESONATOR design tokens
+   Every colour, size, radius, shadow and timing used by the UI lives here.
+   Component CSS must only reference these custom properties.
+   Dark (graphite / anodized) is the base theme; light (brushed aluminium)
+   is applied via [data-theme="light"] on <html> (managed by ui/theme.ts,
+   which follows prefers-color-scheme unless the user picks a theme).
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- palette: graphite surfaces --------------------------------------- */
+  --c-bg:            #0b0d10;   /* page behind the chassis */
+  --c-chassis:       #121519;   /* instrument body */
+  --c-panel:         #171a1f;   /* panel face */
+  --c-panel-2:       #1c2026;   /* inset / group face */
+  --c-raised:        #262b33;   /* control caps, buttons */
+  --c-raised-hi:     #323843;   /* cap highlight / hover */
+  --c-well:          #0e1013;   /* grooves, meter wells, canvas */
+  --c-line:          rgb(255 255 255 / 0.07);   /* 1px hairline */
+  --c-line-strong:   rgb(255 255 255 / 0.13);
+  --c-line-inset:    rgb(0 0 0 / 0.55);
+  --c-sheen:         rgb(255 255 255 / 0.05);   /* top-edge bevel light */
+  --c-scrim:         rgb(5 6 8 / 0.72);         /* overlays */
+  --c-mask:          #000;                      /* alpha masks (not a visible colour) */
+
+  /* ---- palette: ink ------------------------------------------------------ */
+  --c-text:          #e9ebee;
+  --c-text-2:        #a2a9b3;
+  --c-text-3:        #69717c;
+  --c-text-4:        #474e58;
+
+  /* ---- palette: signal colours ------------------------------------------- */
+  --c-accent:        #ffb13d;   /* signal amber: values, faders, response */
+  --c-accent-ink:    #1a1203;   /* text on accent */
+  --c-accent-soft:   rgb(255 177 61 / 0.16);
+  --c-accent-glow:   rgb(255 177 61 / 0.45);
+  --c-fb:            #ff3d71;   /* feedback: hot magenta-red */
+  --c-fb-soft:       rgb(255 61 113 / 0.16);
+  --c-fb-glow:       rgb(255 61 113 / 0.55);
+  --c-mod:           #36d7e8;   /* modulation (reserved: mod rings/markers) */
+  --c-mod-soft:      rgb(54 215 232 / 0.18);
+  --c-ok:            #4fdc8f;   /* running / healthy LED */
+
+  /* meters */
+  --c-meter-lo:      #4fdc8f;
+  --c-meter-mid:     #ffb13d;
+  --c-meter-hi:      #ff3d71;
+  --c-meter-off:     #1a1e24;   /* unlit LED segment (opaque) */
+
+  /* knob */
+  --c-knob-track:    #2a3038;
+  --c-knob-cap:      #2c323b;
+  --c-knob-cap-edge: #3b424d;
+  --c-knob-pointer:  #f2f3f5;
+
+  /* fader cap */
+  --c-cap-top:       #4a515c;
+  --c-cap-bottom:    #2a2f37;
+  --c-cap-line:      #f2f3f5;
+
+  /* spectrum */
+  --c-spec-in:       rgb(162 169 179 / 0.16);
+  --c-spec-out:      rgb(255 177 61 / 0.20);
+  --c-spec-grid:     rgb(255 255 255 / 0.05);
+
+  /* ---- typography --------------------------------------------------------- */
+  --font-ui:   "Inter", "SF Pro Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+
+  --fs-2xs: 9px;
+  --fs-xs:  10px;
+  --fs-sm:  11px;
+  --fs-md:  13px;
+  --fs-lg:  15px;
+  --fs-xl:  19px;
+
+  --fw-regular: 450;
+  --fw-medium:  560;
+  --fw-bold:    700;
+
+  --ls-label: 0.09em;   /* uppercase micro labels */
+  --ls-brand: 0.32em;
+
+  /* ---- spacing scale (4px base, with 2px half-step) ---------------------- */
+  --sp-0: 0;
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 20px;
+  --sp-8: 24px;
+  --sp-9: 32px;
+
+  --gutter: var(--sp-6);
+
+  /* ---- radii --------------------------------------------------------------- */
+  --r-xs:   2px;
+  --r-sm:   4px;
+  --r-md:   7px;
+  --r-lg:   11px;
+  --r-xl:   16px;
+  --r-pill: 999px;
+
+  /* ---- elevation ------------------------------------------------------------ */
+  --sh-chassis: 0 1px 0 var(--c-sheen) inset, 0 24px 60px -24px rgb(0 0 0 / 0.8), 0 0 0 1px var(--c-line-inset);
+  --sh-panel:   0 1px 0 var(--c-sheen) inset, 0 0 0 1px var(--c-line);
+  --sh-raised:  0 1px 0 rgb(255 255 255 / 0.08) inset, 0 1px 2px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(0 0 0 / 0.45);
+  --sh-cap:     0 1px 0 rgb(255 255 255 / 0.18) inset, 0 -1px 0 rgb(0 0 0 / 0.35) inset, 0 3px 6px -1px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(0 0 0 / 0.6);
+  --sh-well:    0 1px 2px rgb(0 0 0 / 0.7) inset, 0 1px 0 var(--c-sheen);
+  --sh-focus:   0 0 0 2px var(--c-panel), 0 0 0 4px var(--c-accent);
+
+  /* ---- motion ---------------------------------------------------------------- */
+  --dur-instant: 60ms;
+  --dur-fast:    120ms;
+  --dur-med:     200ms;
+  --dur-slow:    420ms;
+  --ease-out:    cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ---- component metrics ------------------------------------------------------ */
+  --hdr-h:        44px;
+  --ctl-h:        28px;      /* buttons, selects */
+  --knob-sm:      34px;
+  --knob-md:      42px;
+  --knob-lg:      54px;
+  --fader-h:      200px;
+  --fader-w:      26px;
+  --thumb-h:      30px;
+  --meter-w:      5px;
+  --globals-w:    112px;
+  /* fixed stage (see ui/shell/stage.ts): 1200 × 700 design px */
+  --stage-w:      1200px;
+  --stage-h:      700px;
+  --left-w:       1044px;
+  --tabs-h:       32px;
+  --panel-h:      336px;
+  --status-h:     24px;
+  --viz-h:        240px;
+  --knobrow-h:    72px;
+  --faders-h:     234px;
+}
+
+/* ---- light theme: brushed aluminium ----------------------------------------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --c-bg:            #d9dbde;
+  --c-chassis:       #e9eaec;
+  --c-panel:         #f3f4f5;
+  --c-panel-2:       #eceef0;
+  --c-raised:        #ffffff;
+  --c-raised-hi:     #ffffff;
+  --c-well:          #dfe2e6;
+  --c-line:          rgb(20 24 30 / 0.09);
+  --c-line-strong:   rgb(20 24 30 / 0.16);
+  --c-line-inset:    rgb(20 24 30 / 0.14);
+  --c-sheen:         rgb(255 255 255 / 0.9);
+  --c-scrim:         rgb(225 228 232 / 0.78);
+
+  --c-text:          #15181c;
+  --c-text-2:        #4d555f;
+  --c-text-3:        #7d8590;
+  --c-text-4:        #a9b0b8;
+
+  --c-accent:        #e08600;
+  --c-accent-ink:    #ffffff;
+  --c-accent-soft:   rgb(224 134 0 / 0.14);
+  --c-accent-glow:   rgb(224 134 0 / 0.35);
+  --c-fb:            #e3175a;
+  --c-fb-soft:       rgb(227 23 90 / 0.12);
+  --c-fb-glow:       rgb(227 23 90 / 0.4);
+  --c-mod:           #0596ab;
+  --c-mod-soft:      rgb(5 150 171 / 0.15);
+  --c-ok:            #12a25a;
+
+  --c-meter-lo:      #19b866;
+  --c-meter-mid:     #e08600;
+  --c-meter-hi:      #e3175a;
+  --c-meter-off:     #d3d7dc;
+
+  --c-knob-track:    #d5d9de;
+  --c-knob-cap:      #fbfbfc;
+  --c-knob-cap-edge: #c9ced4;
+  --c-knob-pointer:  #20242a;
+
+  --c-cap-top:       #ffffff;
+  --c-cap-bottom:    #dde0e4;
+  --c-cap-line:      #20242a;
+
+  --c-spec-in:       rgb(77 85 95 / 0.16);
+  --c-spec-out:      rgb(224 134 0 / 0.18);
+  --c-spec-grid:     rgb(20 24 30 / 0.06);
+
+  --sh-chassis: 0 1px 0 var(--c-sheen) inset, 0 20px 50px -28px rgb(20 24 30 / 0.45), 0 0 0 1px var(--c-line-inset);
+  --sh-panel:   0 1px 0 var(--c-sheen) inset, 0 0 0 1px var(--c-line);
+  --sh-raised:  0 1px 0 rgb(255 255 255 / 1) inset, 0 1px 2px rgb(20 24 30 / 0.18), 0 0 0 1px rgb(20 24 30 / 0.14);
+  --sh-cap:     0 1px 0 rgb(255 255 255 / 1) inset, 0 -1px 0 rgb(20 24 30 / 0.08) inset, 0 3px 6px -1px rgb(20 24 30 / 0.3), 0 0 0 1px rgb(20 24 30 / 0.2);
+  --sh-well:    0 1px 2px rgb(20 24 30 / 0.18) inset, 0 1px 0 var(--c-sheen);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast:    0ms;
+    --dur-med:     0ms;
+    --dur-slow:    0ms;
+  }
+}

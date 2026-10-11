@@ -1,0 +1,87 @@
+/* CLK MOD tab */
+
+/* clock group in the status line */
+.clk-clock { display: inline-flex; align-items: center; gap: var(--sp-3); padding-left: var(--sp-4); border-left: 1px solid var(--c-line); }
+.clk-btn {
+  height: 20px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--c-raised);
+  box-shadow: var(--sh-raised);
+  color: var(--c-text-2);
+  font: var(--fw-bold) var(--fs-2xs) / 1 var(--font-ui);
+  letter-spacing: var(--ls-label);
+  cursor: pointer;
+}
+.clk-btn:hover { color: var(--c-text); }
+.clk-btn:focus-visible { outline: none; box-shadow: var(--sh-focus); }
+.clk-btn.is-flash { animation: clk-press var(--dur-slow) var(--ease-out); }
+@keyframes clk-press { 0% { background: var(--c-accent); color: var(--c-accent-ink); } }
+.clk-beats { display: inline-flex; gap: 3px; }
+.clk-beat { width: 6px; height: 6px; border-radius: 50%; background: var(--c-meter-off); box-shadow: 0 0 0 1px var(--c-line-inset); }
+.clk-beat.is-on { background: var(--c-text-3); }
+.clk-beat.is-flash { background: var(--c-accent); box-shadow: 0 0 8px var(--c-accent-glow); }
+
+/* picture: lane on top, output trace below */
+.clk-lanebox { position: absolute; left: var(--sp-6); right: var(--sp-6); top: var(--sp-5); height: 168px; }
+.clk-lanebox > [hidden] { display: none; }
+.clk-trace { position: absolute; left: 0; right: 0; bottom: 0; height: 52px; border-top: 1px solid var(--c-line); }
+.clk-trace > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.clk-lane { height: 100%; }
+.clk-steps {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+  column-gap: 4px;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* a little air between groups of four */
+.clk-col:nth-child(4n + 1):not(:first-child) { margin-left: 5px; }
+.clk-col { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); min-width: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.clk-col.is-inactive { opacity: 0.28; }
+
+.clk-bar {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  border-radius: var(--r-xs);
+  background: var(--c-panel);
+  box-shadow: var(--sh-well);
+  overflow: hidden;
+  cursor: ns-resize;
+  outline: none;
+}
+.clk-bar:focus-visible { box-shadow: var(--sh-well), 0 0 0 1px var(--c-accent); }
+.clk-bar-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--c-accent-soft);
+  border-top: 2px solid var(--c-accent);
+  pointer-events: none;
+}
+.clk-col.is-current .clk-bar-fill { background: var(--c-accent-glow); }
+.clk-bar-mod { display: none; position: absolute; left: 0; right: 0; height: 2px; margin-bottom: -1px; background: var(--c-mod); pointer-events: none; }
+.clk-bar.is-modulated .clk-bar-mod { display: block; }
+
+.clk-led { flex: none; width: 7px; height: 7px; border-radius: var(--r-pill); background: var(--c-meter-off); box-shadow: 0 0 0 1px var(--c-line-inset); }
+.clk-col.is-current .clk-led { background: var(--c-accent); box-shadow: 0 0 6px var(--c-accent-glow); }
+.clk-num { flex: none; height: 9px; font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono); color: var(--c-text-4); }
+
+/* only Steps mode uses the values: elsewhere the bars are shown faded and not editable */
+.clk-lane[data-mode='divider'] .clk-bar,
+.clk-lane[data-mode='random'] .clk-bar { opacity: 0.25; cursor: default; }
+.clk-lane[data-mode='divider'] .clk-col.is-inactive,
+.clk-lane[data-mode='random'] .clk-col.is-inactive { opacity: 1; }
+
+/* Euclid: the LEDs show the pattern (pulse = filled, rest = ring), bars faded */
+.clk-lane[data-mode='euclid'] .clk-bar { opacity: 0.18; cursor: default; }
+.clk-lane[data-mode='euclid'] .clk-led { width: 12px; height: 12px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--c-line-strong); }
+.clk-lane[data-mode='euclid'] .clk-col.is-pulse .clk-led { background: var(--c-text-3); box-shadow: none; }
+.clk-lane[data-mode='euclid'] .clk-col.is-current .clk-led { box-shadow: inset 0 0 0 1.5px var(--c-accent); }
+.clk-lane[data-mode='euclid'] .clk-col.is-current.is-pulse .clk-led { background: var(--c-accent); box-shadow: 0 0 8px var(--c-accent-glow); }

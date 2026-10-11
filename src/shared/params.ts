@@ -1,0 +1,258 @@
+/**
+ * Single source of truth for every parameter of the resonator.
+ * Imported by BOTH the main thread and the AudioWorklet bundle, so keep it
+ * free of DOM / Web Audio references.
+ *
+ * Storage convention:
+ *  - ParamStore keeps *plain* values (dB, Hz, 0..1 …) as defined by min/max.
+ *  - UI and modulation work in *normalized* space 0..1 via toNorm/fromNorm.
+ *  - The worklet receives a Float32Array of plain values ordered by `index`.
+ */
+
+import { BAND_FREQS, NUM_BANDS } from './bands';
+import type { ModClass, ParamCurve, ParamDef, ParamUnit } from './paramdefs/types';
+import {
+  NUM_CMODS,
+  NUM_EFS,
+  NUM_LFOS,
+  NUM_MACROS,
+  NUM_ROUTES,
+  FILTER_SLOTS,
+  clockParams,
+  cmodParams,
+  dynParams,
+  efParams,
+  filterParams,
+  lfoParams,
+  macroParams,
+  routeParams,
+} from './paramdefs/modules';
+
+export { BAND_FREQS, NUM_BANDS };
+export type { ModClass, ParamCurve, ParamUnit };
+
+/** Fader law floor: anything at or below this dB value is treated as -inf (silence). */
+export const FADER_MIN_DB = -60;
+export const FADER_MAX_DB = 12;
+
+export type ParamGroup = 'global' | 'band' | 'module';
+
+export interface ParamSpec {
+  id: string;
+  label: string;
+  short: string;
+  group: ParamGroup;
+  band?: number;
+  min: number;
+  max: number;
+  def: number;
+  unit: ParamUnit;
+  curve: ParamCurve;
+  /** index into the Float32Array sent to the worklet */
+  index: number;
+  /** false = never modulated (e.g. toggles, bypass, macros) */
+  modulatable: boolean;
+  /** owning module instance: 'resonator', 'dyn', 'filterPre', 'lfo2', 'route17', 'clock' … */
+  module: string;
+  /** module kind, decides which sources may modulate it (shared/mod/rules.ts) */
+  modClass: ModClass;
+  /** option labels for curve 'discrete' */
+  options?: readonly string[];
+}
+
+type Def = Omit<ParamDef, 'id'> & { id: string };
+
+const GLOBAL_DEFS: Def[] = [
+  { id: 'inputGain',  label: 'Input Gain',     short: 'GAIN',  min: 0,   max: 24,    def: 0,    unit: 'dB', curve: 'lin',    modulatable: true },
+  { id: 'analog',     label: 'Analog',         short: 'ANLG',  min: 0,   max: 1,     def: 0.5,  unit: '%',  curve: 'lin',    modulatable: true },
+  { id: 'resOffset',  label: 'Resonance',      short: 'RES',   min: -1,  max: 1,     def: 0,    unit: '',   curve: 'lin',    modulatable: true },
+  { id: 'fbAllOn',    label: 'Feedback All',   short: 'FB ALL',min: 0,   max: 1,     def: 0,    unit: '',   curve: 'toggle', modulatable: false },
+  { id: 'fbAll',      label: 'FB All Amount',  short: 'FB',    min: 0,   max: 1,     def: 0.35, unit: '%',  curve: 'lin',    modulatable: true },
+  { id: 'fbAllTone',  label: 'FB All Tone',    short: 'TONE',  min: 200, max: 20000, def: 6000, unit: 'Hz', curve: 'exp',    modulatable: true },
+  { id: 'spread',     label: 'Odd/Even Spread',short: 'SPRD',  min: 0,   max: 1,     def: 0,    unit: '%',  curve: 'lin',    modulatable: true },
+  { id: 'mix',        label: 'Dry/Wet',        short: 'MIX',   min: 0,   max: 1,     def: 1,    unit: '%',  curve: 'lin',    modulatable: true },
+  { id: 'outputGain', label: 'Output',         short: 'OUT',   min: -24, max: 12,    def: 0,    unit: 'dB', curve: 'lin',    modulatable: true },
+  { id: 'bypass',     label: 'Bypass',         short: 'BYP',   min: 0,   max: 1,     def: 0,    unit: '',   curve: 'toggle', modulatable: false },
+];
+
+/** Per-band params, in this order, for every band. */
+const BAND_DEFS: Def[] = [
+  { id: 'gain', label: 'Level',     short: 'LVL', min: FADER_MIN_DB, max: FADER_MAX_DB, def: 0,   unit: 'dB', curve: 'fader', modulatable: true },
+  { id: 'res',  label: 'Resonance', short: 'RES', min: 0,            max: 1,            def: 0.45, unit: '%',  curve: 'lin',   modulatable: true },
+  { id: 'fb',   label: 'Feedback',  short: 'FB',  min: 0,            max: 1,            def: 0,   unit: '%',  curve: 'lin',   modulatable: true },
+];
+export const BAND_PARAM_KEYS = ['gain', 'res', 'fb'] as const;
+export type BandParamKey = (typeof BAND_PARAM_KEYS)[number];
+
+export const NUM_GLOBAL = GLOBAL_DEFS.length;
+export const PARAMS_PER_BAND = BAND_DEFS.length;
+/** the resonator's own params occupy indices 0 .. NUM_RESONATOR_PARAMS-1 (layout unchanged since v1) */
+export const NUM_RESONATOR_PARAMS = NUM_GLOBAL + NUM_BANDS * PARAMS_PER_BAND;
+
+export const PARAMS: ParamSpec[] = [];
+GLOBAL_DEFS.forEach((d) => PARAMS.push({ ...d, group: 'global', index: PARAMS.length, module: 'resonator', modClass: 'resonator' }));
+for (let b = 0; b < NUM_BANDS; b++) {
+  for (const d of BAND_DEFS) {
+    PARAMS.push({ ...d, id: bandParamId(b, d.id as BandParamKey), group: 'band', band: b, index: PARAMS.length, module: 'resonator', modClass: 'resonator' });
+  }
+}
+
+/* ---------- module params (fixed slots, appended after the resonator) ---------- */
+function addModule(module: string, modClass: ModClass, defs: ParamDef[]): void {
+  for (const d of defs) {
+    const band = /^band(\d+)\./.exec(d.id);
+    PARAMS.push({ ...d, group: 'module', index: PARAMS.length, module, modClass, ...(band ? { band: +band[1] } : {}) });
+  }
+}
+addModule('dyn', 'dyn', dynParams());
+for (const slot of FILTER_SLOTS) addModule(slot, 'filter', filterParams(slot));
+for (let n = 1; n <= NUM_LFOS; n++) addModule(`lfo${n}`, 'lfo', lfoParams(n));
+for (let n = 1; n <= NUM_CMODS; n++) addModule(`cmod${n}`, 'cmod', cmodParams(n));
+for (let n = 1; n <= NUM_EFS; n++) addModule(`ef${n}`, 'ef', efParams(n));
+for (let n = 1; n <= NUM_MACROS; n++) addModule(`macro${n}`, 'macro', macroParams(n));
+addModule('clock', 'clock', clockParams());
+for (let r = 0; r < NUM_ROUTES; r++) addModule(`route${r}`, 'route', routeParams(r));
+
+export const NUM_PARAMS = PARAMS.length;
+
+/** Global param indices (stable, use in the worklet). */
+export const G = Object.fromEntries(GLOBAL_DEFS.map((d, i) => [d.id, i])) as Record<
+  'inputGain' | 'analog' | 'resOffset' | 'fbAllOn' | 'fbAll' | 'fbAllTone' | 'spread' | 'mix' | 'outputGain' | 'bypass',
+  number
+>;
+
+export function bandParamId(band: number, key: BandParamKey): string {
+  return `band${band}.${key}`;
+}
+export function bandParamIndex(band: number, key: BandParamKey): number {
+  return NUM_GLOBAL + band * PARAMS_PER_BAND + BAND_PARAM_KEYS.indexOf(key);
+}
+
+export const PARAM_BY_ID: Record<string, ParamSpec> = Object.fromEntries(PARAMS.map((p) => [p.id, p]));
+
+/** index of a param id (throws on unknown ids: use at module load to cache indices) */
+export function paramIndex(id: string): number {
+  const p = PARAM_BY_ID[id];
+  if (!p) throw new Error(`unknown param ${id}`);
+  return p.index;
+}
+
+/** all params of one module instance, in definition order */
+export function moduleParams(module: string): ParamSpec[] {
+  return PARAMS.filter((p) => p.module === module);
+}
+
+export function defaultValues(): Float32Array {
+  const v = new Float32Array(NUM_PARAMS);
+  PARAMS.forEach((p) => (v[p.index] = p.def));
+  return v;
+}
+
+/* ---------- normalized <-> plain mapping ---------- */
+
+/**
+ * Fader law: 0 dB in the middle of the travel. The upper half is +12 dB in even steps (the range
+ * that is played); the lower half covers the cuts down to mute (0 = -inf) with the same travel.
+ * Points (norm, dB), linear in dB between them.
+ */
+const FADER_LAW: readonly (readonly [number, number])[] = [
+  [0, FADER_MIN_DB],
+  [0.1, -40],
+  [0.2, -24],
+  [0.3, -12],
+  [0.4, -6],
+  [0.5, 0],
+  [1, FADER_MAX_DB],
+];
+/** fader position of 0 dB (the detent) */
+export const FADER_UNITY_NORM = 0.5;
+
+export function faderNormToDb(n: number): number {
+  if (n <= 0) return FADER_MIN_DB;
+  if (n >= 1) return FADER_MAX_DB;
+  for (let i = 1; i < FADER_LAW.length; i++) {
+    const [n1, d1] = FADER_LAW[i];
+    if (n <= n1) {
+      const [n0, d0] = FADER_LAW[i - 1];
+      return d0 + ((n - n0) / (n1 - n0)) * (d1 - d0);
+    }
+  }
+  return FADER_MAX_DB;
+}
+export function faderDbToNorm(db: number): number {
+  if (db <= FADER_MIN_DB) return 0;
+  if (db >= FADER_MAX_DB) return 1;
+  for (let i = 1; i < FADER_LAW.length; i++) {
+    const [n1, d1] = FADER_LAW[i];
+    if (db <= d1) {
+      const [n0, d0] = FADER_LAW[i - 1];
+      return n0 + ((db - d0) / (d1 - d0)) * (n1 - n0);
+    }
+  }
+  return 1;
+}
+
+export function toNorm(p: ParamSpec, v: number): number {
+  let n: number;
+  switch (p.curve) {
+    case 'exp': n = Math.log(v / p.min) / Math.log(p.max / p.min); break;
+    case 'fader': n = faderDbToNorm(v); break;
+    case 'toggle': n = v >= 0.5 ? 1 : 0; break;
+    case 'discrete': n = p.max > p.min ? (Math.round(v) - p.min) / (p.max - p.min) : 0; break;
+    default: n = (v - p.min) / (p.max - p.min);
+  }
+  return Math.min(1, Math.max(0, n));
+}
+
+export function fromNorm(p: ParamSpec, n: number): number {
+  n = Math.min(1, Math.max(0, n));
+  switch (p.curve) {
+    case 'exp': return p.min * Math.pow(p.max / p.min, n);
+    case 'fader': return faderNormToDb(n);
+    case 'toggle': return n >= 0.5 ? 1 : 0;
+    case 'discrete': return p.min + Math.round(n * (p.max - p.min));
+    default: return p.min + n * (p.max - p.min);
+  }
+}
+
+/** dB -> linear, with the fader floor mapped to true silence. */
+export function dbToGain(db: number): number {
+  return db <= FADER_MIN_DB ? 0 : Math.pow(10, db / 20);
+}
+
+export function formatValue(p: ParamSpec, v: number): string {
+  if (p.curve === 'discrete') return p.options?.[Math.round(v)] ?? String(Math.round(v));
+  switch (p.unit) {
+    case 'dB': return v <= FADER_MIN_DB && p.curve === 'fader' ? '-∞ dB' : `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
+    case 'Hz': return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)} kHz` : v < 10 ? `${v.toFixed(2)} Hz` : `${Math.round(v)} Hz`;
+    case '%': return `${Math.round(v * 100)}%`;
+    case 'ms': return v >= 1000 ? `${(v / 1000).toFixed(2)} s` : v < 10 ? `${v.toFixed(1)} ms` : `${Math.round(v)} ms`;
+    case 'BPM': return `${v.toFixed(1)} BPM`;
+    case ':1': return v < 1 ? `1:${(1 / v).toFixed(1)}` : `${v.toFixed(1)}:1`;
+    default: return p.curve === 'toggle' ? (v >= 0.5 ? 'ON' : 'OFF') : v.toFixed(2);
+  }
+}
+
+export function formatFreq(hz: number): string {
+  return hz >= 1000 ? `${+(hz / 1000).toFixed(1)}k` : `${hz}`;
+}
+
+/* ---------- resonance law (shared by DSP and the UI response curve) ---------- */
+
+export const RES_Q_MIN = 0.6;
+export const RES_Q_MAX = 120;
+/** effective resonance 0..1 -> filter Q (0.6 … 120, exponential) */
+export function resToQ(r: number): number {
+  r = Math.min(1, Math.max(0, r));
+  return RES_Q_MIN * Math.pow(RES_Q_MAX / RES_Q_MIN, r);
+}
+/**
+ * Peak gain of a band at a given Q. Like an analog resonant bandpass, more resonance
+ * lifts the centre (peak ∝ Q^0.7) instead of only narrowing it, so turning resonance up
+ * sounds fuller and rings louder. Normalised to 0 dB at the default resonance (0.45).
+ */
+export const RES_MAKEUP_EXP = 0.7;
+export const RES_Q_REF = resToQ(0.45);
+export function resonanceMakeup(q: number): number {
+  return Math.pow(q / RES_Q_REF, RES_MAKEUP_EXP);
+}

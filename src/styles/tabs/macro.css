@@ -1,0 +1,143 @@
+/* MACRO tab (ui/tabs/macro.ts): one card per macro over its knob, how-to over slots 9–10 */
+
+.mc .tp-status { gap: var(--sp-4); }
+.mc-summary { color: var(--c-text-2); }
+.mc-tip { color: var(--c-text-4); font-size: var(--fs-2xs); letter-spacing: var(--ls-label); text-transform: uppercase; }
+
+.mc-card,
+.mc-help {
+  position: absolute;
+  top: var(--sp-4);
+  bottom: var(--sp-4);
+  width: calc(10% - 8px);
+  margin-left: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-3) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--c-panel-2);
+  box-shadow: 0 0 0 1px var(--c-line);
+}
+.mc-help { width: calc(20% - 8px); background: none; box-shadow: none; padding: var(--sp-3) var(--sp-4); gap: var(--sp-3); }
+.mc-help p { margin: 0; color: var(--c-text-3); font-size: var(--fs-xs); line-height: 1.4; }
+.mc-help b { color: var(--c-mod); font-weight: var(--fw-medium); }
+
+/* name */
+.mc-head { display: flex; align-items: center; gap: var(--sp-1); min-height: 18px; }
+.mc-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--c-text);
+  cursor: text;
+}
+.mc-edit {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--c-text-4);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.mc-card:hover .mc-edit,
+.mc-edit:focus-visible { opacity: 1; }
+.mc-edit:hover { color: var(--c-text); }
+.mc-edit[hidden] { display: none; }
+.mc-name-input {
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--c-accent);
+  border-radius: var(--r-xs);
+  background: var(--c-well);
+  color: var(--c-text);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  outline: none;
+}
+
+/* value */
+.mc-valrow { display: flex; align-items: center; gap: var(--sp-3); }
+.mc-bar { position: relative; flex: 1; height: 6px; border-radius: var(--r-xs); background: var(--c-well); box-shadow: var(--sh-well); overflow: hidden; }
+.mc-bar-fill { position: absolute; inset: 0; background: var(--c-accent); transform: scaleX(0); transform-origin: left center; }
+.mc-value { min-width: 4ch; color: var(--c-accent); font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+
+.mc-card .src-chip { min-height: 20px; padding: 0 var(--sp-3); font-size: var(--fs-2xs); justify-content: center; }
+.mc-card .src-chip-meter { width: 22px; }
+
+/* targets */
+.mc-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--sp-2)); padding: 0 var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--c-raised) transparent; }
+.mc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mc-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); }
+.mc-target {
+  min-width: 0;
+  padding: 1px 0;
+  border: 0;
+  background: none;
+  color: var(--c-text-2);
+  font: var(--fs-2xs) / 1.3 var(--font-mono);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.mc-target:hover { color: var(--c-text); text-decoration: underline; text-underline-offset: 2px; }
+.mc-target:focus-visible { outline: 2px solid var(--c-mod); }
+.mc-row .pfield { height: 15px; padding: 0 4px; gap: 0; font-size: var(--fs-2xs); }
+.mc-row .pfield-label { display: none; }
+.mc-row .pfield-value { color: var(--c-mod); }
+.mc-remove {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 1px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: var(--c-panel-2);
+  color: var(--c-text-3);
+  font-size: 9px;
+  line-height: 14px;
+  cursor: pointer;
+  opacity: 0;
+}
+.mc-row:hover .mc-remove,
+.mc-remove:focus-visible { opacity: 1; }
+.mc-remove:hover { color: var(--c-fb); background: var(--c-fb-soft); }
+.mc-empty { color: var(--c-text-4); font-size: var(--fs-2xs); letter-spacing: var(--ls-label); text-transform: uppercase; }
+
+.mc-add {
+  flex: none;
+  width: 100%;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-sm);
+  background: var(--c-panel);
+  color: var(--c-text-3);
+  font: var(--fs-2xs) var(--font-ui);
+  cursor: pointer;
+}
+.mc-add:hover { color: var(--c-text); border-color: var(--c-mod); }
+
+/* knob captions in the control row: long names must not widen the slot */
+.mc .tp-knobs .knob-name { max-width: 92px; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }

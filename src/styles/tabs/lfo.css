@@ -1,0 +1,55 @@
+/* Modulation source tabs (CLK MOD, LFO MOD, ENV MOD): shared layout (tabs/lfo/sourceTab.ts) */
+
+/* status line: description left, instance group right */
+.srctab-desc { color: var(--c-text-2); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.srctab-desc b { margin-left: 4px; }
+.srctab-on,
+.srctab-chip { display: inline-flex; align-items: center; }
+.srctab-on [hidden],
+.srctab-chip [hidden] { display: none; }
+.srctab .tp-status .toggle { height: 20px; padding: 0 var(--sp-4); font-size: var(--fs-2xs); }
+.srctab .tp-status .src-chip { min-height: 20px; padding: 0 var(--sp-3); font-size: var(--fs-2xs); }
+.srctab .tp-status .src-chip-meter { width: 26px; }
+
+/* visualisation: picture over slots 1–6, routes over slots 7–10 */
+.srctab-pic {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 60%;
+}
+.srctab-routes {
+  position: absolute;
+  left: 60%;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--c-panel);
+  box-shadow: -1px 0 0 var(--c-line);
+}
+
+.srctab-pic > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* control row: one wrapper per instance, only the selected one shown */
+.srctab-ctl { display: flex; align-items: center; justify-content: center; gap: var(--sp-3); transition: opacity var(--dur-med) var(--ease-out), filter var(--dur-med) var(--ease-out); }
+.srctab-ctl[hidden] { display: none; }
+.srctab-ctl.is-dim { opacity: 0.38; filter: saturate(0.2); }
+.srctab-ctl .toggle { height: 26px; padding: 0 var(--sp-4); }
+
+/* selected instance off: dim its controls and picture */
+.srctab.is-off .tp-knobs .srctab-ctl,
+.srctab.is-off .srctab-pic { opacity: 0.45; filter: saturate(0.25); }
+
+/* LFO picture */
+.lfo-legend {
+  position: absolute;
+  left: var(--sp-5);
+  top: var(--sp-3);
+  display: flex;
+  gap: var(--sp-5);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  letter-spacing: var(--ls-label);
+  color: var(--c-text-3);
+  pointer-events: none;
+}

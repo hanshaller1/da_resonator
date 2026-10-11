@@ -1,0 +1,14 @@
+/* FB tab */
+.tab-panel--fb .tp-slot { gap: var(--sp-4); }
+
+.fb-hot {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-label);
+  color: var(--c-text-4);
+}
+.fb-hot.is-on { color: var(--c-fb); }
+.fb-hot.is-on .led { background: var(--c-fb); box-shadow: 0 0 8px var(--c-fb-glow); }

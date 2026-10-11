@@ -1,0 +1,27 @@
+{
+  "name": "da-resonator",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:single": "tsc && vite build --mode single",
+    "preview": "vite preview",
+    "typecheck": "tsc",
+    "test:dsp": "node scripts/dsp-test.mjs",
+    "build:artifact": "npm run build:single && node scripts/make-artifact.mjs",
+    "test:mod": "node scripts/mod-test.mjs",
+    "test": "node scripts/run-all-tests.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "private": true,
+  "type": "module"
+}
