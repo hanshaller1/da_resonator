@@ -80,6 +80,7 @@ Stand: 16.10.2026. Grundlage ist der Vorschlag in [antworten-2026-10-10.md](antw
 
 **In beiden Fällen gilt:**
 - Ein Knopf **R = L** neben dem Umschalter setzt alle R-Werte auf die von L zurück.
+- Ein Knopf **RESET** daneben setzt alle 10 Fader in L und R auf einen Schlag auf 0 dB, unabhängig von der Stellung des Umschalters. RES und FB bleiben dabei, wie sie sind.
 - Doppelklick auf einen Fader setzt wie bisher auf 0 dB, in L+R beide Kanäle.
 
 ## 4. Anzeige der zwei Werte
