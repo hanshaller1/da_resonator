@@ -1,11 +1,12 @@
 /**
  * CONFIG tab: a settings page. Audio (engine state, start, panic, bypass) and source (select,
- * play, level, file), the audio input (device, channels, Elektron AUTO), the Analog character,
+ * play, level, file), the audio input (device, channels, Elektron AUTO), the resonance setup
+ * (feedback route, what the RESONANCE knob does, its curve and bands), the Analog character,
  * display (theme, window scale) and a short help. The source and audio controls share the
  * header's Transport, so both always agree.
  */
 import '../../styles/tabs/config.css';
-import type { EngineState, InputChannels } from '../../core/types';
+import type { EngineState, InputChannels, ParamStoreAPI } from '../../core/types';
 import { Knob } from '../components/knob';
 import { ParamToggle } from '../components/toggle';
 import { h, toggleClass } from '../dom';
@@ -30,9 +31,28 @@ function card(title: string, cls: string, ...children: (Node | null)[]): HTMLEle
   return h('section', { class: `cfg-card ${cls}` }, h('h3', { class: 'cfg-title micro-label' }, title), ...children);
 }
 
+/** segmented buttons for a discrete param (one button per option, [label, title]) */
+function paramButtons(p: ParamStoreAPI, id: string, items: [string, string][], ariaLabel: string): HTMLElement {
+  const btns = items.map(([label, title], i) => {
+    const b = h('button', { type: 'button', class: 'inst-btn', title }, label);
+    b.addEventListener('click', () => p.set(id, i));
+    return b;
+  });
+  const sync = () => {
+    const v = Math.round(p.get(id));
+    btns.forEach((b, i) => {
+      toggleClass(b, 'is-selected', v === i);
+      b.setAttribute('aria-pressed', String(v === i));
+    });
+  };
+  sync();
+  p.subscribe(id, sync);
+  return h('span', { class: 'inst', role: 'group', 'aria-label': ariaLabel }, ...btns);
+}
+
 registerTab({
   id: 'config',
-  reveal: (id) => id === 'analog',
+  reveal: (id) => id === 'analog' || id.startsWith('reso.'),
   mount(tab) {
     const { engine } = tab;
     const t = getTransport(engine, tab.notify);
@@ -147,13 +167,56 @@ registerTab({
       note,
     );
 
+    /* ---------- resonance setup ---------- */
+    const p = engine.params;
+    const resoNote = h('p', { class: 'cfg-note' });
+    const syncReso = () => {
+      const common = p.get('reso.route') >= 0.5;
+      const fb = p.get('reso.knob') >= 0.5;
+      resoNote.textContent = [
+        common ? 'Bands feed back after their faders into the shared input.' : 'Each band feeds back into itself.',
+        fb ? 'RESONANCE scales all feedback, left inverts.' : 'RESONANCE shifts RES.',
+      ].join(' ');
+    };
+    syncReso();
+    p.subscribe('reso.route', syncReso);
+    p.subscribe('reso.knob', syncReso);
+    const row = (key: string, el: HTMLElement) => h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, key), el);
+    const reso = card(
+      'Resonance',
+      'cfg-reso',
+      row('FB', paramButtons(p, 'reso.route', [
+        ['BAND', 'Each band feeds back into itself, before its fader'],
+        ['COMMON', 'The bands feed back after their faders into the shared input of all bands (hardware)'],
+      ], 'Feedback route')),
+      row('KNOB', paramButtons(p, 'reso.knob', [
+        ['RES', 'RESONANCE shifts RES of the bands'],
+        ['FEEDBACK', 'RESONANCE scales all feedback, left of centre inverted (hardware)'],
+      ], 'What the RESONANCE knob does')),
+      row('CURVE', paramButtons(p, 'reso.curve', [
+        ['LIN', 'Even travel'],
+        ['LOG', 'Fast at first, then fine'],
+        ['EXP', 'Fine at first, then fast'],
+      ], 'Curve of the RESONANCE knob')),
+      row('BANDS', paramButtons(p, 'reso.weight', [
+        ['ALL', 'The knob reaches all bands alike'],
+        ['HIGHS', 'The knob works more towards the high bands, not on band 1'],
+        ['LOWS', 'The knob works more towards the low bands, not on band 10'],
+      ], 'Bands the RESONANCE knob reaches')),
+      resoNote,
+    );
+
     /* ---------- analog ---------- */
-    const analog = new Knob(engine.params, 'analog', { size: 'md', label: 'ANALOG' });
+    const analog = new Knob(engine.params, 'analog', { size: 'sm', label: 'ANALOG' });
     const character = card(
       'Character',
       'cfg-analog',
-      h('div', { class: 'cfg-knob' }, analog.el),
-      h('p', { class: 'cfg-note' }, 'Saturation, detune, Q tolerance, drift and a −96 dBFS noise floor per band. 0 is clean.'),
+      h(
+        'div',
+        { class: 'cfg-row', title: 'Saturation, detune, Q tolerance, drift and a −96 dBFS noise floor per band' },
+        analog.el,
+        h('p', { class: 'cfg-note' }, 'Saturation, detune, drift and noise per band. 0 is clean.'),
+      ),
     );
 
     /* ---------- display ---------- */
@@ -173,11 +236,16 @@ registerTab({
     const syncScale = (k: number) => (scale.textContent = `${Math.round(k * 100)} %`);
     syncScale(uiScale());
     onScaleChange(syncScale);
-    const display = card(
-      'Display',
-      'cfg-display',
-      h('span', { class: 'inst cfg-theme', role: 'group', 'aria-label': 'Theme' }, ...themeBtns.map((x) => x.b)),
-      h('div', { class: 'cfg-row', title: `The window is a fixed ${DESIGN_W} × ${DESIGN_H} layout scaled to fit the browser. Use the browser's full screen for the largest view.` }, h('span', { class: 'cfg-key' }, 'SCALE'), scale),
+    audio.append(
+      h('h3', { class: 'cfg-title micro-label cfg-sub' }, 'Display'),
+      h(
+        'div',
+        { class: 'cfg-row' },
+        h('span', { class: 'inst', role: 'group', 'aria-label': 'Theme' }, ...themeBtns.map((x) => x.b)),
+        h('span', { class: 'cfg-grow' }),
+        h('span', { class: 'cfg-key cfg-key--auto', title: `The window is a fixed ${DESIGN_W} × ${DESIGN_H} layout scaled to fit the browser. Use the browser's full screen for the largest view.` }, 'SCALE'),
+        scale,
+      ),
     );
 
     /* ---------- help ---------- */
@@ -187,7 +255,7 @@ registerTab({
       h('dl', { class: 'cfg-help-list' }, ...HELP.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
     );
 
-    body.append(audio, input, character, display, help);
+    body.append(audio, input, reso, character, help);
 
     /* ---------- status line + audio state ---------- */
     const status = h('span', { class: 'cfg-status' });

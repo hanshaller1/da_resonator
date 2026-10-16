@@ -1,13 +1,30 @@
 import type { ParamStoreAPI } from '../core/types';
-import { BAND_FREQS, NUM_BANDS, bandParamId, dbToGain, resToQ, resonanceMakeup } from '../shared/params';
+import { BAND_FREQS, NUM_BANDS, bandParamId, dbToGain, fbKnobFactor, resKnobShape, resKnobWeight, resToQ, resonanceMakeup } from '../shared/params';
 
 /**
  * Visual approximation of the filterbank magnitude response: a sum of
  * 2-pole bandpasses weighted by band level and resonance makeup. Resonance sets Q and lifts the peak,
- * feedback narrows and lifts the peak. Not the DSP — just a good picture.
+ * feedback narrows and lifts the peak, inverted feedback widens and lowers it. Not the DSP — just a good picture.
  */
 export function bandQ(res: number, fb: number): number {
-  return resToQ(res) * (1 + fb * 2.5);
+  return resToQ(res) * fbShape(fb);
+}
+/** how feedback reshapes a band (Q and peak alike): narrower and higher, or wider and lower when inverted */
+function fbShape(fb: number): number {
+  return fb >= 0 ? 1 + fb * 2.5 : 1 / (1 - fb * 1.15);
+}
+
+/**
+ * Effective RES and feedback of band b, with the RESONANCE knob applied as the DSP does it
+ * (CONFIG: knob mode, curve, bands). fb is signed (inverted feedback < 0) and includes Feedback All.
+ */
+export function bandResFb(p: ParamStoreAPI, b: number): { res: number; fb: number } {
+  const knob = resKnobShape(p.get('resOffset'), Math.round(p.get('reso.curve')));
+  const kb = knob * resKnobWeight(b, Math.round(p.get('reso.weight')));
+  const fbMode = p.get('reso.knob') >= 0.5;
+  const all = p.get('fbAllOn') >= 0.5 ? p.get('fbAll') * (fbMode ? fbKnobFactor(knob) : 1) : 0;
+  const fb = p.get(bandParamId(b, 'fb')) * (fbMode ? fbKnobFactor(kb) : 1) + all;
+  return { res: p.get(bandParamId(b, 'res')) + (fbMode ? 0 : kb), fb: Math.min(1, Math.max(-1, fb)) };
 }
 
 export interface ResponseModel {
@@ -20,12 +37,10 @@ export interface ResponseModel {
 
 export function readModel(p: ParamStoreAPI, m?: ResponseModel): ResponseModel {
   const model: ResponseModel = m ?? { gains: new Float64Array(NUM_BANDS), qs: new Float64Array(NUM_BANDS), mix: 1, out: 1, bypass: false };
-  const resOff = p.get('resOffset');
-  const fbAll = p.get('fbAllOn') >= 0.5 ? p.get('fbAll') : 0;
   for (let i = 0; i < NUM_BANDS; i++) {
-    const fb = Math.min(1, p.get(bandParamId(i, 'fb')) + fbAll);
-    const r = p.get(bandParamId(i, 'res')) + resOff;
-    model.gains[i] = dbToGain(p.get(bandParamId(i, 'gain'))) * resonanceMakeup(resToQ(r)) * (1 + fb * 0.8);
+    const { res: r, fb } = bandResFb(p, i);
+    const lift = fb >= 0 ? 1 + fb * 0.8 : fbShape(fb);
+    model.gains[i] = dbToGain(p.get(bandParamId(i, 'gain'))) * resonanceMakeup(resToQ(r)) * lift;
     model.qs[i] = bandQ(r, fb);
   }
   model.mix = p.get('mix');

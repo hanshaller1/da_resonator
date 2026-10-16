@@ -12,6 +12,7 @@ import type { MeterFrame } from '../shared/messages';
 import type { ModConfig } from '../shared/mod/rules';
 import { MAX_BLOCK, ModEngine } from '../dsp/ModEngine';
 import { NUM_BANDS, bandParamId, dbToGain } from '../shared/params';
+import { bandResFb } from './response';
 
 export interface MockEngineOptions {
   /** demo LFO modulation on a couple of params so mod rings can be seen */
@@ -128,8 +129,6 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
     const prof = PROFILES[source];
     const active = state === 'running' && playing;
     const inGain = dbToGain(params.get('inputGain')) * srcLevel;
-    const resOff = params.get('resOffset');
-    const fbAll = params.get('fbAllOn') >= 0.5 ? params.get('fbAll') : 0;
     let inSum = 0;
     let outSum = 0;
     let hot = false;
@@ -148,8 +147,9 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       }
       e *= prof[i] * (0.85 + 0.3 * Math.random());
       env[i] = active ? e : env[i] * 0.85;
-      const res = Math.min(1, Math.max(0, params.get(bandParamId(i, 'res')) + resOff));
-      const fb = Math.min(1, params.get(bandParamId(i, 'fb')) + fbAll);
+      const rf = bandResFb(params, i);
+      const res = Math.min(1, Math.max(0, rf.res));
+      const fb = Math.max(0, rf.fb);
       const lvl = env[i] * inGain * dbToGain(params.get(bandParamId(i, 'gain'))) * (0.55 + 1.3 * res) * (1 + 2.6 * fb * fb);
       smooth[i] = lvl > smooth[i] ? lvl : smooth[i] * 0.9 + lvl * 0.1;
       bands[i] = smooth[i] * 0.6;

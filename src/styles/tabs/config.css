@@ -1,16 +1,16 @@
-/* CONFIG tab (ui/tabs/config.ts): audio | input | character over display | help */
+/* CONFIG tab (ui/tabs/config.ts): audio (source, display) | input | resonance over character | help */
 .cfg {
   display: grid;
-  grid-template-columns: 1.3fr 1.4fr 0.95fr 1.45fr;
+  grid-template-columns: 1.25fr 1.35fr 1.1fr 1.3fr;
   grid-template-rows: auto 1fr;
-  grid-template-areas: 'audio input analog help' 'audio input display help';
+  grid-template-areas: 'audio input reso help' 'audio input analog help';
   gap: var(--sp-4);
   padding: var(--sp-4);
 }
 .cfg-audio { grid-area: audio; }
 .cfg-input { grid-area: input; }
+.cfg-reso { grid-area: reso; }
 .cfg-analog { grid-area: analog; }
-.cfg-display { grid-area: display; }
 .cfg-help { grid-area: help; }
 .cfg-card {
   display: flex;
@@ -55,10 +55,11 @@
 .cfg-auto { height: 24px; padding: 0 var(--sp-4); }
 .cfg-note.is-report { min-height: 0; overflow: auto; white-space: pre-line; color: var(--c-text-2); font: var(--fs-2xs) / 1.5 var(--font-mono); user-select: text; }
 
-/* character + display: compact, stacked in one column */
-.cfg-analog, .cfg-display { gap: var(--sp-3); }
-.cfg-knob { display: flex; justify-content: center; }
-.cfg-theme { align-self: flex-start; }
+.cfg-key--auto { width: auto; }
+
+/* resonance setup and character: compact, stacked in one column */
+.cfg-reso, .cfg-analog { gap: var(--sp-3); }
+.cfg-analog .cfg-row { align-items: center; }
 
 /* help */
 .cfg-help-list { display: grid; grid-template-columns: auto 1fr; gap: 5px var(--sp-5); margin: 0; font-size: var(--fs-xs); }

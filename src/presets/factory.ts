@@ -1,8 +1,11 @@
 /**
  * Factory presets (read-only, shipped with the app).
  * Each entry lists only what differs from the defaults; everything else is the param default.
+ * Written in the current snapshot format (v3): bands default to broad (RES 0.03), so presets made
+ * for the narrow bands set RES 0.45 (NARROW); Feedback All self-oscillates from amount ≈ 0.75.
  */
 import type { EngineSnapshot } from '../core/types';
+import { SNAPSHOT_VERSION } from '../core/state';
 import { fileSlug, newReport, sanitizeSnapshot, type Preset } from './io';
 
 export interface FactoryPresetDef {
@@ -46,7 +49,7 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
       'clock.bpm': 124, 'cmod1.on': 1, 'cmod1.mode': 1, 'cmod1.div': 7, 'cmod1.steps': 7, 'cmod1.slew': 0.25, 'cmod1.uni': 0,
       ...steps(1, [0.9, 0.2, 0.6, 0.1, 0.8, 0.3, 0.5, 0.0]),
       'lfo1.on': 1, 'lfo1.shape': 2, 'lfo1.sync': 1, 'lfo1.div': 7,
-      'filterPost.on': 1, 'filterPost.cutoff': 2500, 'filterPost.res': 0.35,
+      'filterPost.on': 1, 'filterPost.cutoff': 2500, 'filterPost.res': 0.35, ...NARROW(),
     },
     mods: [
       ['cmod1', 'resOffset', 0.35],
@@ -66,12 +69,12 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
   }),
   preset('Tamed Feedback', 'Dynamics', {
     params: {
-      fbAllOn: 1, fbAll: 0.95, fbAllTone: 3800, analog: 0.8, 'dyn.on': 1, 'dyn.threshold': -30, 'dyn.ratio': 6, 'dyn.attack': 3, 'dyn.release': 250,
+      fbAllOn: 1, fbAll: 0.73, fbAllTone: 3800, analog: 0.8, 'dyn.on': 1, 'dyn.threshold': -30, 'dyn.ratio': 6, 'dyn.attack': 3, 'dyn.release': 250,
       ...bands({ res: [0.7, 0.7, 0.72, 0.74, 0.76, 0.76, 0.74, 0.72, 0.7, 0.68] }),
     },
   }),
   preset('Sidechain Pump', 'Dynamics', {
-    params: { 'ef1.on': 1, 'ef1.tap': 1, 'ef1.attack': 3, 'ef1.release': 220, 'ef1.threshold': -36, 'ef1.curve': 0.4 },
+    params: { 'ef1.on': 1, 'ef1.tap': 1, 'ef1.attack': 3, 'ef1.release': 220, 'ef1.threshold': -36, 'ef1.curve': 0.4, ...NARROW() },
     mods: [
       ['ef1', 'band4.gain', -0.24],
       ['ef1', 'band5.gain', -0.24],
@@ -84,7 +87,7 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
   preset('Formant Sweep', 'Filter', {
     params: {
       'filterPre.on': 1, 'filterPre.type': 1, 'filterPre.slope': 1, 'filterPre.res': 0.55, 'filterPre.cutoff': 900, 'filterPre.drive': 6,
-      'lfo1.on': 1, 'lfo1.shape': 1, 'lfo1.sync': 1, 'lfo1.div': 14, 'lfo1.morph': 0.3, mix: 0.9,
+      'lfo1.on': 1, 'lfo1.shape': 1, 'lfo1.sync': 1, 'lfo1.div': 14, 'lfo1.morph': 0.3, mix: 0.9, ...NARROW(),
     },
     mods: [['lfo1', 'filterPre.cutoff', 0.4]],
   }),
@@ -117,11 +120,11 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
     ],
   }),
   preset('Macro Morph', 'Performance', {
-    params: { 'lfo1.on': 1, 'lfo1.rate': 0.4, 'lfo1.shape': 1, fbAllOn: 1, fbAll: 0.2, 'filterPost.on': 1, 'filterPost.cutoff': 1200 },
+    params: { 'lfo1.on': 1, 'lfo1.rate': 0.4, 'lfo1.shape': 1, fbAllOn: 1, fbAll: 0.15, 'filterPost.on': 1, 'filterPost.cutoff': 1200, ...NARROW() },
     mods: [
       ['macro1', 'resOffset', 0.45],
       ['macro1', 'filterPost.cutoff', 0.55],
-      ['macro1', 'fbAll', 0.6],
+      ['macro1', 'fbAll', 0.46],
       ['lfo1', 'band3.res', 0],
       ['lfo1', 'band6.res', 0],
       ['macro2', 'route3.depth', 0.4],
@@ -132,11 +135,11 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
   }),
   preset('Tempo Gate', 'Rhythm', {
     params: {
-      'clock.bpm': 128, fbAllOn: 1, fbAll: 0.3, fbAllTone: 5000,
+      'clock.bpm': 128, fbAllOn: 1, fbAll: 0.23, fbAllTone: 5000,
       'cmod1.on': 1, 'cmod1.mode': 0, 'cmod1.div': 7, 'cmod1.slew': 0.1,
-      'dyn.on': 1, 'dyn.threshold': -24, 'dyn.ratio': 3,
+      'dyn.on': 1, 'dyn.threshold': -24, 'dyn.ratio': 3, ...NARROW(),
     },
-    mods: [['cmod1', 'fbAll', 0.6]],
+    mods: [['cmod1', 'fbAll', 0.46]],
   }),
 ];
 
@@ -171,6 +174,11 @@ function bands(v: Partial<Record<'gain' | 'res' | 'fb', number[]>>): Record<stri
   return out;
 }
 
+/** all bands narrow (RES 0.45, the band default before v3) */
+function NARROW(): Record<string, number> {
+  return bands({ res: Array(10).fill(0.45) });
+}
+
 /** step values of clock mod n */
 function steps(n: number, values: number[]): Record<string, number> {
   return Object.fromEntries(values.map((x, i) => [`cmod${n}.step${i}`, x]));
@@ -187,7 +195,7 @@ export function factoryPresets(defs: readonly FactoryPresetDef[] = FACTORY_PRESE
     ids.add(id);
     const report = newReport();
     const snapshot = sanitizeSnapshot(
-      { format: 'da-resonator', version: 2, params: d.params ?? {}, routes: d.routes ?? [], triggers: d.triggers ?? [], modules: d.modules ?? {} },
+      { format: 'da-resonator', version: SNAPSHOT_VERSION, params: d.params ?? {}, routes: d.routes ?? [], triggers: d.triggers ?? [], modules: d.modules ?? {} },
       report,
     );
     if (report.unknownParams.length || report.invalidParams.length || report.droppedRoutes.length) {

@@ -147,7 +147,8 @@ export function sanitizeSnapshot(input: unknown, report: SanitizeReport = newRep
 
   return migrateSnapshot({
     format: 'da-resonator',
-    version: 2,
+    // the version of the input decides how missing params and old scales are read (flat v1 = 1)
+    version: structured ? (typeof input.version === 'number' && Number.isFinite(input.version) ? input.version : 2) : 1,
     params,
     routes: routing.routes().map((r) => ({ slot: r.slot, source: r.source, target: r.target })),
     triggers: routing.triggerRoutes(),

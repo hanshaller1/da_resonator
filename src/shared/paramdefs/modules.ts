@@ -118,6 +118,25 @@ export function clockParams(): ParamDef[] {
   return [cont('clock.bpm', 'Tempo', 'BPM', 20, 300, 120, 'BPM'), toggle('clock.run', 'Clock Run', 'RUN', 1)];
 }
 
+/* ---------- resonance setup (CONFIG page; stored with the sound, never modulated) ---------- */
+/** where the per-band feedback goes: into the band itself before its fader, or after the fader into the shared input */
+export const FB_ROUTES = ['Band', 'Common'] as const;
+/** what the RESONANCE knob does: shift RES of all bands, or scale all feedback (centre = as set, left inverts) */
+export const RES_KNOB_MODES = ['Res', 'Feedback'] as const;
+/** travel of the RESONANCE knob */
+export const RES_CURVES = ['Linear', 'Log', 'Exp'] as const;
+/** which bands the RESONANCE knob reaches: all alike, rising to the highs, rising to the lows */
+export const RES_WEIGHTS = ['All', 'Highs', 'Lows'] as const;
+export function resoParams(): ParamDef[] {
+  const fixed = (d: ParamDef): ParamDef => ({ ...d, modulatable: false });
+  return [
+    fixed(discrete('reso.route', 'Feedback Route', 'FB', FB_ROUTES, 0)),
+    fixed(discrete('reso.knob', 'Resonance Knob', 'KNOB', RES_KNOB_MODES, 0)),
+    fixed(discrete('reso.curve', 'Resonance Curve', 'CURVE', RES_CURVES, 0)),
+    fixed(discrete('reso.weight', 'Resonance Bands', 'BANDS', RES_WEIGHTS, 0)),
+  ];
+}
+
 /* ---------- modulation route depths (route slots) ---------- */
 export function routeParams(slot: number): ParamDef[] {
   return [cont(`route${slot}.depth`, `Route ${slot + 1} Depth`, 'DEPTH', -1, 1, 0)];

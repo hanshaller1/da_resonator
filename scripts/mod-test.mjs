@@ -73,6 +73,7 @@ const effOf = (frame, id) => {
 {
   const proc = loadProcessor();
   const v = base();
+  v[idx('band3.res')] = 0.45; // mid travel, so ±0.3 stays inside the range
   v[idx('lfo1.on')] = 1;
   v[idx('lfo1.rate')] = 2;
   v[idx('route0.depth')] = 0.3;

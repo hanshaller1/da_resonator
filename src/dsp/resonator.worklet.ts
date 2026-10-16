@@ -5,28 +5,41 @@
  *
  * ─── Signal flow (per channel; L and R have their own filters) ───────────────
  *   in ─► input gain (0..24 dB) ─► analog saturator ─► (+ noise floor) ─► (+ Feedback-All return)
- *      ─► 10 × [ TPT SVF bandpass with its own feedback loop ─► band dynamics ] ─► fader ─► odd/even spread ─► Σ wet
- *   Σ wet ─► Feedback-All loop: tone LP ─► DC block ─► soft clip ─► × amount ─► (back to the band inputs, 1-sample delay)
+ *      ─► 10 × [ TPT SVF bandpass with its feedback ─► band dynamics ] ─► fader ─► makeup ─► odd/even spread ─► Σ wet
+ *   Feedback route (CONFIG, param reso.route):
+ *     BAND   : every band feeds back into its own input, before its fader.
+ *     COMMON : the bands feed back after their faders (at tap level) into the shared input of all bands,
+ *              like the hardware: a raised fader makes its band ring, neighbours excite each other.
+ *   Σ taps (after the faders, at tap level) ─► Feedback-All loop: tone LP ─► DC block ─► soft clip ─► × amount
+ *      ─► (back to the band inputs, 1-sample delay)
  *   out = safetyClip( (dry·cos(mix·π/2) + wet·sin(mix·π/2)) · outputGain ), crossfaded with dry by bypass.
  *
  * ─── Mappings ─────────────────────────────────────────────────────────────────
  *  Band filter : Zavalishin TPT state-variable filter, output = k·BP (k = 1/Q), i.e. unity gain at the
  *                centre for every Q (constant-peak form). 2nd-order skirts (≈ hardware's ~17 dB/dec).
- *                After the band's own loop a resonance makeup gain (Q/Q_ref)^0.7 lifts the peak like an
- *                analog resonant bandpass (shared/params.ts resonanceMakeup; 0 dB at res 0.45), so more
- *                resonance = louder, fuller ringing. The Feedback-All return takes the band sum before
- *                this makeup, so the FB All edge stays independent of resonance.
- *  Resonance   : r = clamp(band.res + resOffset, 0, 1);  Q = 0.6 · 200^r   → 0.6 … 120
+ *                After the feedback a resonance makeup gain (shared/params.ts resonanceMakeup, 0 dB at res
+ *                0.45): above, (Q/Q_ref)^0.7 lifts the peak like an analog resonant bandpass, so more
+ *                resonance = louder, fuller ringing; below, (Q/Q_ref)^0.4 lowers broad bands just enough
+ *                that all bands at 0 dB and the default RES 0.03 (Q 0.7) sum flat at 0 dB.
+ *                The feedback taps take the band at tap level = min(1, makeup): broad bands feed back like
+ *                one flat band, and the lift of high resonance stays out of the loops, so the FB All and
+ *                common-route edges do not move with resonance.
+ *  Resonance   : r = clamp(band.res + knob, 0, 1);  Q = 0.6 · 200^r   → 0.6 … 120
+ *                knob = RESONANCE through its curve (lin / log / exp) × band weight (all / highs / lows);
+ *                in the FEEDBACK knob mode the knob leaves r alone and scales the feedback instead.
  *                (r = 0.3 → Q ≈ 2.9, r = 0.5 → Q ≈ 8.5, r = 1 → Q = 120: the 29 Hz band rings ~9 s to -60 dB,
  *                 115 Hz ~2 s). The linear filter is unconditionally stable for any Q.
  *  Analog sat  : amplitude-dependent damping: k_eff = k + 0.03·analog·e²/(1 + e²/4) (e = peak envelope of
  *                the band output; output normalisation keeps the nominal k). Like a soft-limiting integrator stage it
  *                barely touches low-Q bands but makes loud high-Q ringing compress and decay faster at first,
  *                independent of the band's frequency.
+ *  Knob FEEDBACK: per band factor 1 + s (s ≥ 0, up to ×2) or 1 + 2s (s < 0, through 0 to ×−1) on fb, s = shaped,
+ *                weighted knob; Feedback All gets the unweighted factor. Negative = inverted feedback (damping).
  *  Band fb     : loop gain at the centre G = fb / 0.87 up to the edge of self-oscillation (fb = 0.87, G = 1);
  *                above it G rises linearly to 1.15 + 0.03·Q at fb = 1 (Q-dependent so narrow, high-Q bands
  *                still start oscillating within a second or two). fb = 1 sustains a steady sine at the band
  *                centre (measured ≈ ±0.55…0.77 peak with analog 0.5).
+ *                fb < 0 (FEEDBACK knob left of centre) mirrors G: inverted feedback, the band gets wider and lower.
  *                The loop is solved delay-free (implicitly; the SVF output is linear in its input), so the
  *                oscillation pitch is exactly the band centre even at 11 kHz. The loop limiter is a gain
  *                factor 1/√(1+(G·env)²) driven by a fast peak envelope of the band output (instant attack,
@@ -37,10 +50,14 @@
  *                construction; the limiter is symmetric so it creates no DC either). This deliberately differs
  *                from a "one-sample-delayed, DC-blocked" loop: a unit delay detunes the oscillation by up to
  *                ~80° of phase at 11 kHz.
- *  Feedback All: loop gain = amount × (summed band response, which peaks ≈ 1.2–1.3 where neighbouring
- *                bands overlap in phase). With faders at 0 dB the loop reaches the edge of self-oscillation
- *                around amount ≈ 0.8; amount 1 self-oscillates. Bounded by a soft clipper after the gain,
- *                r/√(1+(r/0.7)²), so the return never exceeds 0.7.
+ *  Common route: u = x + sc·Σ w_b·y_b with w_b = G_b · fader_b · tap_b; every y_b = P_b + B_b·u is linear in u, so
+ *                u = (x + sc·Σ w·P) / (1 − sc·Σ w·B), solved delay-free per sample (sc·Σ w·B is held ≤ 0.9).
+ *                sc = 1/√(1+e²) from the envelope e of the unlimited return Σ w·y: the summed return stays < 1.
+ *                One band at 0 dB starts oscillating at fb 0.87 (narrow) like BAND; broad bands at 0 dB need
+ *                more (their tap level is lower), a fader at +12 dB a quarter.
+ *  Feedback All: loop gain = 1.3 × amount × (summed band taps, ≈ 1 at the band centres for any RES).
+ *                With faders at 0 dB the loop reaches the edge of self-oscillation around amount ≈ 0.75.
+ *                Bounded by a soft clipper after the gain, r/√(1+(r/0.7)²), so the return never exceeds 0.7.
  *  Spread      : per band, mid m = (L+R)/2, side d = (L−R)/2. Odd bands (1,3,5,7,9; index 0,2,…) pan m
  *                towards L, even bands towards R with centre-normalised equal-power gains
  *                gL = √2·cos θ, gR = √2·sin θ, θ = π/4 ∓ spread·π/4; the side part fades with (1−spread).
@@ -77,12 +94,18 @@
 import { WORKLET_NAME } from '../shared/messages';
 import {
   BAND_FREQS,
+  FB_ALL_LOOP_MAX,
   NUM_BANDS,
   NUM_RESONATOR_PARAMS,
   G,
+  RES_KNOB_FEEDBACK,
   bandParamIndex,
   dbToGain,
+  fbKnobFactor,
+  feedbackTapGain,
   paramIndex,
+  resKnobShape,
+  resKnobWeight,
   resonanceMakeup,
 } from '../shared/params';
 import { TAP_BAND0, TAP_IN, TAP_OUT, TAP_RES_OUT } from '../shared/paramdefs/modules';
@@ -112,10 +135,14 @@ const BAND_FB_EDGE = 0.87; // fb value where the centre loop gain reaches 1
 const BAND_FB_SLOPE = 1 / BAND_FB_EDGE; // loop gain per unit fb below the edge
 const BAND_CLIP_L = 1.0; // per-band loop limiter level (bounds the fed-back signal)
 const BAND_CLIP_INV = 1 / BAND_CLIP_L;
+const HOT_LOOP_GAIN = 0.5 / 0.87; // loop gain above which a limiting loop lights HOT
 const NL_DAMP = 0.03; // amplitude-dependent extra damping (Δk at |y| = 1, analog = 1)
-const FBALL_MAX = 1.0; // Feedback-All loop gain at amount = 1
+const FBALL_MAX = FB_ALL_LOOP_MAX; // Feedback-All loop gain at amount = 1 (self-oscillation from amount ≈ 0.75 with faders at 0 dB)
 const FBALL_CLIP_L = 0.7; // Feedback-All return limit
 const FBALL_CLIP_INV = 1 / FBALL_CLIP_L;
+const COMMON_CLIP_L = 1.0; // common feedback route: limit of the summed return
+const COMMON_CLIP_INV = 1 / COMMON_CLIP_L;
+const COMMON_D_MAX = 0.9; // common route: largest instantaneous loop gain the delay-free solve accepts
 const TOL_DETUNE = 0.01; // ±0.5…1.5 % at analog = 1
 const TOL_Q = 0.05;
 const DRIFT_AMT = 0.0015;
@@ -183,6 +210,33 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private bFbExcess = new Float64Array(NB); // loop gain - 1 at fb = 1 (depends on Q)
   private bMakeup = new Float64Array(NB).fill(1); // target resonance peak gain (post loop)
   private bMakeupCur = new Float64Array(NB).fill(1); // per-sample smoothed
+  private bTap = new Float64Array(NB).fill(1); // target level in the feedback taps (cut part of the makeup)
+  private bTapCur = new Float64Array(NB).fill(1); // per-sample smoothed
+  private bFbFactor = new Float64Array(NB).fill(1); // FEEDBACK knob: factor on the band's feedback
+  private fbAllFactor = 1; // FEEDBACK knob: factor on Feedback All
+  // resonance setup (CONFIG): feedback route, knob mode, curve, band weights
+  private iRoute = paramIndex('reso.route');
+  private iKnob = paramIndex('reso.knob');
+  private iCurve = paramIndex('reso.curve');
+  private iWeight = paramIndex('reso.weight');
+  private fbRoute = 0; // 0 = each band into itself before its fader, 1 = after the faders into the common input
+  private knobMode = 0;
+  private knobCurve = 0;
+  private knobWeight = -1;
+  private kW = new Float64Array(NB).fill(1);
+  // per-sample band values shared by the filter solve and the output mix
+  private fbgA = new Float64Array(NB); // loop gain (signed)
+  private fgA = new Float64Array(NB); // post-fader gain (fader × dynamics)
+  private tapA = new Float64Array(NB); // smoothed tap level
+  private yBuf = new Float64Array(NS); // band outputs of this sample
+  // common route scratch (one channel at a time) and the envelope of its unlimited return per channel
+  private tP = new Float64Array(NB);
+  private tB = new Float64Array(NB);
+  private tA1 = new Float64Array(NB);
+  private tA2 = new Float64Array(NB);
+  private tA3 = new Float64Array(NB);
+  private tW = new Float64Array(NB);
+  private envF = new Float64Array(2);
   // toggles (ramped 0..1)
   private fbOnCur = 0;
   private fbOnTgt = 0;
@@ -292,6 +346,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
 
     this.applyParams(this.mod.eff, true);
     this.updateCoefs();
+    this.bTapCur.set(this.bTap);
 
     this.port.onmessage = (e) => this.onMessage(e.data as any);
     this.port.postMessage({ type: 'ready' });
@@ -304,7 +359,13 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         // base values; shorter arrays (resonator only, v1 senders) leave module params untouched
         if (msg.values && msg.values.length >= NUM_RESONATOR_PARAMS) {
           this.mod.setBase(msg.values);
-          if (!this.gotParams) this.applyParams(this.mod.eff, true);
+          if (!this.gotParams) {
+            // first values: start right there (filters, makeup and taps included), no glide from the defaults
+            this.applyParams(this.mod.eff, true);
+            this.updateCoefs();
+            this.bMakeupCur.set(this.bMakeup);
+            this.bTapCur.set(this.bTap);
+          }
           this.gotParams = true;
         }
         break;
@@ -478,6 +539,14 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     t[S_OUT] = dbToGain(clamp(p[G.outputGain], -24, 12));
     this.fbOnTgt = p[G.fbAllOn] >= 0.5 ? 1 : 0;
     this.bypTgt = p[G.bypass] >= 0.5 ? 1 : 0;
+    this.fbRoute = p[this.iRoute] >= 0.5 ? 1 : 0;
+    this.knobMode = p[this.iKnob] >= 0.5 ? RES_KNOB_FEEDBACK : 0;
+    this.knobCurve = clamp(Math.round(p[this.iCurve]), 0, 2);
+    const w = clamp(Math.round(p[this.iWeight]), 0, 2);
+    if (w !== this.knobWeight) {
+      this.knobWeight = w;
+      for (let b = 0; b < NB; b++) this.kW[b] = resKnobWeight(b, w);
+    }
     for (let b = 0; b < NB; b++) {
       this.bGainTgt[b] = dbToGain(p[bandParamIndex(b, 'gain')]);
       this.bResTgt[b] = clamp(p[bandParamIndex(b, 'res')], 0, 1);
@@ -502,6 +571,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.faDcX.fill(0);
     this.faDcY.fill(0);
     this.faRet.fill(0);
+    this.envF.fill(0);
+    this.yBuf.fill(0);
     this.dPk.fill(0);
     this.dGr.fill(0);
   }
@@ -517,16 +588,22 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private updateCoefs() {
     const fs = this.fs;
     const an = this.gCur[S_ANALOG];
-    const resOff = this.gCur[S_RESOFF];
+    // RESONANCE knob through its curve; per band weighted. RES mode shifts RES, FEEDBACK mode scales feedback.
+    const knob = resKnobShape(this.gCur[S_RESOFF], this.knobCurve);
+    const resMode = this.knobMode !== RES_KNOB_FEEDBACK;
+    this.fbAllFactor = resMode ? 1 : fbKnobFactor(knob);
     const fMax = 0.45 * fs;
     const dt = SUB / fs;
     const driftSlew = 1 - Math.exp(-dt / 1.5);
     for (let b = 0; b < NB; b++) {
-      let r = this.bResCur[b] + resOff;
+      const kb = knob * this.kW[b];
+      let r = this.bResCur[b] + (resMode ? kb : 0);
       r = r < 0 ? 0 : r > 1 ? 1 : r;
       const qNom = Q_MIN * Math.exp(r * Q_RANGE_LN);
       this.bFbExcess[b] = 0.15 + 0.03 * qNom;
       this.bMakeup[b] = resonanceMakeup(qNom);
+      this.bTap[b] = feedbackTapGain(qNom);
+      this.bFbFactor[b] = resMode ? 1 : fbKnobFactor(kb);
       for (let ch = 0; ch < 2; ch++) {
         const i = b * 2 + ch;
         // flush denormal-range state
@@ -604,6 +681,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const gCur = this.gCur, gTgt = this.gTgt;
     const bGainCur = this.bGainCur, bGainTgt = this.bGainTgt;
     const bMakeup = this.bMakeup, bMakeupCur = this.bMakeupCur;
+    const bTap = this.bTap, bTapCur = this.bTapCur, bFbFactor = this.bFbFactor;
+    const fbRoute = this.fbRoute;
     const bFbCur = this.bFbCur, bFbTgt = this.bFbTgt;
     const bResCur = this.bResCur, bResTgt = this.bResTgt;
     const gA = this.gA, bGainA = this.bGainA, bFbA = this.bFbA, bResA = this.bResA;
@@ -688,74 +767,171 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       const nlDamp = NL_DAMP * an;
 
       let wetL = 0, wetR = 0;
-      let faInL = 0, faInR = 0; // Feedback-All return: band sum without resonance makeup
+      let faInL = 0, faInR = 0; // feedback tap: band sum after the faders, at tap level (no resonance lift)
       let hot = false;
+
+      /* --- per band: loop gain (FEEDBACK knob applied, left = inverted), post-fader gain, tap level --- */
+      const fbgA = this.fbgA, fgA = this.fgA, tapA = this.tapA, yBuf = this.yBuf;
       for (let b = 0; b < NB; b++) {
-        const fbRaw = bFbCur[b];
-        const fbg = fbRaw <= BAND_FB_EDGE ? fbRaw * BAND_FB_SLOPE : 1 + ((fbRaw - BAND_FB_EDGE) / (1 - BAND_FB_EDGE)) * this.bFbExcess[b];
-        let yL = 0, yR = 0;
-        for (let ch = 0; ch < 2; ch++) {
-          const i = b * 2 + ch;
-          const x = ch === 0 ? xL : xR;
-          const k = cK[i];
-          let a1 = cA1[i], a2 = cA2[i], a3 = cA3[i];
-          const c1 = ic1[i], c2 = ic2[i];
-          // peak envelope of the previous output: drives the loop limiter and the analog damping
-          const ypa = Math.abs(yPrev[i]);
-          let e = env[i] * envRel;
-          if (ypa > e) e = ypa;
-          env[i] = e;
-          if (nlDamp > 0) {
-            // analog: damping grows with amplitude (soft-limited op-amp/integrator stage), so loud
-            // high-Q ringing compresses and decays faster at first, then rings on quietly.
-            const y2 = e * e;
-            const g = cG[i];
-            const ke = k + (nlDamp * y2) / (1 + 0.25 * y2);
-            a1 = 1 / (1 + g * (g + ke));
-            a2 = g * a1;
-            a3 = g * a2;
-          }
-          // loop clipper gain from previous output
-          let ge = 0;
-          if (fbg > 1e-6) {
-            // limiter acts on the amplified loop signal, so the fed-back level stays ≤ BAND_CLIP_L
-            const u = fbg * e * BAND_CLIP_INV;
-            const cg = 1 / Math.sqrt(1 + u * u);
-            if (cg < 0.8 && fbRaw > 0.5) hot = true;
-            ge = fbg * cg;
-          }
-          // delay-free solve: y = k*v1 = P + B*v0, v0 = x + ge*y
-          const B = k * a2;
-          const P = k * (a1 * c1 - a2 * c2);
-          const y = (P + B * x) / (1 - B * ge);
-          const v0 = x + ge * y;
-          const v3 = v0 - c2;
-          const v1 = a1 * c1 + a2 * v3;
-          const v2 = c2 + a2 * c1 + a3 * v3;
-          const n1 = 2 * v1 - c1;
-          const n2 = 2 * v2 - c2;
-          if (!(Math.abs(n1) + Math.abs(n2) < 1e8) || !(y === y)) {
-            this.resetSlot(i);
-            continue;
-          }
-          ic1[i] = n1;
-          ic2[i] = n2;
-          yPrev[i] = y;
-          if (ch === 0) yL = y;
-          else yR = y;
-        }
+        let fbRaw = bFbCur[b] * bFbFactor[b];
+        if (fbRaw > 1) fbRaw = 1;
+        else if (fbRaw < -1) fbRaw = -1;
+        const fa = fbRaw < 0 ? -fbRaw : fbRaw;
+        const gl = fa <= BAND_FB_EDGE ? fa * BAND_FB_SLOPE : 1 + ((fa - BAND_FB_EDGE) / (1 - BAND_FB_EDGE)) * this.bFbExcess[b];
+        fbgA[b] = fbRaw < 0 ? -gl : gl;
         let fg = bGainCur[b];
         if (dynAct) {
-          // band dynamics: after the band's own loop, before makeup and the Feedback-All tap (folded into the fader gain)
+          // band dynamics: after the band's own loop, before makeup and the taps (folded into the fader gain)
           const g = dGain[b];
           dGain[b] = g + dGStep[b];
           fg *= g;
         }
-        yL *= fg;
-        yR *= fg;
-        faInL += yL;
-        faInR += yR;
-        // resonance makeup (after the band's own loop, outside the Feedback-All loop so its
+        fgA[b] = fg;
+        tapA[b] = bTapCur[b] += (bTap[b] - bTapCur[b]) * 0.002;
+      }
+
+      if (fbRoute === 0) {
+        /* --- BAND route: every band feeds back into itself, before its fader --- */
+        for (let b = 0; b < NB; b++) {
+          const fbg = fbgA[b];
+          const fbMag = fbg < 0 ? -fbg : fbg;
+          for (let ch = 0; ch < 2; ch++) {
+            const i = b * 2 + ch;
+            const x = ch === 0 ? xL : xR;
+            const k = cK[i];
+            let a1 = cA1[i], a2 = cA2[i], a3 = cA3[i];
+            const c1 = ic1[i], c2 = ic2[i];
+            // peak envelope of the previous output: drives the loop limiter and the analog damping
+            const ypa = Math.abs(yPrev[i]);
+            let e = env[i] * envRel;
+            if (ypa > e) e = ypa;
+            env[i] = e;
+            if (nlDamp > 0) {
+              // analog: damping grows with amplitude (soft-limited op-amp/integrator stage), so loud
+              // high-Q ringing compresses and decays faster at first, then rings on quietly.
+              const y2 = e * e;
+              const g = cG[i];
+              const ke = k + (nlDamp * y2) / (1 + 0.25 * y2);
+              a1 = 1 / (1 + g * (g + ke));
+              a2 = g * a1;
+              a3 = g * a2;
+            }
+            // loop clipper gain from previous output
+            let ge = 0;
+            if (fbMag > 1e-6) {
+              // limiter acts on the amplified loop signal, so the fed-back level stays ≤ BAND_CLIP_L
+              const u = fbMag * e * BAND_CLIP_INV;
+              const cg = 1 / Math.sqrt(1 + u * u);
+              if (cg < 0.8 && fbMag > HOT_LOOP_GAIN) hot = true;
+              ge = fbg * cg;
+            }
+            // delay-free solve: y = k*v1 = P + B*v0, v0 = x + ge*y
+            const B = k * a2;
+            const P = k * (a1 * c1 - a2 * c2);
+            const y = (P + B * x) / (1 - B * ge);
+            const v0 = x + ge * y;
+            const v3 = v0 - c2;
+            const v1 = a1 * c1 + a2 * v3;
+            const v2 = c2 + a2 * c1 + a3 * v3;
+            const n1 = 2 * v1 - c1;
+            const n2 = 2 * v2 - c2;
+            if (!(Math.abs(n1) + Math.abs(n2) < 1e8) || !(y === y)) {
+              this.resetSlot(i);
+              yBuf[i] = 0;
+              continue;
+            }
+            ic1[i] = n1;
+            ic2[i] = n2;
+            yPrev[i] = y;
+            yBuf[i] = y;
+          }
+        }
+      } else {
+        /* --- COMMON route: the bands feed back after their faders into the shared input of all bands --- */
+        const tP = this.tP, tB = this.tB, tA1 = this.tA1, tA2 = this.tA2, tA3 = this.tA3, tW = this.tW, envF = this.envF;
+        for (let ch = 0; ch < 2; ch++) {
+          const x = ch === 0 ? xL : xR;
+          // every band output is linear in the shared input u: y = P + B·u
+          let sWP = 0, sWB = 0;
+          for (let b = 0; b < NB; b++) {
+            const i = b * 2 + ch;
+            const k = cK[i];
+            let a1 = cA1[i], a2 = cA2[i], a3 = cA3[i];
+            const c1 = ic1[i], c2 = ic2[i];
+            const ypa = Math.abs(yPrev[i]);
+            let e = env[i] * envRel;
+            if (ypa > e) e = ypa;
+            env[i] = e;
+            if (nlDamp > 0) {
+              const y2 = e * e;
+              const g = cG[i];
+              const ke = k + (nlDamp * y2) / (1 + 0.25 * y2);
+              a1 = 1 / (1 + g * (g + ke));
+              a2 = g * a1;
+              a3 = g * a2;
+            }
+            const P = k * (a1 * c1 - a2 * c2);
+            const B = k * a2;
+            const w = fbgA[b] * fgA[b] * tapA[b];
+            tP[b] = P;
+            tB[b] = B;
+            tA1[b] = a1;
+            tA2[b] = a2;
+            tA3[b] = a3;
+            tW[b] = w;
+            sWP += w * P;
+            sWB += w * B;
+          }
+          // limiter on the summed return (envelope of the unlimited return), then the delay-free solve
+          // u = x + sc·Σ w·y  →  u = (x + sc·Σ w·P) / (1 − sc·Σ w·B)
+          const ef = envF[ch];
+          const ul = ef * COMMON_CLIP_INV;
+          let sc = 1 / Math.sqrt(1 + ul * ul);
+          if (sc < 0.8) hot = true;
+          let d = sc * sWB;
+          if (d > COMMON_D_MAX) {
+            sc *= COMMON_D_MAX / d;
+            d = COMMON_D_MAX;
+          }
+          const u = (x + sc * sWP) / (1 - d);
+          let F = 0;
+          for (let b = 0; b < NB; b++) {
+            const i = b * 2 + ch;
+            const c1 = ic1[i], c2 = ic2[i];
+            const a1 = tA1[b], a2 = tA2[b], a3 = tA3[b];
+            const y = tP[b] + tB[b] * u;
+            const v3 = u - c2;
+            const v1 = a1 * c1 + a2 * v3;
+            const v2 = c2 + a2 * c1 + a3 * v3;
+            const n1 = 2 * v1 - c1;
+            const n2 = 2 * v2 - c2;
+            if (!(Math.abs(n1) + Math.abs(n2) < 1e8) || !(y === y)) {
+              this.resetSlot(i);
+              yBuf[i] = 0;
+              continue;
+            }
+            ic1[i] = n1;
+            ic2[i] = n2;
+            yPrev[i] = y;
+            yBuf[i] = y;
+            F += tW[b] * y;
+          }
+          const fAbs = F < 0 ? -F : F;
+          let e2 = ef * envRel;
+          if (fAbs > e2) e2 = fAbs;
+          envF[ch] = e2 < 1e8 ? e2 : 0;
+        }
+      }
+
+      /* --- output: fader, taps, resonance makeup, spread --- */
+      for (let b = 0; b < NB; b++) {
+        const fg = fgA[b];
+        let yL = yBuf[b * 2] * fg;
+        let yR = yBuf[b * 2 + 1] * fg;
+        const tp = tapA[b];
+        faInL += yL * tp;
+        faInR += yR * tp;
+        // resonance makeup (after the band's own loop, outside the feedback loops so their
         // self-oscillation edge does not move with resonance)
         const mk = (bMakeupCur[b] += (bMakeup[b] - bMakeupCur[b]) * 0.002);
         yL *= mk;
@@ -782,7 +958,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       }
 
       /* --- Feedback All loop (one-sample delay) --- */
-      const faG = gCur[S_FBALL] * fbOn;
+      const faG = gCur[S_FBALL] * fbOn * this.fbAllFactor;
       const lpA = faLpA;
       {
         faLp[0] += (faInL - faLp[0]) * lpA;
@@ -794,7 +970,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         faDcX[1] = faLp[1];
         faDcY[0] = h0;
         faDcY[1] = h1;
-        if (faG > 1e-6) {
+        if (faG > 1e-6 || faG < -1e-6) {
           // soft clip after the gain: the return never exceeds FBALL_CLIP_L
           const r0 = faG * h0, r1 = faG * h1;
           const u0 = r0 * FBALL_CLIP_INV, u1 = r1 * FBALL_CLIP_INV;

@@ -174,6 +174,7 @@ const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
   const reading = (hz) => {
     const proc = loadProcessor();
     const v = P.defaultValues();
+    for (let b = 0; b < P.NUM_BANDS; b++) v[idx(`band${b}.res`)] = 0.45; // narrow bands (the default ones are broad and overlap)
     for (const [n, tap] of [[1, 'Band 3'], [2, 'Band 8'], [3, 'In']]) {
       v[idx(`ef${n}.on`)] = 1;
       v[idx(`ef${n}.tap`)] = TAP[tap];

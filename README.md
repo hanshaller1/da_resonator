@@ -27,7 +27,7 @@ src/
   dsp/modules/              LFO, Clock-Mod, Envelope Follower, Filter (laufen im Worklet)
   core/AudioEngine.ts       AudioContext, Quellen, Parameter-Transport
   core/ModController.ts     Routen anlegen/prüfen, Readouts für die UI
-  core/state.ts             Snapshot-Format v2 (Presets), Migration von v1
+  core/state.ts             Snapshot-Format v3 (Presets), Migration von v1 und v2
   presets/                  Preset-Speicher und Werks-Presets
   ui/shell/                 Bühne 1200 × 700 (skaliert), Register, Fader-Block, Global-Spalte, Band-Achse
   ui/tabs/                  Die 10 Register (FB, FILTER, CLK MOD, DYN EQ, MACRO, ENV MOD, LFO MOD, PLAY/LOAD, SPECTR, CONFIG)
@@ -53,6 +53,27 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
 - Die Modulationsmatrix ist pro Quelle verteilt: jedes Quellen-Register (CLK, ENV, LFO, MACRO) zeigt die Ziele
   seiner Quelle mit Tiefe; Rechtsklick auf jeden Regler öffnet weiterhin dessen Modulation.
+
+### Resonanz und Feedback (CONFIG → Resonance)
+
+Stand nach dem DSP-Durchgang vom 16.10.2026, siehe `docs/dsp-durchgang-2026-10-16.md`.
+
+- **Bänder:** RES pro Band stellt die Güte von 0,6 bis 120 ein. Grundwert und INIT sind breite Bänder wie an der
+  Hardware (RES 0,03, Güte 0,7). Stehen dann alle Fader auf 0 dB, ist die Summe flach bei 0 dB.
+  Ab RES 0,45 werden die Bänder schmaler und lauter wie bisher.
+- **FB pro Band**, Einstellung FB:
+  - BAND (Standard): Jedes Band speist nur sich selbst zurück, vor dem Fader. Eigenschwingung ab 0,87.
+  - COMMON: Die Bänder speisen nach ihren Fadern in den gemeinsamen Eingang aller Bänder, wie an der Hardware.
+    Ein hochgezogener Fader lässt sein Band klingeln, und die Bänder regen sich gegenseitig an.
+- **RESONANCE-Knopf**, Einstellung KNOB:
+  - RES (Standard): verschiebt RES der Bänder.
+  - FEEDBACK: skaliert alles Feedback (FB pro Band und FB ALL). In der Mitte wirkt es wie eingestellt,
+    rechts bis zum Doppelten, links über null bis invertiert (negatives Feedback dämpft).
+  - CURVE: Drehweg LIN, LOG (schnell, dann fein) oder EXP (fein, dann schnell).
+  - BANDS: Der Knopf wirkt auf alle Bänder gleich (ALL), zu den Höhen ansteigend (HIGHS) oder zu den Tiefen ansteigend (LOWS).
+- **FB ALL:** Eigenschwingung ab AMT ≈ 0,75 mit Fadern auf 0 dB, bei breiten wie schmalen Bändern.
+  Ältere Presets werden beim Laden umgerechnet und klingen gleich.
+- Die vier Einstellungen werden im Preset gespeichert und nicht moduliert.
 
 ### Audio-Eingang (Synths, Elektron)
 

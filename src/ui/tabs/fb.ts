@@ -8,7 +8,7 @@ import type { EngineAPI } from '../../core/types';
 import { BAND_FREQS, NUM_BANDS, bandParamId, formatValue } from '../../shared/params';
 import { Knob } from '../components/knob';
 import { h, toggleClass } from '../dom';
-import { readModel, responseAt, type ResponseModel } from '../response';
+import { bandResFb, readModel, responseAt, type ResponseModel } from '../response';
 import { colCenter } from '../shell/bandAxis';
 import { freqText } from '../shell/faders';
 import { registerTab } from '../shell/tabs';
@@ -37,15 +37,15 @@ function statusLine(engine: EngineAPI, el: HTMLElement): void {
     hot,
   );
   const sync = () => {
-    res.textContent = val('resOffset');
+    res.textContent = `${val('resOffset')}${p.get('reso.knob') >= 0.5 ? ' (feedback)' : ''}`;
     spread.textContent = val('spread');
     fbAll.textContent = p.get('fbAllOn') >= 0.5 ? `on ${val('fbAll')} · tone ${val('fbAllTone')}` : 'off';
     const n = Array.from({ length: NUM_BANDS }, (_, b) => p.get(bandParamId(b, 'fb')) > 0.02).filter(Boolean).length;
-    bands.textContent = n ? `${n} band${n === 1 ? '' : 's'}` : 'none';
+    bands.textContent = (n ? `${n} band${n === 1 ? '' : 's'}` : 'none') + (p.get('reso.route') >= 0.5 ? ' · common' : '');
   };
   sync();
   p.subscribeAll((id) => {
-    if (id === 'resOffset' || id === 'spread' || id.startsWith('fbAll') || /^band\d\.fb$/.test(id)) sync();
+    if (id === 'resOffset' || id === 'spread' || id.startsWith('fbAll') || id.startsWith('reso.') || /^band\d\.fb$/.test(id)) sync();
   });
   let wasHot = false;
   engine.meters.subscribe((f) => {
@@ -105,10 +105,9 @@ registerTab({
     function frame(dt: number) {
       const running = engine.state === 'running';
       const f = engine.meters.latest();
-      const fbAll = p.get('fbAllOn') >= 0.5 ? p.get('fbAll') : 0;
       let changed = false;
       for (let b = 0; b < NUM_BANDS; b++) {
-        const a = Math.min(1, p.get(bandParamId(b, 'fb')) + fbAll);
+        const a = Math.abs(bandResFb(p, b).fb);
         const isHot = f?.hot && running && a > 0.02 ? 1 : 0;
         if (a !== fbAmt[b] || isHot !== hot[b]) {
           fbAmt[b] = a;

@@ -178,7 +178,8 @@ export interface StateProvider {
 
 export interface EngineSnapshot {
   format: 'da-resonator';
-  version: 2;
+  /** 3 since 2026-10-16 (older ones are migrated on load, core/state.ts) */
+  version: number;
   /** base value of every param, by id */
   params: Record<string, number>;
   routes: { slot: number; source: string; target: string }[];

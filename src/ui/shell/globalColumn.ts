@@ -16,6 +16,12 @@ export function buildGlobalColumn(engine: EngineAPI): HTMLElement {
 
   const input = new Knob(p, 'inputGain', { size: 'md', label: 'INPUT', ariaLabel: 'Input gain' });
   const res = new Knob(p, 'resOffset', { size: 'lg', label: 'RESONANCE', ariaLabel: 'Global resonance' });
+  // what the knob does is set in CONFIG (shift RES, or scale all feedback like the hardware)
+  const syncResTitle = () => {
+    res.el.title = p.get('reso.knob') >= 0.5 ? 'Scales all feedback: centre as set, right up to double, left inverted (CONFIG)' : 'Shifts RES of the bands (CONFIG)';
+  };
+  syncResTitle();
+  p.subscribe('reso.knob', syncResTitle);
   const spread = new Knob(p, 'spread', { size: 'md', label: 'SPREAD', ariaLabel: 'Odd/even spread' });
   const fbOn = new ParamToggle(p, 'fbAllOn', { label: 'FB ALL', tone: 'fb', ariaLabel: 'Feedback all bands' });
   const fbAmt = new Knob(p, 'fbAll', { size: 'sm', tone: 'fb', label: 'AMT', ariaLabel: 'Feedback all amount' });

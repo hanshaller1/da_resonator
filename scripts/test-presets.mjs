@@ -88,11 +88,37 @@ const warnSpy = () => {
     st.params['band0.gain'] === -6 &&
     st.params.mix === 0.5 &&
     st.params.fbAllOn === 1 &&
-    st.params['band1.res'] === Math.fround(e.params.spec('band1.res').def) &&
+    st.params['band1.res'] === Math.fround(0.45) && // missing params keep the defaults of their version (v1/v2: narrow bands)
     st.routes.length === 0 &&
     parsed.warnings.some((w) => /1 unknown parameter/.test(w)) &&
     J(direct.getState().params) === J(st.params);
   check('2 v1 migration (flat param map)', ok, `name "${p.name}", warnings: ${parsed.warnings.join('; ')}`);
+}
+
+/* ---------- 2b. v2 → v3: Feedback All keeps its loop gain, routes onto it too; v3 stays as it is ---------- */
+{
+  const P = importTs('src/shared/params.ts');
+  const v2 = {
+    format: 'da-resonator',
+    version: 2,
+    params: { fbAllOn: 1, fbAll: 0.65, 'band3.res': 0.03, 'route0.depth': 0.5 },
+    routes: [{ slot: 0, source: 'lfo1', target: 'fbAll' }],
+    triggers: [],
+    modules: {},
+  };
+  const e = makeEngine();
+  e.setState(v2);
+  const st = e.getState();
+  // expected: the old loop gain (amount × 1.0, no tap) over the new one (× 1.3 × fader-weighted tap level)
+  let tap = 0;
+  for (let b = 0; b < 10; b++) tap += P.feedbackTapGain(P.resToQ(b === 3 ? 0.03 : 0.45)) / 10;
+  const k = 1 / (P.FB_ALL_LOOP_MAX * tap);
+  const near = (a, b) => Math.abs(a - b) < 1e-5;
+  const conv = near(st.params.fbAll, 0.65 * k) && near(st.params['route0.depth'], 0.5 * k) && st.params['band4.res'] === Math.fround(0.45) && st.version === 3;
+  const again = makeEngine();
+  again.setState(st);
+  const stable = J(again.getState()) === J(st);
+  check('2b v2 → v3 Feedback All scale, v3 untouched', conv && stable, `fbAll 0.65 → ${st.params.fbAll.toFixed(4)} (k ${k.toFixed(4)}), depth → ${st.params['route0.depth'].toFixed(4)}, reload stable ${stable}`);
 }
 
 /* ---------- 3. import validation: broken input never throws, only reports ---------- */

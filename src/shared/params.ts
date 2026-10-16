@@ -25,6 +25,7 @@ import {
   filterParams,
   lfoParams,
   macroParams,
+  resoParams,
   routeParams,
 } from './paramdefs/modules';
 
@@ -75,10 +76,10 @@ const GLOBAL_DEFS: Def[] = [
   { id: 'bypass',     label: 'Bypass',         short: 'BYP',   min: 0,   max: 1,     def: 0,    unit: '',   curve: 'toggle', modulatable: false },
 ];
 
-/** Per-band params, in this order, for every band. */
+/** Per-band params, in this order, for every band. RES default = RES_DEFAULT (broad bands, see below). */
 const BAND_DEFS: Def[] = [
   { id: 'gain', label: 'Level',     short: 'LVL', min: FADER_MIN_DB, max: FADER_MAX_DB, def: 0,   unit: 'dB', curve: 'fader', modulatable: true },
-  { id: 'res',  label: 'Resonance', short: 'RES', min: 0,            max: 1,            def: 0.45, unit: '%',  curve: 'lin',   modulatable: true },
+  { id: 'res',  label: 'Resonance', short: 'RES', min: 0,            max: 1,            def: 0.03, unit: '%',  curve: 'lin',   modulatable: true },
   { id: 'fb',   label: 'Feedback',  short: 'FB',  min: 0,            max: 1,            def: 0,   unit: '%',  curve: 'lin',   modulatable: true },
 ];
 export const BAND_PARAM_KEYS = ['gain', 'res', 'fb'] as const;
@@ -112,6 +113,7 @@ for (let n = 1; n <= NUM_EFS; n++) addModule(`ef${n}`, 'ef', efParams(n));
 for (let n = 1; n <= NUM_MACROS; n++) addModule(`macro${n}`, 'macro', macroParams(n));
 addModule('clock', 'clock', clockParams());
 for (let r = 0; r < NUM_ROUTES; r++) addModule(`route${r}`, 'route', routeParams(r));
+addModule('reso', 'resonator', resoParams());
 
 export const NUM_PARAMS = PARAMS.length;
 
@@ -246,13 +248,56 @@ export function resToQ(r: number): number {
   r = Math.min(1, Math.max(0, r));
   return RES_Q_MIN * Math.pow(RES_Q_MAX / RES_Q_MIN, r);
 }
+/** default band RES: broad bands like the hardware (Q 0.7, 17 dB/decade); all faders at 0 dB then sum flat */
+export const RES_DEFAULT = 0.03;
 /**
- * Peak gain of a band at a given Q. Like an analog resonant bandpass, more resonance
- * lifts the centre (peak ∝ Q^0.7) instead of only narrowing it, so turning resonance up
- * sounds fuller and rings louder. Normalised to 0 dB at the default resonance (0.45).
+ * Peak gain of a band at a given Q, normalised to 0 dB at RES 0.45 (Q 6.5).
+ * Above it, more resonance lifts the centre like an analog resonant bandpass (peak ∝ Q^0.7), so turning
+ * resonance up sounds fuller and rings louder. Below it, broad bands overlap and add up, so they are
+ * lowered less (Q^0.4): with every band at Q 0.7 and 0 dB the sum is flat at 0 dB.
  */
 export const RES_MAKEUP_EXP = 0.7;
+export const RES_MAKEUP_EXP_LOW = 0.4;
 export const RES_Q_REF = resToQ(0.45);
 export function resonanceMakeup(q: number): number {
-  return Math.pow(q / RES_Q_REF, RES_MAKEUP_EXP);
+  const x = q / RES_Q_REF;
+  return Math.pow(x, x >= 1 ? RES_MAKEUP_EXP : RES_MAKEUP_EXP_LOW);
+}
+/**
+ * Level of a band in the feedback taps (FB ALL, common feedback route): the cut of the makeup only.
+ * Broad bands then feed back like one flat band, while the lift of high resonance stays out of the loops.
+ */
+export function feedbackTapGain(q: number): number {
+  return Math.min(1, resonanceMakeup(q));
+}
+
+/**
+ * Feedback All: loop gain at amount 1. With the faders at 0 dB the loop starts to oscillate at amount ≈ 0.75,
+ * for any RES (the tap takes broad bands at their compensated level). Snapshots before v3 used 1.0 and an
+ * uncompensated tap (core/state.ts converts them).
+ */
+export const FB_ALL_LOOP_MAX = 1.3;
+export const FB_ALL_LOOP_MAX_V2 = 1.0;
+/** band RES default of snapshots before v3 */
+export const RES_DEFAULT_V2 = 0.45;
+
+/* ---------- RESONANCE knob (CONFIG: knob, curve, bands) ---------- */
+
+export const RES_KNOB_RES = 0;
+export const RES_KNOB_FEEDBACK = 1;
+/** knob travel through the curve (0 linear, 1 log: fast first, 2 exp: fine first), sign kept: -1..1 → -1..1 */
+export function resKnobShape(p: number, curve: number): number {
+  const a = Math.min(1, Math.abs(p));
+  const s = curve === 1 ? Math.log10(1 + 9 * a) : curve === 2 ? (Math.pow(10, a) - 1) / 9 : a;
+  return p < 0 ? -s : s;
+}
+/** share of the knob that reaches band b (0 all alike, 1 rising to the highs, 2 rising to the lows) */
+export function resKnobWeight(b: number, weight: number): number {
+  if (weight === 1) return b / (NUM_BANDS - 1);
+  if (weight === 2) return (NUM_BANDS - 1 - b) / (NUM_BANDS - 1);
+  return 1;
+}
+/** FEEDBACK knob: factor on the feedback from the shaped knob value: centre ×1 (as set), right ×2, left through 0 to ×−1 */
+export function fbKnobFactor(s: number): number {
+  return s >= 0 ? 1 + s : 1 + 2 * s;
 }
