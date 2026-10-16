@@ -41,7 +41,7 @@ export function buildClockPage(engine: EngineAPI): { el: HTMLElement; status(): 
   };
   const usersRow = () => {
     const text = h('span', { class: 'cfg-instate clk-users' });
-    return { text, el: h('div', { class: 'cfg-row', title: 'LFOs and clock mods that are on and chose this clock (INT · MIDI in LFO MOD and CLK MOD). (RATE): the LFO runs free; choose a DIV to sync it' }, h('span', { class: 'cfg-key' }, 'USED BY'), text) };
+    return { text, el: h('div', { class: 'cfg-row', title: 'LFOs and clock mods that are on and chose this clock (RATE · INT · MIDI in LFO MOD, INT · MIDI in CLK MOD)' }, h('span', { class: 'cfg-key' }, 'USED BY'), text) };
   };
 
   /* ---------- internal clock ---------- */
@@ -95,7 +95,7 @@ export function buildClockPage(engine: EngineAPI): { el: HTMLElement; status(): 
     h(
       'p',
       { class: 'cfg-note' },
-      'Both clocks can be on at once. Each LFO (on DIV) and each clock mod chooses its clock with INT · MIDI in LFO MOD and CLK MOD; the choice is saved with the preset. While its clock is off it follows the other one; with both off it stands still.',
+      'Both clocks can be on at once. Each clock mod chooses its clock with INT · MIDI in CLK MOD, each LFO with RATE · INT · MIDI in LFO MOD (RATE: free on its RATE knob). The choice is saved with the preset. While its clock is off a module follows the other one; with both off it stands still.',
     ),
     h(
       'p',

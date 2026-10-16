@@ -171,30 +171,42 @@ export function bpmText(bpm: number): string {
 }
 
 /**
- * INT · MIDI of one LFO or clock mod (param .clk). The MIDI button lights while MIDI clock comes in.
- * While the chosen clock is off its button shows dim: the module follows the other one.
+ * INT · MIDI of one LFO or clock mod (param .clk); for an LFO RATE · INT · MIDI: RATE lets it run
+ * free on its RATE knob (param .sync 0), INT or MIDI syncs it to that clock with DIV (.sync 1).
+ * The MIDI button lights while MIDI clock comes in. While the chosen clock is off its button shows
+ * dim: the module follows the other one.
  */
-export function clockChoice(engine: EngineAPI, module: string, name: string): HTMLElement {
+export function clockChoice(engine: EngineAPI, module: string, name: string, withRate = false): HTMLElement {
   const p = engine.params;
-  const id = `${module}.clk`;
+  const clk = `${module}.clk`;
+  const sync = `${module}.sync`;
+  const set = (id: string, v: number) => {
+    if (p.get(id) === v) return;
+    p.beginGesture(id);
+    p.set(id, v);
+    p.endGesture(id);
+  };
   const led = h('span', { class: 'inst-led', 'aria-hidden': 'true' });
-  const btns = (['int', 'midi'] as const).map((c) => {
-    const b = h(
-      'button',
-      { type: 'button', class: 'inst-btn', title: c === 'int' ? `${name} follows the internal clock (CONFIG → CLOCK)` : `${name} follows the MIDI clock (CONFIG → CLOCK)` },
-      ...(c === 'midi' ? [led, 'MIDI'] : ['INT']),
-    );
+  const TITLES = {
+    rate: `${name} runs free on its RATE knob`,
+    int: `${name} follows the internal clock${withRate ? ' with DIV' : ''} (CONFIG → CLOCK)`,
+    midi: `${name} follows the MIDI clock${withRate ? ' with DIV' : ''} (CONFIG → CLOCK)`,
+  };
+  const choices = withRate ? (['rate', 'int', 'midi'] as const) : (['int', 'midi'] as const);
+  const btns = choices.map((c) => {
+    const b = h('button', { type: 'button', class: 'inst-btn', title: TITLES[c] }, ...(c === 'midi' ? [led, 'MIDI'] : [c.toUpperCase()]));
     b.addEventListener('click', () => {
-      p.beginGesture(id);
-      p.set(id, c === 'midi' ? 1 : 0);
-      p.endGesture(id);
+      if (c === 'rate') return set(sync, 0);
+      set(clk, c === 'midi' ? 1 : 0);
+      if (withRate) set(sync, 1);
     });
     return { c, b };
   });
-  const el = h('span', { class: 'inst clk-src', role: 'group', 'aria-label': `${name} clock`, 'data-param': id }, ...btns.map((x) => x.b));
+  const el = h('span', { class: 'inst clk-src', role: 'group', 'aria-label': `${name} clock`, 'data-param': clk }, ...btns.map((x) => x.b));
   let last = '';
   frameLoop.add(() => {
-    const ch = chosenClock(engine, module);
+    const free = withRate && p.get(sync) < 0.5;
+    const ch = free ? 'rate' : chosenClock(engine, module);
     const fol = followedClock(engine, module);
     const none = !clockOn(engine, fol);
     const lit = clockOn(engine, 'midi') && fresh(engine);
@@ -203,15 +215,18 @@ export function clockChoice(engine: EngineAPI, module: string, name: string): HT
     last = key;
     for (const { c, b } of btns) {
       toggleClass(b, 'is-selected', ch === c);
-      toggleClass(b, 'is-standby', ch === c && (fol !== c || none));
+      toggleClass(b, 'is-standby', ch === c && c !== 'rate' && (fol !== c || none));
       b.setAttribute('aria-pressed', String(ch === c));
     }
     toggleClass(led, 'is-on', lit);
-    el.title = none
-      ? `Both clocks are off (CONFIG → CLOCK): ${name} stands still`
-      : fol !== ch
-        ? `The ${CLOCK_WORD[ch]} clock is off: ${name} follows the ${CLOCK_WORD[fol]} clock`
-        : '';
+    el.title =
+      ch === 'rate'
+        ? ''
+        : none
+          ? `Both clocks are off (CONFIG → CLOCK): ${name} stands still`
+          : fol !== ch
+            ? `The ${CLOCK_WORD[ch]} clock is off: ${name} follows the ${CLOCK_WORD[fol]} clock`
+            : '';
   });
   return el;
 }
@@ -272,11 +287,11 @@ export function clockState(engine: EngineAPI, which: ClockName): { text: string;
   return { text: `On · ${src} · ${run ? 'running' : 'stopped'}`, led: run ? 'on' : 'wait' };
 }
 
-/** the LFOs and clock mods that are on and chose this clock: "LFO1", "CM2" …; an LFO on RATE runs free: "LFO3 (RATE)" */
+/** the LFOs (on INT or MIDI, not RATE) and clock mods that are on and chose this clock: "LFO1", "CM2" … */
 export function clockUsers(engine: EngineAPI, which: ClockName): string[] {
   const p = engine.params;
   const out: string[] = [];
-  for (let n = 1; n <= NUM_LFOS; n++) if (p.get(`lfo${n}.on`) >= 0.5 && chosenClock(engine, `lfo${n}`) === which) out.push(p.get(`lfo${n}.sync`) >= 0.5 ? `LFO${n}` : `LFO${n} (RATE)`);
+  for (let n = 1; n <= NUM_LFOS; n++) if (p.get(`lfo${n}.on`) >= 0.5 && p.get(`lfo${n}.sync`) >= 0.5 && chosenClock(engine, `lfo${n}`) === which) out.push(`LFO${n}`);
   for (let n = 1; n <= NUM_CMODS; n++) if (p.get(`cmod${n}.on`) >= 0.5 && chosenClock(engine, `cmod${n}`) === which) out.push(`CM${n}`);
   return out;
 }
@@ -316,10 +331,19 @@ export function clockInfo(engine: EngineAPI): HTMLElement {
   return h('div', { class: 'clk-info' }, rows[0].el, rows[1].el, h('div', { class: 'cfg-row clk-info-from' }, src));
 }
 
-/** status line group of one LFO or clock mod: the tempo of the clock it follows, INT · MIDI, beat LEDs */
-export function clockStatus(engine: EngineAPI, module: string, name: string): HTMLElement {
+/**
+ * status line group of one LFO or clock mod: the tempo of the clock it follows, INT · MIDI (an LFO:
+ * RATE · INT · MIDI), beat LEDs. Tempo and beats show dim while an LFO runs free on RATE.
+ */
+export function clockStatus(engine: EngineAPI, module: string, name: string, withRate = false): HTMLElement {
   const follow = () => followedClock(engine, module);
-  return h('span', { class: 'clk-clock' }, tempoReadout(engine, follow), clockChoice(engine, module, name), beatLeds(engine, follow));
+  const el = h('span', { class: 'clk-clock' }, tempoReadout(engine, follow), clockChoice(engine, module, name, withRate), beatLeds(engine, follow));
+  if (withRate) {
+    const sync = () => toggleClass(el, 'is-rate', engine.params.get(`${module}.sync`) < 0.5);
+    sync();
+    engine.params.subscribe(`${module}.sync`, sync);
+  }
+  return el;
 }
 
 /** TEMPO, RUN, TAP and RESET of the internal clock (CONFIG → CLOCK) */

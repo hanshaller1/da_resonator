@@ -1,9 +1,8 @@
 /**
- * LFO MOD tab: LFO 1–4, with the clock of the selected LFO in the status line (tempo, INT · MIDI
- * (param lfoN.clk), beat LEDs). Control
- * row = the selected LFO (SHAPE … UNI). RATE or DIV, whichever was set last, decides the speed:
- * turning RATE lets the LFO run free, choosing a DIV syncs it to the clock (param lfoN.sync, no
- * button of its own). Visualisation = two cycles of its waveform as set (shape, morph, phase,
+ * LFO MOD tab: LFO 1–4, with the clock of the selected LFO in the status line: tempo, RATE · INT ·
+ * MIDI and beat LEDs. RATE lets the LFO run free on its RATE knob (lfoN.sync 0); INT or MIDI syncs
+ * it with DIV to that clock (lfoN.sync 1, lfoN.clk). The knob not in use shows dim. Control row =
+ * the selected LFO (SHAPE … UNI). Visualisation = two cycles of its waveform as set (shape, morph, phase,
  * smooth, level, polarity) next to a scrolling trace of its live output, and its targets on the right.
  */
 import { DIVISIONS } from '../../shared/paramdefs/types';
@@ -86,8 +85,8 @@ registerTab({
     });
     src = st;
     st.routes.refresh();
-    // per LFO: the tempo of its clock, INT · MIDI, beat LEDs
-    const clocks = Array.from({ length: NUM_LFOS }, (_, i) => clockStatus(engine, `lfo${i + 1}`, `LFO ${i + 1}`));
+    // per LFO: the tempo of its clock, RATE · INT · MIDI, beat LEDs
+    const clocks = Array.from({ length: NUM_LFOS }, (_, i) => clockStatus(engine, `lfo${i + 1}`, `LFO ${i + 1}`, true));
     st.desc.after(...clocks);
     st.track(clocks);
 
@@ -103,23 +102,14 @@ registerTab({
     st.slot(6, knob('level'));
     st.slot(7, (i, m) => new ParamToggle(p, `${m}.uni`, { label: 'UNI', tone: 'neutral', ariaLabel: `${L(i)} unipolar` }).el);
 
-    // the last edit decides: RATE runs free, a DIV follows the clock
-    p.onGesture((id, phase) => {
-      const k = phase === 'begin' ? /^(lfo\d)\.(rate|div)$/.exec(id) : null;
-      if (!k) return;
-      const want = k[2] === 'div' ? 1 : 0;
-      if ((p.get(`${k[1]}.sync`) >= 0.5 ? 1 : 0) !== want) p.set(`${k[1]}.sync`, want);
-    });
-
     const syncView = () => {
       for (let i = 0; i < NUM_LFOS; i++) {
         const m = `lfo${i + 1}`;
         const sync = p.get(`${m}.sync`) >= 0.5;
         toggleClass(rate[i], 'is-dim', sync);
         toggleClass(div[i], 'is-dim', !sync);
-        clocks[i].title = sync ? '' : `LFO ${i + 1} runs free on RATE; choose a DIV to sync it to its clock`;
-        rate[i].title = sync ? 'Turn RATE to let the LFO run free' : '';
-        div[i].title = sync ? '' : 'Choose a DIV to sync the LFO to the clock';
+        rate[i].title = sync ? 'Not in use: the LFO follows its clock with DIV (RATE in the status line lets it run free)' : '';
+        div[i].title = sync ? '' : 'Not in use: the LFO runs free on RATE (INT or MIDI in the status line syncs it)';
         const s = Math.max(0, Math.min(MORPH_NAMES.length - 1, Math.round(p.get(`${m}.shape`))));
         const name = morph[i].querySelector('.knob-name');
         if (name) name.textContent = MORPH_NAMES[s];

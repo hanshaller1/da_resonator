@@ -57,8 +57,9 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK (rechts in der Statuszeile). GENERAL: Source mit dem
   Audio-Eingang unter LOAD FILE, Clock (nur Anzeige), Resonance mit Display darunter, Help. Der Audio-Zustand
   steht im Kopf.
-- **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder LFO (auf DIV) und jeder Clock-Mod
-  wählt seinen Takt selbst (INT · MIDI, Parameter `lfoN.clk` / `cmodN.clk`, im Preset gespeichert).
+- **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder Clock-Mod und jeder LFO wählt
+  seinen Takt selbst (Clock-Mod INT · MIDI, LFO RATE · INT · MIDI; Parameter `cmodN.clk`, `lfoN.clk` und
+  `lfoN.sync`, im Preset gespeichert).
   - Ist der gewählte Takt aus, folgt das Modul dem anderen; sind beide aus, steht es still.
   - CONFIG → GENERAL zeigt beide: INT und MIDI je mit Tempo und 4 Schlag-LEDs, bei MIDI dazu das Quellgerät.
     Die LED vor dem Namen leuchtet, wenn der Takt an ist.
@@ -66,11 +67,12 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
     SOURCE (eigenes Gerät für die Clock), Tempo, Schlag-LEDs und OFFSET. Die beiden ON sind unabhängig.
     USED BY nennt die LFOs und Clock-Mods, die den Takt gewählt haben.
   - CLK MOD und LFO MOD zeigen in der Statuszeile für das gewählte Modul das Tempo seines Takts (Klick öffnet
-    CONFIG → CLOCK), INT · MIDI und die Schlag-LEDs. Ist der gewählte Takt aus, ist sein Knopf nur umrandet.
+    CONFIG → CLOCK), INT · MIDI (beim LFO RATE · INT · MIDI) und die Schlag-LEDs. Ist der gewählte Takt aus, ist sein Knopf nur umrandet.
     Das Tempo bleibt Teil des Presets.
   - Trigger-Ausgänge: INT Clock Beat (`clock.beat`) und MIDI Clock Beat (`clock.midiBeat`).
-- **LFO:** Es gibt keinen SYNC-Schalter mehr. Was zuletzt eingestellt wurde, gilt: RATE dreht das LFO frei,
-  eine DIV bindet es an den Takt. Der nicht genutzte Regler ist abgedunkelt.
+- **LFO:** RATE · INT · MIDI in der Statuszeile. RATE lässt das LFO frei auf seinem RATE-Regler laufen (Tempo und
+  Schlag-LEDs sind dann abgedunkelt), INT oder MIDI bindet es mit DIV an diesen Takt. Der nicht genutzte Regler
+  ist abgedunkelt.
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
 - Die Modulationsmatrix ist pro Quelle verteilt: jedes Quellen-Register (CLK, ENV, LFO, MACRO) zeigt die Ziele
   seiner Quelle mit Tiefe; Rechtsklick auf jeden Regler öffnet weiterhin dessen Modulation und MIDI Learn.
