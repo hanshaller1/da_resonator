@@ -125,6 +125,17 @@ export interface MidiAPI {
   readonly deviceName: string;
   /** the chosen device is plugged in and listened to */
   readonly connected: boolean;
+  /** a device of its own for the clock ('' = the clock comes from the MIDI device) and its name */
+  readonly clockDeviceId: string;
+  readonly clockDeviceName: string;
+  /** name of the device the clock comes from ('' = none chosen) */
+  readonly clockFrom: string;
+  /** the device of the clock is plugged in and listened to */
+  readonly clockConnected: boolean;
+  /** the incoming MIDI clock, followed whatever the clock source: tempo (0 = not measured yet), beats since Start, running */
+  readonly clockBpm: number;
+  readonly clockBeats: number;
+  readonly clockRunning: boolean;
   /** an Elektron device becomes the MIDI device when MIDI comes on and when it is plugged in */
   readonly autoElektron: boolean;
   /** MIDI channels 1–16, 0 = off: IN moves both sides, IN L only L, IN R only R */
@@ -143,6 +154,8 @@ export interface MidiAPI {
   enable(): Promise<void>;
   disable(): void;
   choose(id: string): void;
+  /** the device of the clock ('' = the MIDI device) */
+  chooseClock(id: string): void;
   setAutoElektron(on: boolean): void;
   setChannel(which: 'in' | 'l' | 'r', ch: number): void;
   setClockSource(src: 'int' | 'midi'): void;

@@ -1,22 +1,24 @@
 /**
- * CONFIG tab: two pages, switched in the status line.
+ * CONFIG tab: three pages, switched in the status line.
  * GENERAL: the source (select, play, level, file) with the audio input under it (channels,
- * Elektron AUTO; the device is chosen in the source list), the internal clock (TEMPO, RUN, TAP,
- * RESET, INT · MIDI) that CLK MOD and the LFOs follow, the resonance setup (feedback route, what
- * the RESONANCE knob does, its curve and bands) over display (theme, window scale), and a short
- * help. The source controls share the header's Transport, so both always agree; SRC in the header
- * opens this page.
- * MIDI: device, channels, clock and CC map (configMidi.ts).
+ * Elektron AUTO; the device is chosen in the source list), the clocks as information (INT and
+ * MIDI with tempo and beats, the MIDI source), the resonance setup (feedback route, what the
+ * RESONANCE knob does, its curve and bands) over display (theme, window scale), and a short help.
+ * The source controls share the header's Transport, so both always agree; SRC in the header opens
+ * this page.
+ * MIDI: device, channels and CC map (configMidi.ts).
+ * CLOCK: the settings of the internal and the MIDI clock (configClock.ts).
  */
 import '../../styles/tabs/config.css';
 import type { EngineState, InputChannels, ParamStoreAPI } from '../../core/types';
-import { beatLeds, clockSourceSwitch, clockState, intClockControls } from '../clock';
+import { clockInfo } from '../clock';
 import { h, toggleClass } from '../dom';
 import { audioStateText, buildLevelSlider, buildPlayButton, buildSourceSelect, formatSampleRate, getTransport } from '../header';
 import { flash } from '../shell/panelHost';
 import { DESIGN_H, DESIGN_W, onScaleChange, uiScale } from '../shell/stage';
 import { registerTab } from '../shell/tabs';
 import { getTheme, type ThemePref } from '../theme';
+import { buildClockPage } from './configClock';
 import { buildMidiPage, runWhileVisible } from './configMidi';
 
 const HELP: [string, string][] = [
@@ -54,7 +56,9 @@ function paramButtons(p: ParamStoreAPI, id: string, items: [string, string][], a
   return h('span', { class: 'inst', role: 'group', 'aria-label': ariaLabel }, ...btns);
 }
 
-/** set while mounted: show the GENERAL page (and flash the source card for 'config.source') */
+type Page = 'general' | 'midi' | 'clock';
+
+/** set while mounted: show the page of `id` (and flash the source card for 'config.source') */
 let revealHere: ((id: string) => void) | null = null;
 
 registerTab({
@@ -72,7 +76,8 @@ registerTab({
     const body = tab.useBody();
     const general = h('div', { class: 'cfg' });
     const midiPage = buildMidiPage(engine, tab.notify);
-    body.append(general, midiPage.el);
+    const clockPage = buildClockPage(engine);
+    body.append(general, midiPage.el, clockPage.el);
 
     /* ---------- source, with the audio input under LOAD FILE ---------- */
     const fileBtn = h('button', { type: 'button', class: 'btn cfg-file' }, 'LOAD FILE…');
@@ -165,25 +170,16 @@ registerTab({
       note,
     );
 
-    /* ---------- clock: the internal clock, and which clock the mods follow ---------- */
-    const ic = intClockControls(engine);
-    const clkLed = h('span', { class: 'cfg-led', 'aria-hidden': 'true' });
-    const clkState = h('span', { class: 'cfg-instate' });
-    const clock = card(
-      'Clock',
-      'cfg-clock',
-      h('div', { class: 'cfg-row' }, ic.tempo, h('span', { class: 'cfg-grow' }), ic.tap),
-      h('div', { class: 'cfg-row' }, ic.run, ic.reset, h('span', { class: 'cfg-grow' }), beatLeds(engine)),
-      h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'SOURCE'), clockSourceSwitch(engine)),
-      h('div', { class: 'cfg-row' }, clkLed, clkState),
-      h('p', { class: 'cfg-note' }, 'The clock mods and the LFOs on DIV follow this clock, everywhere. On MIDI they follow the MIDI device: Start, Stop and OFFSET are on the MIDI page.'),
+    /* ---------- clock: both clocks as information, settings on the CLOCK page ---------- */
+    const clockSettings = h('button', { type: 'button', class: 'inst-btn', title: 'Settings of both clocks' }, 'SETTINGS');
+    clockSettings.addEventListener('click', () => showPage('clock'));
+    const clock = h(
+      'section',
+      { class: 'cfg-card cfg-clock' },
+      h('div', { class: 'cfg-card-head' }, h('h3', { class: 'cfg-title micro-label' }, 'Clock'), h('span', { class: 'inst' }, clockSettings)),
+      clockInfo(engine),
+      h('p', { class: 'cfg-note' }, 'The lit LED marks the clock in use: the clock mods and the LFOs on DIV follow it. Settings on the CLOCK page.'),
     );
-    const tickClock = () => {
-      const cs = clockState(engine);
-      toggleClass(clkLed, 'is-on', cs.led === 'on');
-      toggleClass(clkLed, 'is-wait', cs.led === 'wait');
-      if (clkState.textContent !== cs.text) clkState.textContent = clkState.title = cs.text;
-    };
 
     /* ---------- resonance setup ---------- */
     const p = engine.params;
@@ -265,16 +261,22 @@ registerTab({
 
     /* ---------- status line: state, page switch GENERAL · MIDI ---------- */
     const status = h('span', { class: 'cfg-status' });
-    let page: 'general' | 'midi' = 'general';
-    const pageBtns = (['general', 'midi'] as const).map((pg) => {
-      const b = h('button', { type: 'button', class: 'inst-btn', title: pg === 'general' ? 'Source, input, clock, resonance, display' : 'MIDI device, channels, clock and CC map' }, pg.toUpperCase());
+    let page: Page = 'general';
+    const PAGE_TITLES: Record<Page, string> = {
+      general: 'Source, input, clocks, resonance, display',
+      midi: 'MIDI device, channels and CC map',
+      clock: 'Internal clock and MIDI clock',
+    };
+    const pageBtns = (['general', 'midi', 'clock'] as const).map((pg) => {
+      const b = h('button', { type: 'button', class: 'inst-btn', title: PAGE_TITLES[pg] }, pg.toUpperCase());
       b.addEventListener('click', () => showPage(pg));
       return { pg, b };
     });
-    const showPage = (pg: 'general' | 'midi') => {
+    const showPage = (pg: Page) => {
       page = pg;
       general.hidden = pg !== 'general';
       midiPage.el.hidden = pg !== 'midi';
+      clockPage.el.hidden = pg !== 'clock';
       for (const { pg: x, b } of pageBtns) {
         toggleClass(b, 'is-selected', x === pg);
         b.setAttribute('aria-pressed', String(x === pg));
@@ -282,17 +284,21 @@ registerTab({
       sync();
     };
     revealHere = (id) => {
-      showPage('general');
+      showPage(id.startsWith('clock.') ? 'clock' : 'general');
       if (id === 'config.source') requestAnimationFrame(() => flash(source));
     };
     tab.status.append(status, h('span', { class: 'tp-spacer' }), h('span', { class: 'inst', role: 'group', 'aria-label': 'Settings page' }, ...pageBtns.map((x) => x.b)));
     runWhileVisible(() => tab.visible && page === 'midi', midiPage.tick);
-    runWhileVisible(() => tab.visible && page === 'general', tickClock);
+    runWhileVisible(() => tab.visible && page === 'clock', () => {
+      clockPage.tick();
+      const t = clockPage.status();
+      if (status.textContent !== t) status.textContent = t;
+    });
     engine.midi.onChange(() => sync());
     const sync = (st: EngineState = engine.state) => {
       const txt = audioStateText(st);
       status.textContent =
-        page === 'midi' ? midiPage.status() : ['Settings', txt.label + (st === 'running' ? ` · ${formatSampleRate(engine.sampleRate)}` : ''), `Source ${t.sourceLabel}`].join(' · ');
+        page === 'midi' ? midiPage.status() : page === 'clock' ? clockPage.status() : ['Settings', txt.label + (st === 'running' ? ` · ${formatSampleRate(engine.sampleRate)}` : ''), `Source ${t.sourceLabel}`].join(' · ');
     };
     showPage('general');
     engine.onStateChange(sync);

@@ -1,9 +1,12 @@
 /**
  * MIDI input (docs/midi-2026-10-16.md): one device chosen in CONFIG (ELEKTRON AUTO takes an Elektron
  * device, also when it is plugged in later), the channels IN / IN L / IN R, the CC map with MIDI
- * learn, Program Change and the clock. Everything is remembered in the browser.
+ * learn, Program Change and the clock. The clock (clock ticks, Start, Stop, Continue) can come from
+ * a second device of its own; without one it comes from the MIDI device. Everything is remembered
+ * in the browser.
  * The clock itself runs in the worklet: clock messages go out through `clock(ev, timeStampMs)`;
- * the engine converts the time and sends them on. No MIDI out, no notes, no SysEx.
+ * the engine converts the time and sends them on. Tempo and beat of the incoming clock are also
+ * followed here, for the display while the clock runs on INT. No MIDI out, no notes, no SysEx.
  */
 import { MIDI_CONTINUE, MIDI_START, MIDI_STOP, MIDI_TICK } from '../dsp/extClock';
 import { Emitter } from './Emitter';
@@ -26,6 +29,12 @@ import type { MidiAPI, MidiInputInfo, MidiStatus, ParamStoreAPI, Unsubscribe } f
 const STORE_KEY = 'resonator.midi';
 export const OFFSET_MIN_MS = -50;
 export const OFFSET_MAX_MS = 50;
+/** MIDI clock: 24 ticks per beat; the display tempo averages up to 2 beats, from 6 tick gaps on */
+const PPQ = 24;
+const TEMPO_TICKS = 48;
+const TEMPO_MIN_GAPS = 6;
+/** a gap this long (ms) starts a new tempo measurement */
+const TEMPO_GAP_MS = 250;
 
 /* ---------- the part of Web MIDI used here (a stand-in in tests) ---------- */
 
@@ -62,6 +71,9 @@ interface Stored {
   enabled: boolean;
   deviceId: string;
   deviceName: string;
+  /** device of the clock ('' = the MIDI device) */
+  clockDeviceId: string;
+  clockDeviceName: string;
   autoElektron: boolean;
   channels: MidiChannels;
   clock: 'int' | 'midi';
@@ -70,13 +82,15 @@ interface Stored {
 }
 
 function load(storage: StorageLike | undefined): Stored {
-  const d: Stored = { enabled: false, deviceId: '', deviceName: '', autoElektron: true, channels: { ...DEFAULT_CHANNELS }, clock: 'int', offsetMs: 0, map: defaultMidiMap() };
+  const d: Stored = { enabled: false, deviceId: '', deviceName: '', clockDeviceId: '', clockDeviceName: '', autoElektron: true, channels: { ...DEFAULT_CHANNELS }, clock: 'int', offsetMs: 0, map: defaultMidiMap() };
   try {
     const s = JSON.parse(storage?.getItem(STORE_KEY) ?? 'null') as Record<string, unknown> | null;
     if (s && typeof s === 'object') {
       if (typeof s.enabled === 'boolean') d.enabled = s.enabled;
       if (typeof s.deviceId === 'string') d.deviceId = s.deviceId;
       if (typeof s.deviceName === 'string') d.deviceName = s.deviceName;
+      if (typeof s.clockDeviceId === 'string') d.clockDeviceId = s.clockDeviceId;
+      if (typeof s.clockDeviceName === 'string') d.clockDeviceName = s.clockDeviceName;
       if (typeof s.autoElektron === 'boolean') d.autoElektron = s.autoElektron;
       const c = s.channels as Partial<MidiChannels> | undefined;
       if (c && typeof c === 'object') d.channels = { in: cleanChannel(c.in, d.channels.in), l: cleanChannel(c.l, d.channels.l), r: cleanChannel(c.r, d.channels.r) };
@@ -129,6 +143,13 @@ export class MidiService implements MidiAPI {
   private st: Stored;
   private access: MidiAccessLike | null = null;
   private port: MidiInputLike | null = null;
+  /** the clock device while it is another port than the MIDI device */
+  private clockPort: MidiInputLike | null = null;
+  /** the incoming clock as seen here: tick times for the tempo, ticks since Start, Stop */
+  private tickTimes: number[] = [];
+  private ticks = 0;
+  private _clockRunning = true;
+  private _clockBpm = 0;
   private list: MidiInputInfo[] = [];
   private _status: MidiStatus;
   private _learning: string | null = null;
@@ -173,6 +194,17 @@ export class MidiService implements MidiAPI {
   get deviceName() { return this.st.deviceName; }
   /** the chosen device is plugged in and listened to */
   get connected() { return this.port !== null; }
+  /** device of the clock ('' = the MIDI device) and its name */
+  get clockDeviceId() { return this.st.clockDeviceId; }
+  get clockDeviceName() { return this.st.clockDeviceId ? this.st.clockDeviceName : ''; }
+  /** name of the device the clock comes from ('' = none chosen) */
+  get clockFrom() { return this.st.clockDeviceId ? this.st.clockDeviceName : this.st.deviceName; }
+  /** the device of the clock is plugged in and listened to */
+  get clockConnected() { return this.clockShared() ? this.port !== null : this.clockPort !== null; }
+  /** tempo of the incoming clock (0 = not measured yet), its position in beats since Start, and whether it runs */
+  get clockBpm() { return this._clockBpm; }
+  get clockBeats() { return this.ticks / PPQ; }
+  get clockRunning() { return this._clockRunning; }
   get autoElektron() { return this.st.autoElektron; }
   get channels(): MidiChannels { return { ...this.st.channels }; }
   get clockSource() { return this.st.clock; }
@@ -246,6 +278,7 @@ export class MidiService implements MidiAPI {
     if (!this.access) return;
     const before = new Set(this.list.map((d) => d.id));
     const wasConnected = this.port !== null;
+    const clockBefore = this.clockPort !== null;
     const ports = this.inputs();
     this.list = ports.map((p) => {
       const name = cleanPortName(p.name ?? '') || 'MIDI input';
@@ -261,27 +294,61 @@ export class MidiService implements MidiAPI {
       if (plug && wasConnected && !this.port) this.noticeE.emit(`${this.st.deviceName || 'The MIDI device'} disconnected. It is used again when you plug it back in.`, 'info');
       else if (plug && !wasConnected && this.port) this.noticeE.emit(`${this.st.deviceName} is back.`, 'info');
     }
+    const clockNow = this.clockPort !== null;
+    if (plug && !this.clockShared() && clockBefore !== clockNow)
+      this.noticeE.emit(clockNow ? `${this.st.clockDeviceName} is back: the clock comes from it.` : `${this.st.clockDeviceName} (clock) disconnected. It is used again when you plug it back in.`, 'info');
     this.changeE.emit();
   }
 
-  /** listen to the chosen device, if it is there (by id, else by name) */
+  /** a port by id, else by name */
+  private find(ports: MidiInputLike[], id: string, name: string): MidiInputLike | undefined {
+    if (!id) return undefined;
+    return ports.find((x) => x.id === id) ?? ports.find((x) => name && cleanPortName(x.name ?? '') === name);
+  }
+
+  /** the clock comes from the MIDI device (none of its own, or the same one) */
+  private clockShared(): boolean {
+    return !this.st.clockDeviceId || this.st.clockDeviceId === this.st.deviceId;
+  }
+
+  /** listen to the chosen devices, if they are there (by id, else by name) */
   private attach(): void {
     const ports = this.inputs();
-    const p = this.st.deviceId ? (ports.find((x) => x.id === this.st.deviceId) ?? ports.find((x) => this.st.deviceName && cleanPortName(x.name ?? '') === this.st.deviceName)) : undefined;
-    if (p === this.port && p) return;
-    this.detach();
-    if (!p) return;
-    if (p.id !== this.st.deviceId) {
-      this.st.deviceId = p.id;
+    const p = this.find(ports, this.st.deviceId, this.st.deviceName);
+    if (p !== this.port || !p) {
+      this.detach();
+      if (p) {
+        if (p.id !== this.st.deviceId) {
+          this.st.deviceId = p.id;
+          this.persist();
+        }
+        this.port = p;
+        p.onmidimessage = this.onMessage;
+      }
+    }
+    // the clock device, unless it is the MIDI device (one port has one listener)
+    let c = this.find(ports, this.st.clockDeviceId, this.st.clockDeviceName);
+    if (c && c.id !== this.st.clockDeviceId) {
+      this.st.clockDeviceId = c.id;
       this.persist();
     }
-    this.port = p;
-    p.onmidimessage = this.onMessage;
+    if (c && c === this.port) c = undefined;
+    if (c === this.clockPort && c) return;
+    this.detachClock();
+    if (!c) return;
+    this.clockPort = c;
+    c.onmidimessage = this.onClockMessage;
   }
 
   private detach(): void {
     if (this.port && this.port.onmidimessage === this.onMessage) this.port.onmidimessage = null;
     this.port = null;
+    this.detachClock();
+  }
+
+  private detachClock(): void {
+    if (this.clockPort && this.clockPort.onmidimessage === this.onClockMessage) this.clockPort.onmidimessage = null;
+    this.clockPort = null;
   }
 
   private use(d: MidiInputInfo): void {
@@ -303,6 +370,17 @@ export class MidiService implements MidiAPI {
       return;
     }
     this.use(d);
+  }
+
+  /** the device of the clock ('' = the MIDI device) */
+  chooseClock(id: string): void {
+    const d = id ? this.list.find((x) => x.id === id) : undefined;
+    this.st.clockDeviceId = d?.id ?? '';
+    this.st.clockDeviceName = d?.name ?? '';
+    this.detachClock();
+    this.attach();
+    this.resetTempo();
+    this.save();
   }
 
   setAutoElektron(on: boolean): void {
@@ -400,17 +478,52 @@ export class MidiService implements MidiAPI {
     this.handle(d, e.timeStamp);
   };
 
-  /** one message from the device (exposed for tests) */
-  handle(d: ArrayLike<number>, timeStamp: number): void {
+  private onClockMessage = (e: MidiMessageLike): void => {
+    const d = e.data;
+    if (!d || !d.length) return;
+    this.handle(d, e.timeStamp, 'clock');
+  };
+
+  private resetTempo(): void {
+    this.tickTimes.length = 0;
+    this._clockBpm = 0;
+  }
+
+  /** follow the incoming clock for the display: ticks since Start, Stop / Continue, tempo from the tick gaps */
+  private track(ev: number, t: number): void {
+    if (ev === MIDI_START) {
+      this.ticks = 0;
+      this._clockRunning = true;
+    } else if (ev === MIDI_CONTINUE) this._clockRunning = true;
+    else if (ev === MIDI_STOP) this._clockRunning = false;
+    else if (ev === MIDI_TICK) {
+      if (this._clockRunning) this.ticks++;
+      const tt = this.tickTimes;
+      if (tt.length && t - tt[tt.length - 1] > TEMPO_GAP_MS) tt.length = 0;
+      tt.push(t);
+      if (tt.length > TEMPO_TICKS + 1) tt.shift();
+      const gaps = tt.length - 1;
+      if (gaps >= TEMPO_MIN_GAPS) this._clockBpm = 60000 / (((tt[gaps] - tt[0]) / gaps) * PPQ);
+    }
+  }
+
+  /**
+   * One message (exposed for tests). `from`: the MIDI device, or the clock device of its own.
+   * The clock is taken from the clock device only; CCs and Program Change from the MIDI device only.
+   */
+  handle(d: ArrayLike<number>, timeStamp: number, from: 'main' | 'clock' = 'main'): void {
     const s = d[0];
     if (s >= 0xf8) {
       // system real-time: clock, Start, Continue, Stop
+      if (from === 'main' && !this.clockShared()) return;
       const ev = s === 0xf8 ? MIDI_TICK : s === 0xfa ? MIDI_START : s === 0xfb ? MIDI_CONTINUE : s === 0xfc ? MIDI_STOP : -1;
       if (ev < 0) return;
       this.clockAt = this.now();
+      this.track(ev, timeStamp);
       if (this.st.clock === 'midi') this.clock(ev, timeStamp);
       return;
     }
+    if (from === 'clock') return;
     const kind = s & 0xf0;
     if (kind !== 0xb0 && kind !== 0xc0) return; // notes, pressure, pitch bend, SysEx: not used
     const ch = (s & 0x0f) + 1;
@@ -449,7 +562,7 @@ export class MidiService implements MidiAPI {
     try {
       this.env.storage?.setItem(
         STORE_KEY,
-        JSON.stringify({ enabled: s.enabled, deviceId: s.deviceId, deviceName: s.deviceName, autoElektron: s.autoElektron, channels: s.channels, clock: s.clock, offsetMs: s.offsetMs, map: Object.fromEntries(s.map) }),
+        JSON.stringify({ enabled: s.enabled, deviceId: s.deviceId, deviceName: s.deviceName, clockDeviceId: s.clockDeviceId, clockDeviceName: s.clockDeviceName, autoElektron: s.autoElektron, channels: s.channels, clock: s.clock, offsetMs: s.offsetMs, map: Object.fromEntries(s.map) }),
       );
     } catch {
       /* not persisted */

@@ -359,6 +359,55 @@ const auto = new M.MidiService({ request: async () => access, permission: async 
 await new Promise((r) => setTimeout(r, 10));
 check('3k on again by itself when it was on and the browser still allows it', auto.status === 'on');
 
+/* ---------- 3l. a clock device of its own ---------- */
+{
+  const acc = fakeAccess([
+    { id: 'dt', name: 'Elektron Digitakt', manufacturer: 'Elektron Music Machines' },
+    { id: 'mc', name: 'MIDI Clock Box' },
+  ]);
+  const log = [];
+  const ps = new PS.ParamStore();
+  const st = memStorage();
+  const m = new M.MidiService({ request: async () => acc, allowed: true, storage: st, now: () => 0 }, ps, (ev, ms) => log.push([ev, ms]));
+  await m.enable();
+  m.setClockSource('midi');
+  const pdt = acc.inputs.get('dt');
+  const pmc = acc.inputs.get('mc');
+  check('3l without a clock device the clock comes from the MIDI device', m.clockDeviceId === '' && m.clockFrom === 'Elektron Digitakt' && m.clockConnected && pmc.onmidimessage === null);
+  m.chooseClock('mc');
+  check('3l clock device chosen: both listened to', m.clockDeviceId === 'mc' && m.clockFrom === 'MIDI Clock Box' && m.clockConnected && pdt.onmidimessage !== null && pmc.onmidimessage !== null);
+  log.length = 0;
+  send(pdt, [0xfa], 10);
+  send(pdt, [0xf8], 20);
+  send(pmc, [0xfa], 30);
+  send(pmc, [0xf8], 40);
+  check('3l clock only from the clock device', JSON.stringify(log) === JSON.stringify([[1, 30], [0, 40]]), JSON.stringify(log));
+  send(pmc, [0xb0, 20, 127]);
+  send(pdt, [0xb0, 21, 127]);
+  check('3l CCs only from the MIDI device', ps.get('band0.gain') === 0 && ps.get('band1.gain') === 12, `band 1 ${ps.get('band0.gain')} band 2 ${ps.get('band1.gain')}`);
+  // tempo and beats of the incoming clock, also on INT
+  m.setClockSource('int');
+  log.length = 0;
+  const tick = 60000 / 125 / 24;
+  send(pmc, [0xfa], 1000);
+  for (let i = 1; i <= 60; i++) send(pmc, [0xf8], 1000 + i * tick);
+  check('3m on INT: tempo and beats of the MIDI clock are followed, nothing forwarded', Math.abs(m.clockBpm - 125) < 0.01 && m.clockBeats === 2.5 && m.clockRunning && log.length === 0, `${m.clockBpm.toFixed(3)} BPM, beat ${m.clockBeats}`);
+  send(pmc, [0xfc], 2300);
+  send(pmc, [0xf8], 2300 + tick);
+  check('3m Stop holds the beat', !m.clockRunning && m.clockBeats === 2.5);
+  send(pmc, [0xfa], 3000);
+  check('3m Start: beat 0', m.clockRunning && m.clockBeats === 0);
+  const again = new M.MidiService({ request: async () => acc, allowed: true, storage: st, now: () => 0 }, new PS.ParamStore());
+  check('3n the clock device is remembered', again.clockDeviceId === 'mc' && again.clockDeviceName === 'MIDI Clock Box');
+  m.chooseClock('dt');
+  check('3n choosing the MIDI device itself: one listener, clock from it', m.clockConnected && pdt.onmidimessage !== null && pmc.onmidimessage === null);
+  m.chooseClock('');
+  check('3n back to the MIDI device', m.clockDeviceId === '' && m.clockFrom === 'Elektron Digitakt');
+  pmc.state = 'disconnected';
+  m.chooseClock('mc');
+  check('3n clock device unplugged: no clock from the MIDI device', !m.clockConnected && (send(pdt, [0xf8], 5000), m.clockBeats === 0));
+}
+
 /* ---------- 4. Program Change order ---------- */
 {
   const store = new ST.PresetStore(ST.memoryBackend());

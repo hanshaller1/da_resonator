@@ -54,11 +54,16 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
   OUTPUT.
 - **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
   ist; PLAY/LOAD und CONFIG haben keine.
-- **CONFIG** (Seite GENERAL): Source mit dem Audio-Eingang unter LOAD FILE, Clock, Resonance mit Display
-  darunter, Help. Der Audio-Zustand steht im Kopf.
-- **Clock:** Der interne Takt wird in CONFIG gesetzt (TEMPO, RUN, TAP, RESET) und gilt für alles. CLK MOD und
-  LFO MOD zeigen in der Statuszeile das Tempo (Klick öffnet CONFIG), INT · MIDI und die Schlag-LEDs. Das Tempo
-  bleibt Teil des Presets.
+- **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK (rechts in der Statuszeile). GENERAL: Source mit dem
+  Audio-Eingang unter LOAD FILE, Clock (nur Anzeige), Resonance mit Display darunter, Help. Der Audio-Zustand
+  steht im Kopf.
+- **Clock:** Ein Takt treibt die Clock-Mods und die LFOs auf DIV: der interne oder die MIDI-Clock.
+  - CONFIG → GENERAL zeigt beide: INT und MIDI je mit Tempo und 4 Schlag-LEDs, bei MIDI dazu das Quellgerät.
+    Die LED vor dem Namen zeigt den Takt in Gebrauch.
+  - CONFIG → CLOCK hat alle Einstellungen: INT mit ON, TEMPO, TAP, RUN, RESET und Schlag-LEDs; MIDI mit ON,
+    SOURCE (eigenes Gerät für die Clock), Tempo, Schlag-LEDs und OFFSET. Es ist immer genau einer an.
+  - CLK MOD und LFO MOD zeigen in der Statuszeile das Tempo (Klick öffnet CONFIG → CLOCK), INT · MIDI und die
+    Schlag-LEDs. Das Tempo bleibt Teil des Presets.
 - **LFO:** Es gibt keinen SYNC-Schalter mehr. Was zuletzt eingestellt wurde, gilt: RATE dreht das LFO frei,
   eine DIV bindet es an den Takt. Der nicht genutzte Regler ist abgedunkelt.
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
@@ -131,7 +136,7 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
 
 - Web MIDI gibt es in Chrome, Edge und Opera, nicht in Safari. Eine gehostete Vorschau sperrt MIDI meist;
   dann `resonator-standalone.html` lokal in Chrome öffnen oder `npm run dev`.
-- CONFIG → **MIDI** (Umschalter rechts in der Statuszeile): Schalter MIDI (der Browser fragt einmal), Gerät,
+- CONFIG → **MIDI**: Schalter MIDI (der Browser fragt einmal), Gerät für CCs und Program Change,
   ELEKTRON AUTO (ein Elektron-Gerät wird beim Einschalten und beim Einstecken zum MIDI-Gerät), Anzeigen für
   Clock, CC und Program Change, die Kanäle **IN**, **IN L**, **IN R** (1–16 oder OFF, Standard IN = 1).
 - **Kanäle:** IN bewegt L und R, IN L und IN R nur eine Seite der Bandwerte und von FB ALL. Alle anderen
@@ -147,13 +152,20 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
   EXPORT und IMPORT (Datei `resonator-midi-map.json`, Belegung und Kanäle).
 - **Program Change n** lädt Preset n: erst die 12 Werks-Presets, dann die eigenen in der Reihenfolge des
   Speicherns. Die Nummer (ab 1) steht in der Preset-Liste vor dem Namen.
-- **Clock:** INT · MIDI in CLK MOD, LFO MOD und CONFIG (eine Einstellung). Auf MIDI zeigt TEMPO in CLK MOD und
-  LFO MOD das gemessene Tempo, RUN, TAP und RESET in CONFIG ruhen. Start setzt auf Schlag 1 und startet, Stop hält, Continue läuft weiter. Ohne
-  Clock läuft das letzte Tempo weiter. **OFFSET** (−50 … +50 ms) verschiebt den Takt gegen das Audio (+ = später,
-  z. B. um die Latenz des Audio-Eingangs). Das Tempo im Preset bleibt unangetastet.
+- **Clock:** Einstellungen in CONFIG → CLOCK; INT · MIDI auch in CLK MOD und LFO MOD (eine Einstellung).
+  - **SOURCE:** Die MIDI-Clock (Clock, Start, Stop, Continue) kommt vom MIDI-Gerät oder von einem eigenen Gerät,
+    z. B. Takt von einer Drum Machine, CCs von einem Synth. Mit eigenem Gerät gilt nur dessen Clock, und CCs und
+    Program Change kommen nur vom MIDI-Gerät.
+  - Auf MIDI zeigt TEMPO in CLK MOD und LFO MOD das gemessene Tempo, RUN, TAP und RESET ruhen. Start setzt auf
+    Schlag 1 und startet, Stop hält, Continue läuft weiter. Ohne Clock läuft das letzte Tempo weiter.
+  - Tempo und Schläge der MIDI-Clock werden auch auf INT angezeigt (gemessen im Browser), damit man sieht, ob sie
+    ankommt.
+  - **OFFSET** (−50 … +50 ms) verschiebt den Takt gegen das Audio (+ = später, z. B. um die Latenz des
+    Audio-Eingangs). Das Tempo im Preset bleibt unangetastet.
 - Keine Noten, keine SysEx, kein MIDI-Ausgang.
 - Code: `src/core/midi.ts` (Geräte, Kanäle, Learn, Speicher), `src/core/midiMap.ts` (Belegung, Datei),
   `src/dsp/extClock.ts` (Takt aus der Clock, im Worklet), `src/presets/programs.ts`, `src/ui/tabs/configMidi.ts`,
+  `src/ui/tabs/configClock.ts`, `src/ui/clock.ts`,
   `src/ui/midi/hook.ts` (Popup, Tooltip).
 
 ### Modulation

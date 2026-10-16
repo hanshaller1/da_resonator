@@ -52,9 +52,19 @@
 
 .cfg-key--auto { width: auto; }
 
-/* clock: the internal clock and INT · MIDI */
+/* card title with a control on the right (CLOCK page ON, GENERAL clock SETTINGS) */
+.cfg-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); min-height: 20px; }
+
+/* GENERAL clock: both clocks as information */
 .cfg-clock { gap: var(--sp-4); }
-.cfg-clock .toggle { height: 20px; padding: 0 var(--sp-4); }
+.clk-info { display: flex; flex-direction: column; gap: var(--sp-4); }
+.clk-info-row .cfg-key { width: 30px; }
+.clk-info-row .cfg-led { background: var(--c-text-4); }
+.clk-info-row .cfg-led.is-on { background: var(--c-accent); box-shadow: 0 0 6px var(--c-accent-glow); }
+.clk-info-row:not(.is-used) .cfg-key { color: var(--c-text-4); }
+.clk-info-row:not(.is-used) .clk-info-bpm { color: var(--c-text-3); }
+.clk-info-from { padding-left: calc(7px + 30px + 2 * var(--sp-4)); margin-top: calc(-1 * var(--sp-2)); }
+.clk-info-src { color: var(--c-text-3); }
 
 /* resonance setup and display: compact, stacked in one column */
 .cfg-reso, .cfg-display { gap: var(--sp-3); }
@@ -64,14 +74,14 @@
 .cfg-help-list dt { color: var(--c-text); font-family: var(--font-mono); font-size: var(--fs-2xs); white-space: nowrap; }
 .cfg-help-list dd { margin: 0; color: var(--c-text-3); }
 
-/* pages: GENERAL (.cfg) and MIDI (.cfg-midi), switched in the status line */
-.cfg, .cfg-midi { height: 100%; box-sizing: border-box; }
-.cfg[hidden], .cfg-midi[hidden] { display: none; }
+/* pages: GENERAL (.cfg), MIDI (.cfg-midi) and CLOCK (.cfg-clk), switched in the status line */
+.cfg, .cfg-midi, .cfg-clk { height: 100%; box-sizing: border-box; }
+.cfg[hidden], .cfg-midi[hidden], .cfg-clk[hidden] { display: none; }
 
-/* MIDI page (ui/tabs/configMidi.ts): device + channels | clock | CC map */
+/* MIDI page (ui/tabs/configMidi.ts): device + channels | CC map */
 .cfg-midi {
   display: grid;
-  grid-template-columns: 1.3fr 1.05fr 1.45fr;
+  grid-template-columns: 1fr 1.25fr;
   gap: var(--sp-4);
   padding: var(--sp-4);
 }
@@ -79,7 +89,7 @@
 .cfg-midi .select-native { min-width: 0; width: 100%; }
 .cfg-midi .select-native:disabled { color: var(--c-text-3); cursor: default; }
 .cfg-midi .range { flex: 1 1 auto; min-width: 0; }
-.cfg-mdev, .cfg-mclk { gap: var(--sp-3); }
+.cfg-mdev { gap: var(--sp-3); }
 .cfg-midi-on { flex: none; }
 .cfg-midi .toggle:disabled { opacity: 0.45; cursor: default; }
 .cfg-acts { gap: var(--sp-5); }
@@ -114,3 +124,21 @@
 .cfg-map-head .cfg-map-cc { text-align: right; }
 .cfg-map-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-2); }
 .cfg-map .cfg-note { padding: var(--sp-4) 0; }
+
+/* CLOCK page (ui/tabs/configClock.ts): internal clock | MIDI clock | how it works */
+.cfg-clk {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+.cfg-cint, .cfg-cmidi { gap: var(--sp-4); }
+.cfg-cint .toggle:not(.clk-on) { height: 20px; padding: 0 var(--sp-4); }
+.cfg-clk .clk-on { height: 20px; padding: 0 var(--sp-4); }
+.cfg-clk .clk-on:disabled { opacity: 0.45; cursor: default; }
+.cfg-clk .select { flex: 1 1 auto; min-width: 0; }
+.cfg-clk .select-native { min-width: 0; width: 100%; }
+.cfg-clk .select-native:disabled { color: var(--c-text-3); cursor: default; }
+.cfg-clk .range { flex: 1 1 auto; min-width: 0; }
+.cfg-clk .cfg-card.is-used { box-shadow: 0 0 0 1px var(--c-accent-soft), inset 0 2px 0 var(--c-accent); }
+.cfg-chelp { gap: var(--sp-4); }

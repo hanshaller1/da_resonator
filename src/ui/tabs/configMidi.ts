@@ -1,12 +1,11 @@
 /**
  * CONFIG → MIDI page (docs/midi-2026-10-16.md): MIDI on/off and the device (ELEKTRON AUTO),
- * activity, the channels IN / IN L / IN R, the clock source with OFFSET, and the CC map as a table
- * with DEFAULT, export and import. Everything here is remembered in the browser, for all presets.
+ * activity, the channels IN / IN L / IN R, and the CC map as a table with DEFAULT, export and
+ * import. The clock (INT and MIDI, with a device of its own) is on the CLOCK page. Everything here
+ * is remembered in the browser, for all presets.
  */
-import { OFFSET_MAX_MS, OFFSET_MIN_MS } from '../../core/midi';
 import type { EngineAPI, MidiAPI } from '../../core/types';
 import { readTextFile, saveText } from '../../presets/files';
-import { clockState } from '../clock';
 import { h, icon, toggleClass } from '../dom';
 import { targetLabel } from '../mod/labels';
 import { frameLoop } from '../scheduler';
@@ -96,7 +95,11 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
     'MIDI',
     'cfg-mdev',
     h('div', { class: 'cfg-row' }, onBtn, state),
-    h('div', { class: 'cfg-row' }, h('label', { class: 'select' }, h('span', { class: 'select-label micro-label' }, 'DEVICE'), devSel, icon('chevron', 'icon select-chevron'))),
+    h(
+      'div',
+      { class: 'cfg-row', title: 'CCs and program changes come from this device; the clock too, unless the CLOCK page gives it a device of its own' },
+      h('label', { class: 'select' }, h('span', { class: 'select-label micro-label' }, 'DEVICE'), devSel, icon('chevron', 'icon select-chevron')),
+    ),
     h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'AUTO'), autoBtn),
     h('div', { class: 'cfg-row cfg-acts' }, actClock.el, actCc.el, actPc.el, lastCc),
     h('h3', { class: 'cfg-title micro-label cfg-sub' }, 'Channels'),
@@ -108,42 +111,6 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
       channelSelect(m, 'r', 'R', 'Moves only R of the band values and FB ALL'),
     ),
     h('p', { class: 'cfg-note' }, 'IN moves L and R, IN L and IN R only one side. Other controls follow all three. Program change n loads preset n (numbers in the preset list).'),
-  );
-
-  /* ---------- clock ---------- */
-  const srcBtns = (['int', 'midi'] as const).map((src) => {
-    const b = h('button', { type: 'button', class: 'inst-btn', title: src === 'int' ? 'Internal clock: TEMPO, RUN and TAP on the GENERAL page' : 'Tempo, Start, Stop and Continue from the MIDI device' }, src.toUpperCase());
-    b.addEventListener('click', async () => {
-      if (src === 'midi' && m.status !== 'on') await m.enable();
-      if (src === 'int' || m.status === 'on') m.setClockSource(src);
-    });
-    return { src, b };
-  });
-  const offset = h('input', { type: 'range', class: 'range', min: OFFSET_MIN_MS, max: OFFSET_MAX_MS, step: 1, 'aria-label': 'MIDI clock offset' });
-  const offVal = h('b', { class: 'cfg-val cfg-offval' });
-  offset.addEventListener('input', () => m.setOffset(Number(offset.value)));
-  offset.addEventListener('dblclick', () => m.setOffset(0));
-  const clkLed = h('span', { class: 'cfg-led', 'aria-hidden': 'true' });
-  const clkState = h('span', { class: 'cfg-instate' });
-  const syncClock = () => {
-    for (const { src, b } of srcBtns) {
-      toggleClass(b, 'is-selected', m.clockSource === src);
-      b.setAttribute('aria-pressed', String(m.clockSource === src));
-    }
-    offset.value = String(m.offsetMs);
-    // fill from the centre (0 ms) to the value
-    const pos = ((m.offsetMs - OFFSET_MIN_MS) / (OFFSET_MAX_MS - OFFSET_MIN_MS)) * 100;
-    offset.style.setProperty('--fill', `${pos}%`);
-    offset.setAttribute('aria-valuetext', `${m.offsetMs} ms`);
-    offVal.textContent = `${m.offsetMs > 0 ? '+' : ''}${m.offsetMs} ms`;
-  };
-  const clock = card(
-    'Clock',
-    'cfg-mclk',
-    h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'SOURCE'), h('span', { class: 'inst', role: 'group', 'aria-label': 'Clock source' }, ...srcBtns.map((x) => x.b))),
-    h('div', { class: 'cfg-row', title: 'Shifts the MIDI clock against the audio. + moves the LFOs and clock mods later, e.g. by the latency of the audio input. Double-click: 0' }, h('span', { class: 'cfg-key' }, 'OFFSET'), offset, offVal),
-    h('div', { class: 'cfg-row' }, clkLed, clkState),
-    h('p', { class: 'cfg-note' }, 'On MIDI, the clock mods and LFOs on DIV follow the device. Start begins at beat 1, Stop holds, Continue goes on. Without clock the last tempo keeps running.'),
   );
 
   /* ---------- CC map ---------- */
@@ -199,11 +166,10 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
     fileInput,
   );
 
-  const el = h('div', { class: 'cfg-midi' }, device, clock, map);
+  const el = h('div', { class: 'cfg-midi' }, device, map);
 
   const sync = () => {
     syncDevice();
-    syncClock();
     syncMap();
   };
   sync();
@@ -227,10 +193,6 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
       hitRow?.classList.add('is-hit');
       lastHit = hit;
     }
-    const cs = clockState(engine);
-    toggleClass(clkLed, 'is-on', cs.led === 'on');
-    toggleClass(clkLed, 'is-wait', cs.led === 'wait');
-    clkState.textContent = cs.text;
   };
 
   const status = () => ['MIDI', m.status === 'on' ? (m.connected ? m.deviceName : 'no device') : m.status === 'off' ? 'off' : m.status, `clock ${m.clockSource === 'midi' ? 'MIDI' : 'INT'}`].join(' · ');
