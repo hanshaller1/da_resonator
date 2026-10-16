@@ -63,7 +63,8 @@ function out(id: string, label: string, node: string) {
 function inp(id: string, label: string, node: string) {
   TRIGGER_INS.push({ index: TRIGGER_INS.length, id, label, node });
 }
-out('clock.beat', 'Clock Beat', 'clock');
+out('clock.beat', 'INT Clock Beat', 'clock');
+out('clock.midiBeat', 'MIDI Clock Beat', 'clock');
 for (let n = 1; n <= NUM_LFOS; n++) out(`lfo${n}.cycle`, `LFO ${n} Cycle`, `lfo${n}`);
 for (let n = 1; n <= NUM_CMODS; n++) out(`cmod${n}.step`, `Clock Mod ${n} Step`, `cmod${n}`);
 for (let n = 1; n <= NUM_EFS; n++) out(`ef${n}.gate`, `Env Follower ${n} Gate`, `ef${n}`);

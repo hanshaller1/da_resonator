@@ -132,7 +132,7 @@ export interface MidiAPI {
   readonly clockFrom: string;
   /** the device of the clock is plugged in and listened to */
   readonly clockConnected: boolean;
-  /** the incoming MIDI clock, followed whatever the clock source: tempo (0 = not measured yet), beats since Start, running */
+  /** the incoming MIDI clock, followed also while the MIDI clock is off: tempo (0 = not measured yet), beats since Start, running */
   readonly clockBpm: number;
   readonly clockBeats: number;
   readonly clockRunning: boolean;
@@ -140,8 +140,12 @@ export interface MidiAPI {
   readonly autoElektron: boolean;
   /** MIDI channels 1–16, 0 = off: IN moves both sides, IN L only L, IN R only R */
   readonly channels: { in: number; l: number; r: number };
-  /** the clock runs on TEMPO / RUN (int) or follows MIDI clock (midi) */
-  readonly clockSource: 'int' | 'midi';
+  /**
+   * which clocks are on (CONFIG → CLOCK; both can be). Each LFO and clock mod follows one of them
+   * (param .clk); a clock that is off stands still. Remembered in the browser.
+   */
+  readonly intClockOn: boolean;
+  readonly midiClockOn: boolean;
   /** shifts the MIDI clock against the audio, −50 … +50 ms */
   readonly offsetMs: number;
   /** param waiting for MIDI learn */
@@ -158,7 +162,7 @@ export interface MidiAPI {
   chooseClock(id: string): void;
   setAutoElektron(on: boolean): void;
   setChannel(which: 'in' | 'l' | 'r', ch: number): void;
-  setClockSource(src: 'int' | 'midi'): void;
+  setClockOn(which: 'int' | 'midi', on: boolean): void;
   setOffset(ms: number): void;
   ccOf(id: string): number | undefined;
   paramOf(cc: number): string | undefined;
@@ -244,11 +248,15 @@ export interface ModAPI {
   removeTriggerRoute(source: string, target: string): void;
   /** latest value of a source (bipolar -1..1 or unipolar 0..1) */
   sourceValue(source: string): number;
-  /** clock position in beats and tempo from the latest readout (the measured tempo while it follows MIDI) */
+  /** internal clock from the latest readout: position in beats, tempo, moving (ON and RUN) */
   readonly beats: number;
   readonly bpm: number;
-  /** the clock moves (RUN, or MIDI Start / Stop while it follows MIDI) */
   readonly running: boolean;
+  /** MIDI clock from the latest readout: position in beats, measured tempo, moving (ON, Start / Stop) */
+  readonly midiBeats: number;
+  readonly midiBpm: number;
+  readonly midiRunning: boolean;
+  /** RESET of the internal clock: beat 1, the LFOs and clock mods on it start over */
   resetClock(): void;
   /** routes changed */
   onChange(cb: () => void): Unsubscribe;

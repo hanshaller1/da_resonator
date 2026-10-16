@@ -57,13 +57,18 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK (rechts in der Statuszeile). GENERAL: Source mit dem
   Audio-Eingang unter LOAD FILE, Clock (nur Anzeige), Resonance mit Display darunter, Help. Der Audio-Zustand
   steht im Kopf.
-- **Clock:** Ein Takt treibt die Clock-Mods und die LFOs auf DIV: der interne oder die MIDI-Clock.
+- **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder LFO (auf DIV) und jeder Clock-Mod
+  wählt seinen Takt selbst (INT · MIDI, Parameter `lfoN.clk` / `cmodN.clk`, im Preset gespeichert).
+  - Ist der gewählte Takt aus, folgt das Modul dem anderen; sind beide aus, steht es still.
   - CONFIG → GENERAL zeigt beide: INT und MIDI je mit Tempo und 4 Schlag-LEDs, bei MIDI dazu das Quellgerät.
-    Die LED vor dem Namen zeigt den Takt in Gebrauch.
+    Die LED vor dem Namen leuchtet, wenn der Takt an ist.
   - CONFIG → CLOCK hat alle Einstellungen: INT mit ON, TEMPO, TAP, RUN, RESET und Schlag-LEDs; MIDI mit ON,
-    SOURCE (eigenes Gerät für die Clock), Tempo, Schlag-LEDs und OFFSET. Es ist immer genau einer an.
-  - CLK MOD und LFO MOD zeigen in der Statuszeile das Tempo (Klick öffnet CONFIG → CLOCK), INT · MIDI und die
-    Schlag-LEDs. Das Tempo bleibt Teil des Presets.
+    SOURCE (eigenes Gerät für die Clock), Tempo, Schlag-LEDs und OFFSET. Die beiden ON sind unabhängig.
+    USED BY nennt die LFOs und Clock-Mods, die den Takt gewählt haben.
+  - CLK MOD und LFO MOD zeigen in der Statuszeile für das gewählte Modul das Tempo seines Takts (Klick öffnet
+    CONFIG → CLOCK), INT · MIDI und die Schlag-LEDs. Ist der gewählte Takt aus, ist sein Knopf nur umrandet.
+    Das Tempo bleibt Teil des Presets.
+  - Trigger-Ausgänge: INT Clock Beat (`clock.beat`) und MIDI Clock Beat (`clock.midiBeat`).
 - **LFO:** Es gibt keinen SYNC-Schalter mehr. Was zuletzt eingestellt wurde, gilt: RATE dreht das LFO frei,
   eine DIV bindet es an den Takt. Der nicht genutzte Regler ist abgedunkelt.
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
@@ -152,14 +157,16 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
   EXPORT und IMPORT (Datei `resonator-midi-map.json`, Belegung und Kanäle).
 - **Program Change n** lädt Preset n: erst die 12 Werks-Presets, dann die eigenen in der Reihenfolge des
   Speicherns. Die Nummer (ab 1) steht in der Preset-Liste vor dem Namen.
-- **Clock:** Einstellungen in CONFIG → CLOCK; INT · MIDI auch in CLK MOD und LFO MOD (eine Einstellung).
+- **Clock:** Einstellungen in CONFIG → CLOCK; INT · MIDI wählt jeder LFO und Clock-Mod in CLK MOD und LFO MOD.
   - **SOURCE:** Die MIDI-Clock (Clock, Start, Stop, Continue) kommt vom MIDI-Gerät oder von einem eigenen Gerät,
     z. B. Takt von einer Drum Machine, CCs von einem Synth. Mit eigenem Gerät gilt nur dessen Clock, und CCs und
     Program Change kommen nur vom MIDI-Gerät.
-  - Auf MIDI zeigt TEMPO in CLK MOD und LFO MOD das gemessene Tempo, RUN, TAP und RESET ruhen. Start setzt auf
-    Schlag 1 und startet, Stop hält, Continue läuft weiter. Ohne Clock läuft das letzte Tempo weiter.
-  - Tempo und Schläge der MIDI-Clock werden auch auf INT angezeigt (gemessen im Browser), damit man sieht, ob sie
-    ankommt.
+  - Start setzt die MIDI-Clock auf Schlag 1 und startet die Module neu, die ihr folgen; Stop hält, Continue
+    läuft weiter. Ohne Clock läuft das letzte Tempo weiter. RESET wirkt nur auf den internen Takt.
+  - Das angezeigte MIDI-Tempo ist beruhigt: Solange das gemessene Tempo nur um bis zu ±0,3 BPM schwankt, steht
+    dort sein Mittelwert. Bleibt es länger als 0,4 s außerhalb, gilt es als neues Tempo.
+  - Tempo und Schläge der MIDI-Clock werden auch bei ausgeschalteter MIDI-Clock angezeigt (gemessen im
+    Browser), damit man sieht, ob sie ankommt.
   - **OFFSET** (−50 … +50 ms) verschiebt den Takt gegen das Audio (+ = später, z. B. um die Latenz des
     Audio-Eingangs). Das Tempo im Preset bleibt unangetastet.
 - Keine Noten, keine SysEx, kein MIDI-Ausgang.

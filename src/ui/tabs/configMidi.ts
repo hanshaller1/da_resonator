@@ -195,7 +195,7 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
     }
   };
 
-  const status = () => ['MIDI', m.status === 'on' ? (m.connected ? m.deviceName : 'no device') : m.status === 'off' ? 'off' : m.status, `clock ${m.clockSource === 'midi' ? 'MIDI' : 'INT'}`].join(' · ');
+  const status = () => ['MIDI', m.status === 'on' ? (m.connected ? m.deviceName : 'no device') : m.status === 'off' ? 'off' : m.status, `MIDI clock ${m.midiClockOn && m.status === 'on' ? 'on' : 'off'}`].join(' · ');
   return { el, status, tick };
 }
 

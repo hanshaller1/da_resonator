@@ -178,7 +178,7 @@ registerTab({
       { class: 'cfg-card cfg-clock' },
       h('div', { class: 'cfg-card-head' }, h('h3', { class: 'cfg-title micro-label' }, 'Clock'), h('span', { class: 'inst' }, clockSettings)),
       clockInfo(engine),
-      h('p', { class: 'cfg-note' }, 'The lit LED marks the clock in use: the clock mods and the LFOs on DIV follow it. Settings on the CLOCK page.'),
+      h('p', { class: 'cfg-note' }, 'A lit LED: the clock is on. Each LFO and clock mod chooses INT or MIDI in its status line. Settings on the CLOCK page.'),
     );
 
     /* ---------- resonance setup ---------- */

@@ -20,10 +20,14 @@ export class ModController implements ModAPI {
   private srcVals = new Float32Array(NUM_SOURCES);
   private changed = new Emitter<[]>();
   private readout = new Emitter<[]>();
+  /** internal clock: position, tempo, moving (ON and RUN) */
   beats = 0;
   bpm = 120;
-  /** the clock moves (RUN, or MIDI Start / Stop while it follows MIDI) */
   running = true;
+  /** MIDI clock: position, measured tempo, moving (ON, Start / Stop) */
+  midiBeats = 0;
+  midiBpm = 120;
+  midiRunning = false;
 
   constructor(
     private params: ParamStore,
@@ -109,6 +113,9 @@ export class ModController implements ModAPI {
     this.beats = f.beats;
     this.bpm = f.bpm;
     this.running = f.run !== 0;
+    this.midiBeats = f.midiBeats ?? 0;
+    this.midiBpm = f.midiBpm ?? this.midiBpm;
+    this.midiRunning = !!f.midiRun;
     this.readout.emit();
   }
 }

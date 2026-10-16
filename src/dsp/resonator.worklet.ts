@@ -93,9 +93,11 @@
  *  Modulation  : runs in this worklet (ModEngine): once per block the modulation graph computes effective
  *                values (base + routes) for every param; the resonator smooths towards them. Modulated params
  *                use τ = 3 ms instead of 20 ms so fast LFOs are not dulled.
- *  MIDI clock  : with the clock on MIDI (message clockSource) the main thread forwards ticks, Start, Continue
- *                and Stop with their AudioContext time (midiClock); dsp/extClock.ts turns them into tempo,
- *                run state and beat position at the end of each block (currentTime + block length).
+ *  Clocks      : the internal clock (TEMPO, RUN) and the MIDI clock run side by side; each LFO and clock mod
+ *                follows one (param .clk; the other while it is off), message clockOn switches them on and
+ *                off. While the MIDI clock is on the main thread forwards ticks, Start, Continue and Stop
+ *                with their AudioContext time (midiClock); dsp/extClock.ts turns them into tempo, run state
+ *                and beat position at the end of each block (currentTime + block length).
  *  Chain       : in ─► pre filter ─► resonator (above) ─► post filter ─► out. Tap buffers (input, every band,
  *                wet sum, output) feed the envelope followers.
  *  Smoothing   : all continuous params are smoothed per sample with a one-pole (τ = 20 ms); filter
@@ -383,7 +385,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'ready' });
   }
 
-  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; ext?: boolean; ev?: number; t?: number }) {
+  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; int?: boolean; midi?: boolean; ev?: number; t?: number }) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'params':
@@ -416,8 +418,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       case 'meterRate':
         if (typeof msg.hz === 'number' && msg.hz > 0) this.meterInterval = Math.max(1, Math.round(this.fs / msg.hz));
         break;
-      case 'clockSource':
-        this.mod.setClockSource(msg.ext === true);
+      case 'clockOn':
+        this.mod.setClockOn(msg.int !== false, msg.midi === true);
         break;
       case 'midiClock':
         if (typeof msg.ev === 'number' && typeof msg.t === 'number') this.mod.pushClock(msg.ev, msg.t);

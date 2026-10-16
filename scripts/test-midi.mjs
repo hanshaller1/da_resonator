@@ -166,45 +166,76 @@ const at = (out, t) => out.reduce((best, o) => (Math.abs(o.t - t) < Math.abs(bes
   check('1g OFFSET +40 ms delays the beats by 40 ms', Math.abs(b.t - a.t - 0.04) <= DT + 1e-9, `beat 3 at ${a.t.toFixed(4)} s / ${b.t.toFixed(4)} s`);
 }
 
-/* ---------- 2. ModEngine and the worklet ---------- */
+/* ---------- 2. ModEngine and the worklet: two clocks side by side ---------- */
 {
   const frames = [];
   const eng = new ME.ModEngine(FS, (f) => frames.push(f));
   const v = P.defaultValues();
-  v[P.paramIndex('lfo1.on')] = 1;
-  v[P.paramIndex('lfo1.sync')] = 1;
+  for (const m of ['lfo1', 'lfo2']) (v[P.paramIndex(`${m}.on`)] = 1), (v[P.paramIndex(`${m}.sync`)] = 1);
+  for (const m of ['cmod1', 'cmod2']) v[P.paramIndex(`${m}.on`)] = 1;
+  // LFO 1 and clock mod 2 on MIDI, LFO 2 and clock mod 1 on INT
+  v[P.paramIndex('lfo1.clk')] = 1;
+  v[P.paramIndex('cmod2.clk')] = 1;
   v[P.paramIndex('clock.bpm')] = 100;
   eng.setBase(v);
-  // internal clock first, then MIDI: position carries over
-  for (let i = 0; i < 375; i++) (eng.beginBlock(BLOCK), eng.endBlock());
-  const before = eng.clock.beats;
-  eng.setClockSource(true);
+  // which clock each source sees, and its resets
+  const seen = {}, resets = {};
+  for (const [id, s] of eng.sources) {
+    const up = s.dsp.update.bind(s.dsp), rs = s.dsp.reset.bind(s.dsp);
+    s.dsp.update = (ctx) => ((seen[id] = ctx.clock === eng.midiClock ? 'midi' : 'int'), up(ctx));
+    resets[id] = 0;
+    s.dsp.reset = () => (resets[id]++, rs());
+  }
+  const run = (sec, each) => {
+    for (let i = 0; i < Math.round(sec / DT); i++) (eng.beginBlock(BLOCK), each?.(), eng.endBlock());
+  };
+  const who = () => ['lfo1', 'lfo2', 'cmod1', 'cmod2'].map((id) => seen[id]).join(' ');
+  run(1);
+  check('2a default: INT on, MIDI off; what chose MIDI follows INT', eng.clockOn.int && !eng.clockOn.midi && who() === 'int int int int' && !eng.midiClock.running, who());
+  eng.setClockOn(true, true);
   const t0 = eng.now;
   eng.pushClock(X.MIDI_START, t0 + 0.1);
   for (let i = 0; i < 24 * 8; i++) eng.pushClock(X.MIDI_TICK, t0 + 0.11 + i * tickSec(140));
-  let beatsAtStart = null, beatTrig = 0;
-  for (let i = 0; i < Math.round(3.2 / DT); i++) {
-    eng.beginBlock(BLOCK);
-    if (Math.floor(eng.clock.beats) !== Math.floor(eng.clock.beatsPrev)) beatTrig++;
-    if (beatsAtStart === null && eng.now > t0 + 0.105) beatsAtStart = eng.clock.beats;
-    eng.endBlock();
-  }
-  check('2a switching to MIDI keeps the position', before > 1.5 && eng.clock.beats > 0, `beats before ${before.toFixed(3)}`);
-  check('2a MIDI Start: beat 0', beatsAtStart === 0, `beats right after Start ${beatsAtStart}`);
+  const intAt = eng.clock.beats;
+  let midiAtStart = null, intTrig = 0, midiTrig = 0;
+  for (const k in resets) resets[k] = 0;
+  run(3.2, () => {
+    if (Math.floor(eng.clock.beats) !== Math.floor(eng.clock.beatsPrev)) intTrig++;
+    if (Math.floor(eng.midiClock.beats) !== Math.floor(eng.midiClock.beatsPrev)) midiTrig++;
+    if (midiAtStart === null && eng.now > t0 + 0.105) midiAtStart = eng.midiClock.beats;
+  });
+  check('2b both on: each source follows its own choice', who() === 'midi int int midi', who());
+  check('2b MIDI Start: MIDI beat 0, only the sources on MIDI start over', midiAtStart === 0 && resets.lfo1 === 1 && resets.cmod2 === 1 && resets.lfo2 === 0 && resets.cmod1 === 0, JSON.stringify(resets));
   const f = frames[frames.length - 1];
   const expect = ((t0 + 3.2 - (t0 + 0.11)) * 140) / 60;
-  check('2a measured tempo, run and beats', Math.abs(f.bpm - 140) < 0.05 && f.run === 1 && Math.abs(eng.clock.beats - expect) < 0.005, `bpm ${f.bpm.toFixed(2)} run ${f.run} beats ${eng.clock.beats.toFixed(4)} (≈ ${expect.toFixed(4)})`);
-  check('2a beat trigger once per beat', beatTrig === Math.floor(eng.clock.beats), `${beatTrig} triggers, beat ${eng.clock.beats.toFixed(2)}`);
-  eng.setClockSource(false);
-  eng.beginBlock(BLOCK);
-  check('2b back on INT: TEMPO again', eng.clock.bpm === 100 && eng.clock.running, `bpm ${eng.clock.bpm}`);
+  check('2b MIDI clock: measured tempo, run and beats in the readout', Math.abs(f.midiBpm - 140) < 0.05 && f.midiRun === 1 && Math.abs(eng.midiClock.beats - expect) < 0.005 && Math.abs(f.midiBeats - eng.midiClock.beats) < 0.05, `bpm ${f.midiBpm.toFixed(2)} run ${f.midiRun} beats ${eng.midiClock.beats.toFixed(4)} (≈ ${expect.toFixed(4)})`);
+  const intExpect = intAt + (Math.round(3.2 / DT) * DT * 100) / 60;
+  check('2b INT runs on beside it at TEMPO', f.bpm === 100 && f.run === 1 && Math.abs(eng.clock.beats - intExpect) < 1e-6, `bpm ${f.bpm} beats ${eng.clock.beats.toFixed(4)} (≈ ${intExpect.toFixed(4)})`);
+  check('2b beat trigger of each clock once per beat', intTrig === Math.floor(eng.clock.beats) - Math.floor(intAt) && midiTrig === Math.floor(eng.midiClock.beats), `INT ${intTrig}, MIDI ${midiTrig}`);
+  for (const k in resets) resets[k] = 0;
+  eng.resetClock();
+  check('2c RESET: INT to beat 1, only the sources on INT start over', eng.clock.beats === 0 && eng.midiClock.beats > 4 && resets.lfo2 === 1 && resets.cmod1 === 1 && resets.lfo1 === 0 && resets.cmod2 === 0, JSON.stringify(resets));
+  eng.setClockOn(false, true);
+  const intHeld = eng.clock.beats;
+  run(0.5);
+  check('2d INT off: it stands still, what chose INT follows MIDI', eng.clock.beats === intHeld && !eng.clock.running && who() === 'midi midi midi midi', who());
+  eng.setClockOn(true, false);
+  const midiHeld = eng.midiClock.beats;
+  run(0.5);
+  check('2e MIDI off: it stands still, what chose MIDI follows INT', eng.midiClock.beats === midiHeld && !eng.midiClock.running && who() === 'int int int int' && eng.clock.beats > intHeld, who());
+  eng.setClockOn(false, false);
+  const held = [eng.clock.beats, eng.midiClock.beats];
+  run(0.5);
+  check('2f both off: everything stands still on its own choice', eng.clock.beats === held[0] && eng.midiClock.beats === held[1] && who() === 'midi int int midi', who());
+  const mf = frames[frames.length - 1];
+  check('2f readout: neither clock runs', mf.run === 0 && mf.midiRun === 0);
 }
 {
-  // worklet: clockSource + midiClock messages, currentTime moving
+  // worklet: clockOn + midiClock messages, currentTime moving
   const proc = loadProcessor();
   const send = (m) => proc.port.onmessage({ data: m });
   send({ type: 'params', values: P.defaultValues() });
-  send({ type: 'clockSource', ext: true });
+  send({ type: 'clockOn', int: true, midi: true });
   const iL = new Float32Array(BLOCK), oL = new Float32Array(BLOCK), oR = new Float32Array(BLOCK);
   const T0 = 12.5; // the context has been running for a while
   proc.scope.currentTime = T0;
@@ -217,14 +248,15 @@ const at = (out, t) => out.reduce((best, o) => (Math.abs(o.t - t) < Math.abs(bes
   const mods = proc.port.sent.filter((m) => m.type === 'mod');
   const last = mods[mods.length - 1];
   const expect = ((T0 + 2.5 - (T0 + 0.06)) * 90) / 60;
-  check('2c worklet follows MIDI clock on the AudioContext time line', Math.abs(last.bpm - 90) < 0.05 && Math.abs(last.beats - expect) < 0.05, `bpm ${last.bpm.toFixed(2)}, beats ${last.beats.toFixed(3)} (≈ ${expect.toFixed(3)})`);
+  check('2g worklet follows MIDI clock on the AudioContext time line, INT beside it', Math.abs(last.midiBpm - 90) < 0.05 && Math.abs(last.midiBeats - expect) < 0.05 && last.bpm === 120 && last.run === 1, `MIDI ${last.midiBpm.toFixed(2)} BPM, beats ${last.midiBeats.toFixed(3)} (≈ ${expect.toFixed(3)}); INT ${last.bpm}`);
   send({ type: 'midiClock', ev: X.MIDI_STOP, t: proc.scope.currentTime });
+  send({ type: 'clockOn', int: false, midi: true });
   for (let k = 0; k < 40; k++) {
     proc.process([[iL, iL]], [[oL, oR]]);
     proc.scope.currentTime += DT;
   }
   const after = proc.port.sent.filter((m) => m.type === 'mod').pop();
-  check('2c Stop: run 0 in the readout', after.run === 0, `run ${after.run}`);
+  check('2g Stop: MIDI run 0; INT off: run 0', after.midiRun === 0 && after.run === 0, `MIDI run ${after.midiRun}, INT run ${after.run}`);
 }
 
 /* ---------- 3. MidiService: CCs, channels, learn, storage, Program Change, devices ---------- */
@@ -296,15 +328,22 @@ midi.setCc('mix', null);
 check('3e remove a CC', midi.ccOf('mix') === undefined && midi.paramOf(72) === undefined);
 
 // storage
-midi.setClockSource('midi');
+midi.setClockOn('midi', true);
 midi.setOffset(17.4);
 const again = new M.MidiService({ request: async () => access, allowed: true, storage, now: () => 0 }, new PS.ParamStore());
 check(
   '3f map, channels, clock and offset survive a reload',
-  again.ccOf('lfo1.rate') === 30 && again.ccOf('outputGain') === 21 && again.ccOf('band1.gain') === undefined && again.ccOf('mix') === undefined && again.channels.l === 2 && again.channels.r === 3 && again.clockSource === 'midi' && again.offsetMs === 17 && again.deviceName === 'Elektron Digitakt',
+  again.ccOf('lfo1.rate') === 30 && again.ccOf('outputGain') === 21 && again.ccOf('band1.gain') === undefined && again.ccOf('mix') === undefined && again.channels.l === 2 && again.channels.r === 3 && again.midiClockOn && again.intClockOn && again.offsetMs === 17 && again.deviceName === 'Elektron Digitakt',
   JSON.stringify(again.channels),
 );
 check('3f stored as plain JSON in resonator.midi', typeof JSON.parse(storage.map.get('resonator.midi')).map === 'object');
+{
+  const old = memStorage();
+  old.setItem('resonator.midi', JSON.stringify({ clock: 'midi' }));
+  const o = new M.MidiService({ allowed: true, storage: old }, new PS.ParamStore());
+  const fresh = new M.MidiService({ allowed: true, storage: memStorage() }, new PS.ParamStore());
+  check('3f the old single clock choice MIDI switches the MIDI clock on, INT stays on; new: INT on, MIDI off', o.midiClockOn && o.intClockOn && fresh.intClockOn && !fresh.midiClockOn);
+}
 
 // file
 const file = midi.exportMap();
@@ -326,9 +365,9 @@ send(dt, [0xfc], 1020);
 send(dt, [0xfb], 1030);
 send(dt, [0xfe], 1040); // active sensing: ignored
 check('3h clock messages go to the clock with their time stamp', JSON.stringify(clockLog) === JSON.stringify([[1, 1000], [0, 1010], [3, 1020], [2, 1030]]), JSON.stringify(clockLog));
-midi.setClockSource('int');
+midi.setClockOn('midi', false);
 send(dt, [0xf8], 1050);
-check('3h on INT the clock is not forwarded', clockLog.length === 4);
+check('3h with the MIDI clock off it is not forwarded', clockLog.length === 4);
 const pcs = [];
 midi.onProgram((n) => pcs.push(n));
 send(dt, [0xc0, 3]);
@@ -370,7 +409,7 @@ check('3k on again by itself when it was on and the browser still allows it', au
   const st = memStorage();
   const m = new M.MidiService({ request: async () => acc, allowed: true, storage: st, now: () => 0 }, ps, (ev, ms) => log.push([ev, ms]));
   await m.enable();
-  m.setClockSource('midi');
+  m.setClockOn('midi', true);
   const pdt = acc.inputs.get('dt');
   const pmc = acc.inputs.get('mc');
   check('3l without a clock device the clock comes from the MIDI device', m.clockDeviceId === '' && m.clockFrom === 'Elektron Digitakt' && m.clockConnected && pmc.onmidimessage === null);
@@ -385,13 +424,13 @@ check('3k on again by itself when it was on and the browser still allows it', au
   send(pmc, [0xb0, 20, 127]);
   send(pdt, [0xb0, 21, 127]);
   check('3l CCs only from the MIDI device', ps.get('band0.gain') === 0 && ps.get('band1.gain') === 12, `band 1 ${ps.get('band0.gain')} band 2 ${ps.get('band1.gain')}`);
-  // tempo and beats of the incoming clock, also on INT
-  m.setClockSource('int');
+  // tempo and beats of the incoming clock, also with the MIDI clock off
+  m.setClockOn('midi', false);
   log.length = 0;
   const tick = 60000 / 125 / 24;
   send(pmc, [0xfa], 1000);
   for (let i = 1; i <= 60; i++) send(pmc, [0xf8], 1000 + i * tick);
-  check('3m on INT: tempo and beats of the MIDI clock are followed, nothing forwarded', Math.abs(m.clockBpm - 125) < 0.01 && m.clockBeats === 2.5 && m.clockRunning && log.length === 0, `${m.clockBpm.toFixed(3)} BPM, beat ${m.clockBeats}`);
+  check('3m MIDI clock off: tempo and beats of the MIDI clock are followed, nothing forwarded', Math.abs(m.clockBpm - 125) < 0.01 && m.clockBeats === 2.5 && m.clockRunning && log.length === 0, `${m.clockBpm.toFixed(3)} BPM, beat ${m.clockBeats}`);
   send(pmc, [0xfc], 2300);
   send(pmc, [0xf8], 2300 + tick);
   check('3m Stop holds the beat', !m.clockRunning && m.clockBeats === 2.5);

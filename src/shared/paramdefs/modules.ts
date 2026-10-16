@@ -44,6 +44,22 @@ export function filterParams(slot: FilterSlot): ParamDef[] {
   ];
 }
 
+/* ---------- clock choice of the LFOs and clock mods ---------- */
+/** the clock an LFO (on DIV) or a clock mod follows: the internal clock or the MIDI clock */
+export const CLOCK_SOURCES = ['INT', 'MIDI'] as const;
+function clockChoice(m: string, L: string): ParamDef {
+  return { ...discrete(`${m}.clk`, `${L} Clock`, 'CLOCK', CLOCK_SOURCES, 0), modulatable: false };
+}
+/**
+ * true if a module that chose the MIDI clock (`wantMidi`) or the internal one follows the MIDI
+ * clock: its choice while that clock is on, else the other one if that is on; with both off its
+ * choice (which stands still)
+ */
+export function followsMidi(wantMidi: boolean, intOn: boolean, midiOn: boolean): boolean {
+  if (wantMidi ? midiOn : intOn) return wantMidi;
+  return wantMidi ? !intOn : midiOn;
+}
+
 /* ---------- LFOs ---------- */
 export const LFO_SHAPES = ['Sine', 'Triangle', 'Saw', 'Square', 'S&H', 'Smooth'] as const;
 export function lfoParams(n: number): ParamDef[] {
@@ -55,6 +71,7 @@ export function lfoParams(n: number): ParamDef[] {
     cont(`${m}.rate`, `${L} Rate`, 'RATE', 0.01, 40, 0.5, 'Hz', 'exp'),
     toggle(`${m}.sync`, `${L} Sync`, 'SYNC'),
     discrete(`${m}.div`, `${L} Division`, 'DIV', DIVISION_LABELS, DIV_QUARTER),
+    clockChoice(m, L),
     cont(`${m}.phase`, `${L} Phase`, 'PHASE', 0, 1, 0, '%'),
     cont(`${m}.morph`, `${L} Morph`, 'MORPH', 0, 1, 0, '%'),
     cont(`${m}.smooth`, `${L} Smooth`, 'SMTH', 0, 1, 0, '%'),
@@ -72,6 +89,7 @@ export function cmodParams(n: number): ParamDef[] {
     toggle(`${m}.on`, L, `CMOD${n}`),
     discrete(`${m}.mode`, `${L} Mode`, 'MODE', CMOD_MODES, 0),
     discrete(`${m}.div`, `${L} Division`, 'DIV', DIVISION_LABELS, 4 /* 1/16 */),
+    clockChoice(m, L),
     discrete(`${m}.steps`, `${L} Steps`, 'STEPS', intRange(1, CMOD_STEPS), 7 /* 8 */),
     discrete(`${m}.pulses`, `${L} Pulses`, 'PULSES', intRange(0, CMOD_STEPS), 3),
     discrete(`${m}.rotate`, `${L} Rotate`, 'ROT', intRange(0, CMOD_STEPS - 1), 0),
@@ -113,7 +131,7 @@ export function macroParams(n: number): ParamDef[] {
   return [{ ...cont(`macro${n}.value`, `Macro ${n}`, `M${n}`, 0, 1, 0, '%'), modulatable: false }];
 }
 
-/* ---------- clock ---------- */
+/* ---------- internal clock ---------- */
 export function clockParams(): ParamDef[] {
   return [cont('clock.bpm', 'Tempo', 'BPM', 20, 300, 120, 'BPM'), toggle('clock.run', 'Clock Run', 'RUN', 1)];
 }

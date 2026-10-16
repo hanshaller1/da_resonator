@@ -4,9 +4,10 @@
  * learn, Program Change and the clock. The clock (clock ticks, Start, Stop, Continue) can come from
  * a second device of its own; without one it comes from the MIDI device. Everything is remembered
  * in the browser.
- * The clock itself runs in the worklet: clock messages go out through `clock(ev, timeStampMs)`;
- * the engine converts the time and sends them on. Tempo and beat of the incoming clock are also
- * followed here, for the display while the clock runs on INT. No MIDI out, no notes, no SysEx.
+ * The MIDI clock itself runs in the worklet, next to the internal clock: while it is on, clock
+ * messages go out through `clock(ev, timeStampMs)`; the engine converts the time and sends them on.
+ * Tempo and beat of the incoming clock are also followed here, for the display while audio is off
+ * or the MIDI clock is off. No MIDI out, no notes, no SysEx.
  */
 import { MIDI_CONTINUE, MIDI_START, MIDI_STOP, MIDI_TICK } from '../dsp/extClock';
 import { Emitter } from './Emitter';
@@ -76,13 +77,15 @@ interface Stored {
   clockDeviceName: string;
   autoElektron: boolean;
   channels: MidiChannels;
-  clock: 'int' | 'midi';
+  /** the internal and the MIDI clock are on (both can be) */
+  intClock: boolean;
+  midiClock: boolean;
   offsetMs: number;
   map: Map<string, number>;
 }
 
 function load(storage: StorageLike | undefined): Stored {
-  const d: Stored = { enabled: false, deviceId: '', deviceName: '', clockDeviceId: '', clockDeviceName: '', autoElektron: true, channels: { ...DEFAULT_CHANNELS }, clock: 'int', offsetMs: 0, map: defaultMidiMap() };
+  const d: Stored = { enabled: false, deviceId: '', deviceName: '', clockDeviceId: '', clockDeviceName: '', autoElektron: true, channels: { ...DEFAULT_CHANNELS }, intClock: true, midiClock: false, offsetMs: 0, map: defaultMidiMap() };
   try {
     const s = JSON.parse(storage?.getItem(STORE_KEY) ?? 'null') as Record<string, unknown> | null;
     if (s && typeof s === 'object') {
@@ -94,7 +97,10 @@ function load(storage: StorageLike | undefined): Stored {
       if (typeof s.autoElektron === 'boolean') d.autoElektron = s.autoElektron;
       const c = s.channels as Partial<MidiChannels> | undefined;
       if (c && typeof c === 'object') d.channels = { in: cleanChannel(c.in, d.channels.in), l: cleanChannel(c.l, d.channels.l), r: cleanChannel(c.r, d.channels.r) };
-      if (s.clock === 'int' || s.clock === 'midi') d.clock = s.clock;
+      if (typeof s.intClock === 'boolean') d.intClock = s.intClock;
+      if (typeof s.midiClock === 'boolean') d.midiClock = s.midiClock;
+      // before 2026-10-16 one clock was chosen: 'midi' switches the MIDI clock on, INT stays on
+      else if (s.clock === 'midi') d.midiClock = true;
       if (typeof s.offsetMs === 'number' && Number.isFinite(s.offsetMs)) d.offsetMs = clampOffset(s.offsetMs);
       if (s.map && typeof s.map === 'object') d.map = sanitizeMidiMap(s.map);
     }
@@ -102,6 +108,11 @@ function load(storage: StorageLike | undefined): Stored {
     /* storage unavailable or broken: defaults */
   }
   return d;
+}
+
+/** which clocks run: the internal clock while it is on, the MIDI clock while it is on and MIDI is */
+export function clocksOn(m: MidiAPI): { int: boolean; midi: boolean } {
+  return { int: m.intClockOn, midi: m.midiClockOn && m.status === 'on' };
 }
 
 function clampOffset(ms: number): number {
@@ -207,7 +218,8 @@ export class MidiService implements MidiAPI {
   get clockRunning() { return this._clockRunning; }
   get autoElektron() { return this.st.autoElektron; }
   get channels(): MidiChannels { return { ...this.st.channels }; }
-  get clockSource() { return this.st.clock; }
+  get intClockOn() { return this.st.intClock; }
+  get midiClockOn() { return this.st.midiClock; }
   get offsetMs() { return this.st.offsetMs; }
   get learning() { return this._learning; }
   /** MIDI was on last time but needs a click (the browser asks again) */
@@ -399,9 +411,10 @@ export class MidiService implements MidiAPI {
 
   /* ---------- clock ---------- */
 
-  setClockSource(src: 'int' | 'midi'): void {
-    if (src === this.st.clock) return;
-    this.st.clock = src;
+  setClockOn(which: 'int' | 'midi', on: boolean): void {
+    const key = which === 'int' ? 'intClock' : 'midiClock';
+    if (on === this.st[key]) return;
+    this.st[key] = on;
     this.save();
   }
 
@@ -520,7 +533,7 @@ export class MidiService implements MidiAPI {
       if (ev < 0) return;
       this.clockAt = this.now();
       this.track(ev, timeStamp);
-      if (this.st.clock === 'midi') this.clock(ev, timeStamp);
+      if (this.st.midiClock) this.clock(ev, timeStamp);
       return;
     }
     if (from === 'clock') return;
@@ -562,7 +575,7 @@ export class MidiService implements MidiAPI {
     try {
       this.env.storage?.setItem(
         STORE_KEY,
-        JSON.stringify({ enabled: s.enabled, deviceId: s.deviceId, deviceName: s.deviceName, clockDeviceId: s.clockDeviceId, clockDeviceName: s.clockDeviceName, autoElektron: s.autoElektron, channels: s.channels, clock: s.clock, offsetMs: s.offsetMs, map: Object.fromEntries(s.map) }),
+        JSON.stringify({ enabled: s.enabled, deviceId: s.deviceId, deviceName: s.deviceName, clockDeviceId: s.clockDeviceId, clockDeviceName: s.clockDeviceName, autoElektron: s.autoElektron, channels: s.channels, intClock: s.intClock, midiClock: s.midiClock, offsetMs: s.offsetMs, map: Object.fromEntries(s.map) }),
       );
     } catch {
       /* not persisted */

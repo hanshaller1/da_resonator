@@ -9,8 +9,8 @@
  * After the audio pass analysers (env followers) read the tap buffers, and every ~16 ms a readout
  * goes to the UI.
  */
-import { NUM_CMODS, NUM_EFS, NUM_LFOS, NUM_TAPS } from '../shared/paramdefs/modules';
-import { NUM_PARAMS, PARAMS, defaultValues, fromNorm, paramIndex, toNorm } from '../shared/params';
+import { NUM_CMODS, NUM_EFS, NUM_LFOS, NUM_TAPS, followsMidi } from '../shared/paramdefs/modules';
+import { NUM_PARAMS, PARAMS, PARAM_BY_ID, defaultValues, fromNorm, paramIndex, toNorm } from '../shared/params';
 import { CH_INV, evaluationOrder, routeHitsL, routeHitsR, type ModConfig } from '../shared/mod/rules';
 import { NUM_SOURCES, NUM_TRIGGER_INS, NUM_TRIGGER_OUTS, SOURCE_BY_ID, TRIGGER_OUT_BY_ID } from '../shared/mod/sources';
 import { ClockModDsp } from './modules/cmod';
@@ -31,10 +31,14 @@ export interface ModReadout {
   src: Float32Array;
   /** pairs [paramIndex, effectiveNorm] for every modulated param */
   mod: Float32Array;
+  /** internal clock: beats, tempo, 1 while it moves */
   beats: number;
   bpm: number;
-  /** 1 while the clock moves */
   run: number;
+  /** MIDI clock: beats, measured tempo, 1 while it moves */
+  midiBeats: number;
+  midiBpm: number;
+  midiRun: number;
 }
 
 export class ModEngine {
@@ -49,17 +53,26 @@ export class ModEngine {
   /** true when any resonator param (index < 40) is modulated or a base value changed */
   baseVersion = 0;
 
+  /** internal clock: TEMPO and RUN */
   readonly clock: ClockState = { bpm: 120, running: true, beats: 0, beatsPrev: 0 };
-  /** MIDI clock (docs/midi-2026-10-16.md): replaces tempo, run and position while extClock is on */
+  /** MIDI clock (docs/midi-2026-10-16.md): tempo, Start / Stop and position from the incoming clock */
+  readonly midiClock: ClockState = { bpm: 120, running: false, beats: 0, beatsPrev: 0 };
   readonly ext = new ExtClock();
-  private extClock = false;
+  /**
+   * Which clocks are on (CONFIG → CLOCK). Both run side by side; each LFO and clock mod follows the
+   * one its param `.clk` names, or the other one while that is off. A clock that is off stands
+   * still; with both off, so does everything on a clock.
+   */
+  private intOn = true;
+  private midiOn = false;
   /** time at the end of the current block (seconds; AudioContext time in the worklet) */
   private time = 0;
   readonly taps: Float32Array[] = [];
   readonly preFilter = new FilterStage('filterPre');
   readonly postFilter = new FilterStage('filterPost');
 
-  private sources = new Map<string, { dsp: SourceDsp; onIdx: number; srcIdx: number; wasOn: boolean }>();
+  /** clkIdx: index of the source's clock choice (INT / MIDI), -1 if it has none (env followers) */
+  private sources = new Map<string, { dsp: SourceDsp; onIdx: number; srcIdx: number; clkIdx: number; wasOn: boolean }>();
   private steps: Step[] = [];
   private routeDsts: number[] = [];
   private trigPending = new Uint8Array(NUM_TRIGGER_INS);
@@ -70,12 +83,14 @@ export class ModEngine {
   private iBpm = paramIndex('clock.bpm');
   private iRun = paramIndex('clock.run');
   private beatTrig = TRIGGER_OUT_BY_ID['clock.beat'].index;
+  private midiBeatTrig = TRIGGER_OUT_BY_ID['clock.midiBeat'].index;
   readonly ctx: BlockCtx;
 
   constructor(readonly fs: number, private post: (m: ModReadout) => void) {
     for (let t = 0; t < NUM_TAPS; t++) this.taps.push(new Float32Array(MAX_BLOCK));
     for (let t = 0; t < NUM_TRIGGER_OUTS; t++) this.trigTargets.push([]);
-    const add = (id: string, dsp: SourceDsp) => this.sources.set(id, { dsp, onIdx: paramIndex(`${id}.on`), srcIdx: SOURCE_BY_ID[id].index, wasOn: false });
+    const add = (id: string, dsp: SourceDsp) =>
+      this.sources.set(id, { dsp, onIdx: paramIndex(`${id}.on`), srcIdx: SOURCE_BY_ID[id].index, clkIdx: PARAM_BY_ID[`${id}.clk`]?.index ?? -1, wasOn: false });
     for (let n = 1; n <= NUM_LFOS; n++) add(`lfo${n}`, new LfoDsp(n));
     for (let n = 1; n <= NUM_CMODS; n++) add(`cmod${n}`, new ClockModDsp(n));
     for (let n = 1; n <= NUM_EFS; n++) add(`ef${n}`, new EnvFollowerDsp(n));
@@ -185,6 +200,7 @@ export class ModEngine {
           // switching a source on starts it fresh (no stale envelope / phase from before it was off)
           if (on && !s.wasOn) s.dsp.reset();
           s.wasOn = on;
+          this.ctx.clock = this.usesMidi(s.clkIdx) ? this.midiClock : this.clock;
           this.srcVals[s.srcIdx] = on ? s.dsp.update(this.ctx) : 0;
         });
       } else if (node.startsWith('route')) {
@@ -211,35 +227,49 @@ export class ModEngine {
     return steps;
   }
 
+  /** true if the source with clock choice `clkIdx` (-1 = none: INT) follows the MIDI clock now */
+  private usesMidi(clkIdx: number): boolean {
+    return followsMidi(clkIdx >= 0 && this.eff[clkIdx] >= 0.5, this.intOn, this.midiOn);
+  }
+
+  /** start the sources on one clock over (RESET of the internal clock, MIDI Start) */
+  private resetSources(midi: boolean): void {
+    for (const s of this.sources.values()) if (this.usesMidi(s.clkIdx) === midi) s.dsp.reset();
+  }
+
   private advanceClock(): void {
     const c = this.clock;
-    if (this.extClock) {
-      // MIDI Start: beat 1, sources start over (like RESET)
-      if (this.ext.advance(c, this.time, this.ctx.dt)) for (const s of this.sources.values()) s.dsp.reset();
-    } else {
-      c.bpm = this.eff[this.iBpm];
-      c.running = this.eff[this.iRun] >= 0.5;
-      c.beatsPrev = c.beats;
-      if (c.running) c.beats += (this.ctx.dt * c.bpm) / 60;
-    }
+    c.bpm = this.eff[this.iBpm];
+    c.running = this.intOn && this.eff[this.iRun] >= 0.5;
+    c.beatsPrev = c.beats;
+    if (c.running) c.beats += (this.ctx.dt * c.bpm) / 60;
     if (Math.floor(c.beats) !== Math.floor(c.beatsPrev)) this.ctx.fire(this.beatTrig);
+    const m = this.midiClock;
+    if (this.midiOn) {
+      // MIDI Start: beat 1, the sources on the MIDI clock start over
+      if (this.ext.advance(m, this.time, this.ctx.dt)) this.resetSources(true);
+    } else {
+      m.beatsPrev = m.beats;
+      m.running = false;
+    }
+    if (Math.floor(m.beats) !== Math.floor(m.beatsPrev)) this.ctx.fire(this.midiBeatTrig);
   }
 
-  /** the clock follows MIDI clock (true) or runs on TEMPO and RUN; the position carries over */
-  setClockSource(ext: boolean): void {
-    if (ext === this.extClock) return;
-    this.extClock = ext;
-    // until MIDI clock comes in, TEMPO goes on (clock.bpm may not have seen the first params yet)
-    if (ext) this.ext.reset(this.clock.beats, this.eff[this.iBpm]);
+  /** which clocks are on; switching the MIDI clock on carries on from its position, at TEMPO until MIDI clock comes in */
+  setClockOn(int: boolean, midi: boolean): void {
+    this.intOn = int;
+    if (midi === this.midiOn) return;
+    this.midiOn = midi;
+    if (midi) this.ext.reset(this.midiClock.beats, this.eff[this.iBpm]);
   }
 
-  get clockSource(): 'int' | 'midi' {
-    return this.extClock ? 'midi' : 'int';
+  get clockOn(): { int: boolean; midi: boolean } {
+    return { int: this.intOn, midi: this.midiOn };
   }
 
   /** a MIDI clock event (extClock.ts MIDI_TICK …) at time t on the block time line */
   pushClock(ev: number, t: number): void {
-    if (this.extClock) this.ext.push(ev, t);
+    if (this.midiOn) this.ext.push(ev, t);
   }
 
   /** time at the end of the last block */
@@ -270,7 +300,9 @@ export class ModEngine {
         mod[2 * k] = i;
         mod[2 * k + 1] = toNorm(PARAMS[i], this.eff[i]);
       });
-      this.post({ type: 'mod', src: this.srcVals.slice(), mod, beats: this.clock.beats, bpm: this.clock.bpm, run: this.clock.running ? 1 : 0 });
+      const c = this.clock;
+      const m = this.midiClock;
+      this.post({ type: 'mod', src: this.srcVals.slice(), mod, beats: c.beats, bpm: c.bpm, run: c.running ? 1 : 0, midiBeats: m.beats, midiBpm: m.bpm, midiRun: m.running ? 1 : 0 });
     }
   }
 
@@ -280,10 +312,10 @@ export class ModEngine {
     return false;
   }
 
+  /** RESET of the internal clock: beat 1, the sources on it start over (the MIDI clock restarts with MIDI Start) */
   resetClock(): void {
     this.clock.beats = this.clock.beatsPrev = 0;
-    if (this.extClock) this.ext.rewind();
-    for (const s of this.sources.values()) s.dsp.reset();
+    this.resetSources(false);
   }
 
   reset(): void {

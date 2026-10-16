@@ -8,6 +8,7 @@ import type { EngineAPI } from '../../../core/types';
 import { euclidHit, swungStep } from '../../../dsp/modules/cmod';
 import { CMOD_STEPS } from '../../../shared/paramdefs/modules';
 import { DIVISIONS } from '../../../shared/paramdefs/types';
+import { clockView, followedClock } from '../../clock';
 import { clamp01, h, toggleClass } from '../../dom';
 import { assign } from '../../mod/assign';
 import { effective } from '../lfo/sourceTab';
@@ -195,7 +196,7 @@ export class StepLane {
     let cur = -1;
     if (pattern && this.engine.state === 'running' && p.get(`${m}.on`) >= 0.5) {
       const div = DIVISIONS[Math.max(0, Math.min(DIVISIONS.length - 1, Math.round(effective(this.engine, `${m}.div`))))].beats;
-      const k = swungStep(this.engine.mod.beats / div, effective(this.engine, `${m}.swing`));
+      const k = swungStep(clockView(this.engine, followedClock(this.engine, m)).beats / div, effective(this.engine, `${m}.swing`));
       cur = ((k % steps) + steps) % steps;
     }
     if (cur !== this.cur) {

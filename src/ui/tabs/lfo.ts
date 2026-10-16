@@ -1,5 +1,6 @@
 /**
- * LFO MOD tab: LFO 1–4, with the clock in the status line (tempo, INT · MIDI, beat LEDs). Control
+ * LFO MOD tab: LFO 1–4, with the clock of the selected LFO in the status line (tempo, INT · MIDI
+ * (param lfoN.clk), beat LEDs). Control
  * row = the selected LFO (SHAPE … UNI). RATE or DIV, whichever was set last, decides the speed:
  * turning RATE lets the LFO run free, choosing a DIV syncs it to the clock (param lfoN.sync, no
  * button of its own). Visualisation = two cycles of its waveform as set (shape, morph, phase,
@@ -11,7 +12,7 @@ import { formatValue } from '../../shared/params';
 import { Knob } from '../components/knob';
 import { ParamSelect } from '../components/select';
 import { ParamToggle } from '../components/toggle';
-import { clockStatus } from '../clock';
+import { clockStatus, clockView, followedClock } from '../clock';
 import { toggleClass } from '../dom';
 import { registerTab } from '../shell/tabs';
 import { monoFont } from '../viz/draw';
@@ -85,7 +86,10 @@ registerTab({
     });
     src = st;
     st.routes.refresh();
-    st.desc.after(clockStatus(engine));
+    // per LFO: the tempo of its clock, INT · MIDI, beat LEDs
+    const clocks = Array.from({ length: NUM_LFOS }, (_, i) => clockStatus(engine, `lfo${i + 1}`, `LFO ${i + 1}`));
+    st.desc.after(...clocks);
+    st.track(clocks);
 
     /* ---------- control row ---------- */
     const L = (i: number) => `LFO ${i + 1}`;
@@ -113,6 +117,8 @@ registerTab({
         const sync = p.get(`${m}.sync`) >= 0.5;
         toggleClass(rate[i], 'is-dim', sync);
         toggleClass(div[i], 'is-dim', !sync);
+        toggleClass(clocks[i], 'is-free', !sync);
+        clocks[i].title = sync ? '' : `LFO ${i + 1} runs free on RATE: its clock counts on DIV`;
         rate[i].title = sync ? 'Turn RATE to let the LFO run free' : '';
         div[i].title = sync ? '' : 'Choose a DIV to sync the LFO to the clock';
         const s = Math.max(0, Math.min(MORPH_NAMES.length - 1, Math.round(p.get(`${m}.shape`))));
@@ -147,7 +153,7 @@ registerTab({
       const level = e('level');
       const uni = e('uni') >= 0.5;
       const sync = e('sync') >= 0.5;
-      const cycleS = sync ? ((DIVISIONS[Math.round(e('div'))]?.beats ?? 1) * 60) / Math.max(1, engine.mod.bpm || p.get('clock.bpm')) : 1 / Math.max(1e-3, e('rate'));
+      const cycleS = sync ? ((DIVISIONS[Math.round(e('div'))]?.beats ?? 1) * 60) / Math.max(1, clockView(engine, followedClock(engine, m)).bpm || p.get('clock.bpm')) : 1 / Math.max(1e-3, e('rate'));
       const key = [shape, morphV, phase, smooth, level, uni, cycleS].map((x) => (typeof x === 'number' ? x.toFixed(4) : x)).join('/');
       if (key === previewKey) return false;
       previewKey = key;

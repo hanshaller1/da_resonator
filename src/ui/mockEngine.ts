@@ -6,7 +6,7 @@
 import { ModController } from '../core/ModController';
 import { ParamStore } from '../core/ParamStore';
 import { InputDevices } from '../core/inputs';
-import { MidiService, type MidiInputLike } from '../core/midi';
+import { MidiService, clocksOn, type MidiInputLike } from '../core/midi';
 import { StateHub } from '../core/state';
 import type { EngineAPI, EngineState, MeterBusAPI, SourceInfo, SourceKind, Unsubscribe } from '../core/types';
 import type { MeterFrame } from '../shared/messages';
@@ -128,7 +128,12 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
     params,
     (ev, ms) => modEngine.pushClock(ev, modEngine.now + (ms - performance.now()) / 1000),
   );
-  midi.onChange(() => modEngine.setClockSource(midi.clockSource === 'midi'));
+  const clockOn = () => {
+    const on = clocksOn(midi);
+    modEngine.setClockOn(on.int, on.midi);
+  };
+  clockOn();
+  midi.onChange(clockOn);
 
   /* ---------- meters ---------- */
   const meterEv = emitter<[MeterFrame]>();

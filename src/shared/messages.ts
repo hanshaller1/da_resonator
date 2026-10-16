@@ -7,10 +7,10 @@ export const WORKLET_NAME = 'erica-resonator';
 export type ToWorklet =
   | { type: 'params'; values: Float32Array } // base (unmodulated) plain values, length NUM_PARAMS, ordered by ParamSpec.index
   | { type: 'modConfig'; config: ModConfig } // modulation routes (validated on the main thread)
-  | { type: 'clockReset' } // clock to beat 0, LFO / clock mod phases to 0
+  | { type: 'clockReset' } // internal clock to beat 0, phases of the LFOs / clock mods on it to 0
   | { type: 'reset' } // clear all filter / feedback state (panic)
   | { type: 'meterRate'; hz: number } // meter frames per second (default 30)
-  | { type: 'clockSource'; ext: boolean } // the clock follows MIDI clock (true) or TEMPO / RUN
+  | { type: 'clockOn'; int: boolean; midi: boolean } // which clocks are on (a clock that is off stands still)
   | { type: 'midiClock'; ev: number; t: number }; // MIDI clock event (dsp/extClock.ts MIDI_TICK …) at AudioContext time t
 
 /** One meter frame. All values linear amplitude (not dB). */
@@ -34,12 +34,14 @@ export interface ModFrame {
   src: Float32Array;
   /** pairs [paramIndex, effective normalized value] for every modulated param */
   mod: Float32Array;
-  /** clock position in beats */
+  /** internal clock: position in beats, tempo, 1 while it moves (ON and RUN) */
   beats: number;
-  /** effective tempo (measured while the clock follows MIDI) */
   bpm: number;
-  /** 1 while the clock moves (RUN, or MIDI Start / Stop) */
   run: number;
+  /** MIDI clock: position in beats, measured tempo, 1 while it moves (ON, Start / Stop) */
+  midiBeats: number;
+  midiBpm: number;
+  midiRun: number;
 }
 
 /** worklet -> main */

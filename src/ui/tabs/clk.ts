@@ -1,6 +1,6 @@
 /**
- * CLK MOD tab: the two clock mods, with the clock in the status line (tempo, INT · MIDI, beat
- * LEDs; the internal clock itself is set in CONFIG). Control row = the selected clock mod
+ * CLK MOD tab: the two clock mods, with the clock of the selected one in the status line (tempo,
+ * INT · MIDI (param cmodN.clk), beat LEDs; the clocks themselves are set in CONFIG → CLOCK). Control row = the selected clock mod
  * (MODE … UNI). Visualisation = its 16-step lane (draw values in Steps mode, Euclid pulses,
  * current step) with the output trace below, and its targets on the right.
  */
@@ -35,12 +35,14 @@ registerTab({
       module: (i) => `cmod${i + 1}`,
       label: (i) => `CM${i + 1}`,
       name: (i) => `Clock Mod ${i + 1}`,
-      routes: { triggerIns: () => (src ? [`${src.module}.reset`] : []), triggerOuts: () => (src ? [`${src.module}.step`, 'clock.beat'] : []) },
+      routes: { triggerIns: () => (src ? [`${src.module}.reset`] : []), triggerOuts: () => (src ? [`${src.module}.step`, 'clock.beat', 'clock.midiBeat'] : []) },
     });
     src = st;
     st.routes.refresh();
-    // the clock sits between the description and the instance group
-    st.desc.after(clockStatus(engine));
+    // the clock of each clock mod (tempo, INT · MIDI, beat LEDs) sits between the description and the instance group
+    const clocks = Array.from({ length: NUM_CMODS }, (_, i) => clockStatus(engine, `cmod${i + 1}`, `Clock Mod ${i + 1}`));
+    st.desc.after(...clocks);
+    st.track(clocks);
 
     /* ---------- control row ---------- */
     const sel = (key: string) => (i: number, m: string) => new ParamSelect(p, `${m}.${key}`, { ariaLabel: `Clock Mod ${i + 1} ${p.spec(`${m}.${key}`).short.toLowerCase()}` }).el;

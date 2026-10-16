@@ -4,7 +4,7 @@ import { NUM_BANDS, bandParamId, bandParamIdR } from '../shared/params';
 import { Emitter } from './Emitter';
 import { InputDevices, cleanLabel, inputAllowedHere, pageStorage } from './inputs';
 import { InsertChain } from './InsertChain';
-import { MidiService, browserMidiEnv } from './midi';
+import { MidiService, browserMidiEnv, clocksOn } from './midi';
 import { ModController } from './ModController';
 import { ParamStore } from './ParamStore';
 import { StateHub } from './state';
@@ -74,7 +74,8 @@ export class AudioEngine implements EngineAPI {
   readonly midi = new MidiService(browserMidiEnv(pageStorage()), this.params, (ev, ms) => this.post({ type: 'midiClock', ev, t: this.midiTime(ms) }));
   /** AudioContext time minus performance time (s), smoothed, for MIDI time stamps */
   private midiK = NaN;
-  private clockExt = false;
+  /** ON of the clocks as last sent to the worklet */
+  private clockOn = { int: true, midi: false };
 
   ctx: AudioContext | null = null;
   node: AudioWorkletNode | null = null;
@@ -124,13 +125,8 @@ export class AudioEngine implements EngineAPI {
       this.sourceLabel = this.input.label || 'Audio input';
     }
     this.input.onArrive((devices) => void this.inputsArrived(devices));
-    // INT · MIDI: the worklet's clock follows MIDI clock or TEMPO / RUN
-    this.midi.onChange(() => {
-      const ext = this.midi.clockSource === 'midi';
-      if (ext === this.clockExt) return;
-      this.clockExt = ext;
-      this.post({ type: 'clockSource', ext });
-    });
+    // ON of the internal and the MIDI clock (CONFIG → CLOCK)
+    this.midi.onChange(() => this.postClockOn(false));
     this.input.onChange(() => {
       if (this.inNode && this.routed !== this.routeMode()) this.routeInput();
     });
@@ -217,8 +213,7 @@ export class AudioEngine implements EngineAPI {
 
     this.flushParams(true);
     this.post({ type: 'modConfig', config: this.mod.routing.config() });
-    this.clockExt = this.midi.clockSource === 'midi';
-    this.post({ type: 'clockSource', ext: this.clockExt });
+    this.postClockOn(true);
     await ctx.resume();
     this.setStateInternal(ctx.state === 'running' ? 'running' : 'suspended');
     // start the chosen source: an input (asks for access if needed), a loaded file or a test signal
@@ -234,6 +229,13 @@ export class AudioEngine implements EngineAPI {
     if (!force && this.sentVersion === this.params.version) return;
     this.sentVersion = this.params.version;
     this.post({ type: 'params', values: this.params.baseValues() });
+  }
+
+  private postClockOn(force: boolean) {
+    const { int, midi } = clocksOn(this.midi);
+    if (!force && int === this.clockOn.int && midi === this.clockOn.midi) return;
+    this.clockOn = { int, midi };
+    this.post({ type: 'clockOn', int, midi });
   }
 
   private post(m: ToWorklet) {
