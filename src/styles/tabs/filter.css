@@ -37,6 +37,8 @@
   filter: saturate(0.15);
 }
 .flt-cell { transition: opacity var(--dur-med) var(--ease-out), filter var(--dur-med) var(--ease-out); }
+/* a control the chosen type does not use (band filter WIDTH on LP / HP) */
+.flt-cell.is-dim { opacity: 0.38; filter: saturate(0.2); }
 
 /* visualisation: the cutoff handle is dragged on the canvas */
 .flt-viz { touch-action: none; }

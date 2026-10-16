@@ -114,7 +114,7 @@ const level = (band, spread, classic) => {
     routes: [{ slot: 0, source: 'lfo1', target: 'spread' }, { slot: 1, source: 'lfo2', target: 'mix' }],
   };
   const s = S.migrateSnapshot(old);
-  check('4a v4 preset: spread value kept (right of centre)', s.params.spread === 0.4 && s.version === 5);
+  check('4a v4 preset: spread value kept (right of centre)', s.params.spread === 0.4 && s.version === S.SNAPSHOT_VERSION);
   check('4b v4 preset: route onto spread at half depth, others unchanged', s.params['route0.depth'] === 0.3 && s.params['route1.depth'] === 0.5);
   check('4c v4 preset: function ODD/EVEN', s.params['reso.spread'] === 0);
   const again = S.migrateSnapshot(s);

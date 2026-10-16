@@ -55,7 +55,7 @@ export function clockOn(engine: EngineAPI, which: ClockName): boolean {
   return clocksOn(engine.midi)[which];
 }
 
-/** the clock a module ('lfo2', 'cmod1') chose */
+/** the clock a module ('lfo2', 'cmod1', 'scan') chose */
 export function chosenClock(engine: EngineAPI, module: string): ClockName {
   return engine.params.get(`${module}.clk`) >= 0.5 ? 'midi' : 'int';
 }
@@ -290,12 +290,13 @@ export function clockState(engine: EngineAPI, which: ClockName): { text: string;
   return { text: `On · ${src} · ${run ? 'running' : 'stopped'}`, led: run ? 'on' : 'wait' };
 }
 
-/** the LFOs (on INT or MIDI, not RATE) and clock mods that are on and chose this clock: "LFO1", "CM2" … */
+/** the LFOs and the band scanner (on INT or MIDI, not RATE) and clock mods that are on and chose this clock: "LFO1", "CM2", "SCAN" … */
 export function clockUsers(engine: EngineAPI, which: ClockName): string[] {
   const p = engine.params;
   const out: string[] = [];
   for (let n = 1; n <= NUM_LFOS; n++) if (p.get(`lfo${n}.on`) >= 0.5 && p.get(`lfo${n}.sync`) >= 0.5 && chosenClock(engine, `lfo${n}`) === which) out.push(`LFO${n}`);
   for (let n = 1; n <= NUM_CMODS; n++) if (p.get(`cmod${n}.on`) >= 0.5 && chosenClock(engine, `cmod${n}`) === which) out.push(`CM${n}`);
+  if (p.get('scan.on') >= 0.5 && p.get('scan.sync') >= 0.5 && chosenClock(engine, 'scan') === which) out.push('SCAN');
   return out;
 }
 

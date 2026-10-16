@@ -27,6 +27,8 @@ import {
   macroParams,
   resoParams,
   routeParams,
+  bandFilterParams,
+  scanParams,
 } from './paramdefs/modules';
 
 export { BAND_FREQS, NUM_BANDS };
@@ -118,6 +120,9 @@ for (let n = 1; n <= NUM_MACROS; n++) addModule(`macro${n}`, 'macro', macroParam
 addModule('clock', 'clock', clockParams());
 for (let r = 0; r < NUM_ROUTES; r++) addModule(`route${r}`, 'route', routeParams(r));
 addModule('reso', 'resonator', resoParams());
+// mode layers (docs/hardware-modi-und-pools-2026-10-16.md): dB per band on top of the faders
+addModule('filterBand', 'filter', bandFilterParams());
+addModule('scan', 'scan', scanParams());
 
 /* ---------- R channel (L/R per band, docs/lr-pro-band-2026-10-16.md) ----------
  * The historic ids (band0.gain …, fbAllOn, fbAll) are the left channel. Each gets an R twin with
@@ -262,6 +267,8 @@ export function formatValue(p: ParamSpec, v: number): string {
     case 'ms': return v >= 1000 ? `${(v / 1000).toFixed(2)} s` : v < 10 ? `${v.toFixed(1)} ms` : `${Math.round(v)} ms`;
     case 'BPM': return `${v.toFixed(1)} BPM`;
     case ':1': return v < 1 ? `1:${(1 / v).toFixed(1)}` : `${v.toFixed(1)}:1`;
+    case 'oct': return `${p.min < 0 && v >= 0.005 ? '+' : ''}${v.toFixed(2)} oct`;
+    case 'dB/oct': return `${Math.round(v)} dB/oct`;
     default: return p.curve === 'toggle' ? (v >= 0.5 ? 'ON' : 'OFF') : v.toFixed(2);
   }
 }

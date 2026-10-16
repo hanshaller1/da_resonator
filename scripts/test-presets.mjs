@@ -114,7 +114,7 @@ const warnSpy = () => {
   for (let b = 0; b < 10; b++) tap += P.feedbackTapGain(P.resToQ(b === 3 ? 0.03 : 0.45)) / 10;
   const k = 1 / (P.FB_ALL_LOOP_MAX * tap);
   const near = (a, b) => Math.abs(a - b) < 1e-5;
-  const conv = near(st.params.fbAll, 0.65 * k) && near(st.params['route0.depth'], 0.5 * k) && st.params['band4.res'] === Math.fround(0.45) && st.version === 5 && st.params.fbAllR === st.params.fbAll;
+  const conv = near(st.params.fbAll, 0.65 * k) && near(st.params['route0.depth'], 0.5 * k) && st.params['band4.res'] === Math.fround(0.45) && st.version === 6 && st.params.fbAllR === st.params.fbAll;
   const again = makeEngine();
   again.setState(st);
   const stable = J(again.getState()) === J(st);

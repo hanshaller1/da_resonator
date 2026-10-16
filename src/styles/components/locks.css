@@ -1,0 +1,33 @@
+/* Lock row of a mode picture (components/lockRow.ts): one button per band column along the foot */
+.lock-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 18px;
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  pointer-events: none;
+}
+.lock-row[hidden] { display: none; }
+.lock-btn {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 0 auto;
+  padding: 0 6px;
+  height: 16px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--c-text-4);
+  font: var(--fw-medium) 9px / 1 var(--font-mono);
+  cursor: pointer;
+}
+.lock-btn:hover { color: var(--c-text-2); background: var(--c-panel-2); }
+.lock-btn:focus-visible { outline: none; box-shadow: var(--sh-focus); }
+.lock-icon { width: 10px; height: 10px; flex: none; opacity: 0.7; }
+.lock-btn.is-locked { color: var(--c-accent); }
+.lock-btn.is-locked .lock-icon { opacity: 1; }

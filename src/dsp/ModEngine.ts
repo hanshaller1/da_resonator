@@ -6,6 +6,7 @@
  *      followers, routes); every module first gets its own effective params, then computes its value
  *   2. routes add `source × depth` (normalized) onto their target params
  *   3. effective values of the audio modules (resonator, dyn, filters) are ready for the audio pass
+ *   4. the band scanner steps (it reads any source, so it runs after the whole graph)
  * After the audio pass analysers (env followers) read the tap buffers, and every ~16 ms a readout
  * goes to the UI.
  */
@@ -17,6 +18,7 @@ import { ClockModDsp } from './modules/cmod';
 import { EnvFollowerDsp } from './modules/ef';
 import { FilterStage } from './modules/filter';
 import { LfoDsp } from './modules/lfo';
+import { BandScanner } from './modules/scan';
 import type { BlockCtx, ClockState, SourceDsp } from './modules/types';
 import { ExtClock } from './extClock';
 
@@ -70,6 +72,9 @@ export class ModEngine {
   readonly taps: Float32Array[] = [];
   readonly preFilter = new FilterStage('filterPre');
   readonly postFilter = new FilterStage('filterPost');
+  /** band scanner (CLK MOD → SCAN): runs after the graph, so every source has its value of this block */
+  readonly scan = new BandScanner();
+  private scanClk = paramIndex('scan.clk');
 
   /** clkIdx: index of the source's clock choice (INT / MIDI), -1 if it has none (env followers) */
   private sources = new Map<string, { dsp: SourceDsp; onIdx: number; srcIdx: number; clkIdx: number; wasOn: boolean }>();
@@ -235,6 +240,7 @@ export class ModEngine {
   /** start the sources on one clock over (RESET of the internal clock, MIDI Start) */
   private resetSources(midi: boolean): void {
     for (const s of this.sources.values()) if (this.usesMidi(s.clkIdx) === midi) s.dsp.reset();
+    if (this.usesMidi(this.scanClk) === midi) this.scan.reset();
   }
 
   private advanceClock(): void {
@@ -288,6 +294,8 @@ export class ModEngine {
     const off = this.offset;
     for (let k = 0; k < this.routeDsts.length; k++) off[this.routeDsts[k]] = 0;
     for (let k = 0; k < this.steps.length; k++) this.steps[k]();
+    this.ctx.clock = this.usesMidi(this.scanClk) ? this.midiClock : this.clock;
+    this.scan.update(this.ctx, this.srcVals);
   }
 
   /** after the audio pass: analysers + UI readout */
@@ -322,6 +330,7 @@ export class ModEngine {
     for (const s of this.sources.values()) s.dsp.reset();
     this.preFilter.reset();
     this.postFilter.reset();
+    this.scan.reset();
     this.trigPending.fill(0);
   }
 }

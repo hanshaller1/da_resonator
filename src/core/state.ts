@@ -5,7 +5,7 @@ import type { ModController } from './ModController';
 import type { ParamStore } from './ParamStore';
 import type { EngineSnapshot, StateProvider, Unsubscribe } from './types';
 
-export const SNAPSHOT_VERSION = 5;
+export const SNAPSHOT_VERSION = 6;
 
 export function isSnapshot(s: unknown): s is EngineSnapshot {
   return !!s && typeof s === 'object' && (s as EngineSnapshot).format === 'da-resonator';
@@ -18,6 +18,8 @@ export function isSnapshot(s: unknown): s is EngineSnapshot {
  * v3: before L/R per band (2026-10-16): no R values.
  * v4: before SPREAD became bipolar (2026-10-16): spread ran 0..1, now −1..1 with the old values right
  *     of centre. Its value stays; the depth of routes onto it is halved so they swing as far as before.
+ * v5: before the hardware modes (2026-10-16): no band filter, band scanner or DYN source. Their defaults
+ *     are off / neutral, so nothing needs converting.
  * Params missing from the input fall back to the defaults of its version; a missing R value takes
  * the value of its L param (any version, so sparse presets stay linked).
  */

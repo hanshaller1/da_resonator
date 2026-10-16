@@ -62,3 +62,11 @@
 .clk-lane[data-mode='euclid'] .clk-col.is-pulse .clk-led { background: var(--c-text-3); box-shadow: none; }
 .clk-lane[data-mode='euclid'] .clk-col.is-current .clk-led { box-shadow: inset 0 0 0 1.5px var(--c-accent); }
 .clk-lane[data-mode='euclid'] .clk-col.is-current.is-pulse .clk-led { background: var(--c-accent); box-shadow: 0 0 8px var(--c-accent-glow); }
+
+/* band scanner picture: the whole visualisation (clk/scanViz.ts) */
+.scan-pic { position: absolute; inset: 0; }
+.scan-pic[hidden],
+.srctab-pic[hidden],
+.srctab-routes[hidden] { display: none; }
+.scan-pic > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.srctab.is-off .scan-pic { opacity: 0.6; filter: saturate(0.4); }

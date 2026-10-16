@@ -1,6 +1,8 @@
 /**
  * DYN EQ tab: band dynamics (a compressor / upward expander per resonator band).
- * Status line = on + the five global settings + a live readout of the largest gain change.
+ * Status line = on + the five global settings, what the dynamics measure (SRC BAND · IN · OUT, the input
+ * filter FILT / FREQ before the IN / OUT analysis), DLY and R DLY (docs/hardware-modi-und-pools-2026-10-16.md)
+ * + a live readout of the largest gain change.
  * Control row = per band (slot k = band k) its amount and its gain-reduction mod source GR.
  * Visualisation = band levels against the threshold with the gain change per band (dyn/viz.ts).
  */
@@ -32,10 +34,26 @@ registerTab({
       new ParamField(p, 'dyn.release', { ariaLabel: 'Dynamics release' }),
       new ParamField(p, 'dyn.range', { ariaLabel: 'Dynamics range (maximum gain change)' }),
     ];
+    const srcField = new ParamField(p, 'dyn.source', { ariaLabel: 'Dynamics source: the band itself, the input or the output' });
+    const filt = new ParamField(p, 'dyn.filter', { ariaLabel: 'Input filter before the analysis of IN or OUT' });
+    const freq = new ParamField(p, 'dyn.filterFreq', { ariaLabel: 'Input filter frequency' });
+    const delays = [new ParamField(p, 'dyn.delay', { ariaLabel: 'Dynamics delay: the gain change comes this much later' }), new ParamField(p, 'dyn.rdly', { ariaLabel: 'R delay: the gain change comes this much later still on R' })];
+    srcField.el.title = 'BAND measures each band itself; IN the input and OUT the output, each through an analysis filter per band';
+    filt.el.title = freq.el.title = 'Bandpass before the IN / OUT analysis, so only that range drives the dynamics';
+    const srcBox = h('span', { class: 'dyn-fields dyn-src' }, srcField.el, filt.el, freq.el, ...delays.map((f) => f.el));
     const mode = h('span', { class: 'dyn-mode' });
     const readout = h('b', { class: 'dyn-readout' });
     const live = h('span', { class: 'dyn-live' }, 'GR ', readout);
-    tab.status.append(on.el, h('span', { class: 'dyn-fields' }, ...fields.map((f) => f.el)), mode, h('span', { class: 'tp-spacer' }), live);
+    tab.status.append(on.el, h('span', { class: 'dyn-fields' }, ...fields.map((f) => f.el)), srcBox, mode, h('span', { class: 'tp-spacer' }), live);
+    // the input filter only counts for IN / OUT, its frequency only while it is on
+    const syncSrc = () => {
+      const band = Math.round(p.get('dyn.source')) === 0;
+      toggleClass(filt.el, 'is-dim', band);
+      toggleClass(freq.el, 'is-dim', band || p.get('dyn.filter') < 0.5);
+    };
+    syncSrc();
+    p.subscribe('dyn.source', syncSrc);
+    p.subscribe('dyn.filter', syncSrc);
 
     /* ---------- control row: amount + GR source per band ---------- */
     for (let b = 0; b < NUM_BANDS; b++) {

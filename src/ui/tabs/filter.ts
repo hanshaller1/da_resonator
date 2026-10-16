@@ -1,12 +1,13 @@
 /**
- * FILTER tab: pre filter (before the resonator) and post filter (after it).
- * Status line = what the selected filter does + a summary of both, PRE / POST selector and on.
- * Control row = the selected filter: TYPE, SLOPE, FREQ, RES, DRIVE, MIX (slots 1–6).
- * Visualisation = both responses over the spectrum with a cutoff handle, and per band the level
- * after resonator × pre × post (see filter/viz.ts).
+ * FILTER tab: pre filter (before the resonator), post filter (after it) and the band filter (a filter
+ * curve read at the band centres, on top of the faders; docs/hardware-modi-und-pools-2026-10-16.md).
+ * Status line = what the selected filter does + a summary of all three, PRE / POST / BAND selector and on.
+ * Control row = the selected filter: PRE / POST TYPE, SLOPE, FREQ, RES, DRIVE, MIX (slots 1–6);
+ * BAND TYPE, SLOPE, FREQ, WIDTH, DEPTH, OFFSET, R OFS (slots 1–7).
+ * Visualisation = the responses over the spectrum with a cutoff handle, and per band the level
+ * after resonator × pre × post + band filter; with BAND the locks along the foot (see filter/viz.ts).
  */
 import '../../styles/tabs/filter.css';
-import { FILTER_SLOTS, type FilterSlot } from '../../shared/paramdefs/modules';
 import { formatValue, fromNorm } from '../../shared/params';
 import { InstanceSelect } from '../components/instanceSelect';
 import { Knob } from '../components/knob';
@@ -15,11 +16,25 @@ import { ParamToggle } from '../components/toggle';
 import { h, toggleClass } from '../dom';
 import { frameLoop } from '../scheduler';
 import { registerTab } from '../shell/tabs';
-import { SLOT_NAME, buildFilterViz } from './filter/viz';
+import { FILTER_INSTANCES, SLOT_NAME, buildFilterViz, type FilterInst } from './filter/viz';
 
-const WHERE: Record<FilterSlot, string> = {
+const WHERE: Record<FilterInst, string> = {
   filterPre: 'Pre filter · before the resonator',
   filterPost: 'Post filter · after the resonator',
+  filterBand: 'Band filter · on the band levels',
+};
+const NAME: Record<FilterInst, string> = { filterPre: 'Pre filter', filterPost: 'Post filter', filterBand: 'Band filter' };
+/** controls of each filter, slot by slot (select = stepper, knob otherwise) */
+const CONTROLS: Record<FilterInst, readonly string[]> = {
+  filterPre: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix'],
+  filterPost: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix'],
+  filterBand: ['type', 'slope', 'cutoff', 'width', 'depth', 'offset', 'rofs'],
+};
+const TITLES: Record<string, string> = {
+  'filterBand.width': 'Width of the passband (BP) or of the cut (Notch) in octaves',
+  'filterBand.depth': 'How far the stopped bands go down; at the right stop they are silent',
+  'filterBand.offset': 'Level of the passband, on top of the faders',
+  'filterBand.rofs': 'R reads the curve with its cutoff moved by this many octaves',
 };
 
 let inst: InstanceSelect | null = null;
@@ -27,7 +42,7 @@ let inst: InstanceSelect | null = null;
 registerTab({
   id: 'filter',
   reveal(id) {
-    const i = FILTER_SLOTS.findIndex((s) => id.startsWith(`${s}.`));
+    const i = FILTER_INSTANCES.findIndex((s) => id.startsWith(`${s}.`));
     if (i < 0 || !inst) return false;
     inst.select(i);
     return true;
@@ -37,20 +52,20 @@ registerTab({
     const p = engine.params;
     const select = new InstanceSelect(engine, {
       key: 'filter',
-      count: FILTER_SLOTS.length,
-      label: (i) => SLOT_NAME[FILTER_SLOTS[i]],
-      onParam: (i) => `${FILTER_SLOTS[i]}.on`,
+      count: FILTER_INSTANCES.length,
+      label: (i) => SLOT_NAME[FILTER_INSTANCES[i]],
+      onParam: (i) => `${FILTER_INSTANCES[i]}.on`,
     });
     inst = select;
 
     /* ---------- status line ---------- */
     const desc = h('span', { class: 'flt-desc' });
-    const sums = FILTER_SLOTS.map((slot) => {
+    const sums = FILTER_INSTANCES.map((slot) => {
       const val = h('b');
       const el = h('span', { class: 'flt-sum' }, h('span', { class: 'led', 'aria-hidden': 'true' }), SLOT_NAME[slot], val);
       return { slot, el, val, text: '' };
     });
-    const toggles = FILTER_SLOTS.map((slot) => new ParamToggle(p, `${slot}.on`, { label: 'ON', ariaLabel: `${slot === 'filterPre' ? 'Pre' : 'Post'} filter on` }));
+    const toggles = FILTER_INSTANCES.map((slot) => new ParamToggle(p, `${slot}.on`, { label: 'ON', ariaLabel: `${NAME[slot]} on` }));
     tab.status.append(desc, h('span', { class: 'flt-sep', 'aria-hidden': 'true' }), ...sums.map((s) => s.el), h('span', { class: 'tp-spacer' }), select.el, ...toggles.map((t) => t.el));
 
     const eff = (id: string) => (p.isModulated(id) ? fromNorm(p.spec(id), p.getEffectiveNorm(id)) : p.get(id));
@@ -66,11 +81,15 @@ registerTab({
       }
     };
 
-    /* ---------- control row: one set per filter, the unselected one hidden ---------- */
-    const sets = FILTER_SLOTS.map((slot) => {
-      const name = slot === 'filterPre' ? 'Pre filter' : 'Post filter';
-      const knob = (key: string) => new Knob(p, `${slot}.${key}`, { size: 'md', ariaLabel: `${name} ${p.spec(`${slot}.${key}`).short.toLowerCase()}` }).el;
-      const ctls = [new ParamSelect(p, `${slot}.type`).el, new ParamSelect(p, `${slot}.slope`).el, knob('cutoff'), knob('res'), knob('drive'), knob('mix')];
+    /* ---------- control row: one set per filter, the unselected ones hidden ---------- */
+    const sets = FILTER_INSTANCES.map((slot) => {
+      const ctls = CONTROLS[slot].map((key) => {
+        const id = `${slot}.${key}`;
+        const spec = p.spec(id);
+        const el = spec.curve === 'discrete' ? new ParamSelect(p, id).el : new Knob(p, id, { size: 'md', ariaLabel: `${NAME[slot]} ${spec.short.toLowerCase()}` }).el;
+        if (TITLES[id]) el.title = TITLES[id];
+        return el;
+      });
       const cells = ctls.map((c, k) => {
         const cell = h('div', { class: 'flt-cell' }, c);
         tab.slots[k].append(cell);
@@ -81,13 +100,21 @@ registerTab({
       p.subscribe(`${slot}.on`, syncOn);
       return cells;
     });
+    // band filter: WIDTH only counts for BP and Notch
+    const width = sets[2][CONTROLS.filterBand.indexOf('width')];
+    const syncWidth = () => {
+      const t = Math.round(p.get('filterBand.type'));
+      toggleClass(width, 'is-dim', t === 0 || t === 2);
+    };
+    syncWidth();
+    p.subscribe('filterBand.type', syncWidth);
 
     const viz = buildFilterViz(tab, () => select.current, (i) => select.select(i));
 
     const show = (i: number) => {
       sets.forEach((cells, k) => cells.forEach((c) => (c.hidden = k !== i)));
       toggles.forEach((t, k) => (t.el.hidden = k !== i));
-      desc.textContent = WHERE[FILTER_SLOTS[i]];
+      desc.textContent = WHERE[FILTER_INSTANCES[i]];
       sums.forEach((s, k) => toggleClass(s.el, 'is-selected', k === i));
       viz.dirty = true;
     };
@@ -96,13 +123,13 @@ registerTab({
 
     syncSums();
     p.subscribeAll((id) => {
-      if (id.startsWith('filterPre.') || id.startsWith('filterPost.')) syncSums();
+      if (FILTER_INSTANCES.some((s) => id.startsWith(`${s}.`))) syncSums();
     });
     // modulated cutoffs only move through readouts: poll the text a few times a second while shown
     let t = 0;
-    const modulated = (s: FilterSlot) => p.isModulated(`${s}.cutoff`) || p.isModulated(`${s}.type`) || p.isModulated(`${s}.slope`);
+    const modulated = (s: FilterInst) => p.isModulated(`${s}.cutoff`) || p.isModulated(`${s}.type`) || p.isModulated(`${s}.slope`);
     frameLoop.add(() => {
-      if (tab.visible && (t++ & 7) === 0 && FILTER_SLOTS.some(modulated)) syncSums();
+      if (tab.visible && (t++ & 7) === 0 && FILTER_INSTANCES.some(modulated)) syncSums();
     });
   },
 });

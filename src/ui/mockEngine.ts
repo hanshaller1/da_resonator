@@ -200,6 +200,9 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       outPeak: [outS * (1 - spread * 0.2), outS * (1 - spread * 0.05) * (0.95 + 0.05 * Math.random())],
       bands,
       dynGR,
+      dynLvl: bands,
+      scanDb: new Float32Array(NUM_BANDS * 2),
+      scanPos: [-1, -1],
       hot: hot && !bypass,
     };
     meterEv.emit(latest);

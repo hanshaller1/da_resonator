@@ -1,6 +1,6 @@
 /**
- * DYN EQ visualisation (band axis): per band column the current band level as a bar (the part
- * above the threshold lit), the gain change hanging from the top (reduction red, boost green),
+ * DYN EQ visualisation (band axis): per band column the current band level as a bar (with SRC IN / OUT
+ * the level the analysis of that band measures; the part above the threshold lit), the gain change hanging from the top (reduction red, boost green),
  * the band's amount (bar strength + a small track at the foot) and the threshold as one line
  * across all bands, draggable up / down. The static transfer curve shows as a small inset while
  * threshold / ratio / range are being changed.
@@ -83,9 +83,11 @@ export function buildDynViz(tab: TabContext): DynViz {
     const running = engine.state === 'running';
     const on = p.get('dyn.on') >= 0.5;
     const f = engine.meters.latest();
+    // IN / OUT: show what the analysis measures (the band bars would not match the threshold)
+    const analysed = on && Math.round(p.get('dyn.source')) !== 0;
     let moving = false;
     for (let b = 0; b < NUM_BANDS; b++) {
-      const lin = running && f ? f.bands[b] ?? 0 : 0;
+      const lin = running && f ? (analysed ? f.dynLvl?.[b] : f.bands[b]) ?? 0 : 0;
       const db = Math.max(DB_BOT, 20 * Math.log10(Math.max(1e-6, lin)));
       level[b] = db >= level[b] ? db : Math.max(db, level[b] - (LEVEL_FALL * dt) / 1000);
       if (level[b] >= peak[b]) {

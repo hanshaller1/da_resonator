@@ -7,13 +7,13 @@
  */
 
 export type ParamCurve = 'lin' | 'exp' | 'fader' | 'toggle' | 'discrete';
-export type ParamUnit = '' | 'dB' | 'Hz' | '%' | 'ms' | 'BPM' | ':1';
+export type ParamUnit = '' | 'dB' | 'Hz' | '%' | 'ms' | 'BPM' | ':1' | 'oct' | 'dB/oct';
 
 /**
  * Which kind of module a parameter belongs to. The modulation rules
  * (shared/mod/rules.ts) decide per class which sources may modulate it.
  */
-export type ModClass = 'resonator' | 'dyn' | 'filter' | 'lfo' | 'cmod' | 'ef' | 'macro' | 'route' | 'clock';
+export type ModClass = 'resonator' | 'dyn' | 'filter' | 'lfo' | 'cmod' | 'ef' | 'macro' | 'route' | 'clock' | 'scan';
 
 export interface ParamDef {
   /** full id, `module.key` (resonator globals and band params keep their historic ids) */

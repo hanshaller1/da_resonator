@@ -132,7 +132,18 @@ import {
   resKnobWeight,
   resonanceMakeup,
 } from '../shared/params';
-import { SPREAD_CLASSIC_DB, TAP_BAND0, TAP_IN, TAP_OUT, TAP_RES_OUT } from '../shared/paramdefs/modules';
+import {
+  DYN_DELAY_MAX_MS,
+  DYN_RDLY_MAX_MS,
+  DYN_SRC_BAND,
+  DYN_SRC_IN,
+  SPREAD_CLASSIC_DB,
+  TAP_BAND0,
+  TAP_IN,
+  TAP_OUT,
+  TAP_RES_OUT,
+} from '../shared/paramdefs/modules';
+import { bandFilterLevels } from './modules/bandFilter';
 import type { ModConfig } from '../shared/mod/rules';
 import { SRC_DYN0 } from '../shared/mod/sources';
 import { MAX_BLOCK, ModEngine } from './ModEngine';
@@ -186,6 +197,8 @@ const QUARTER_PI = Math.PI / 4;
 const HALF_PI = Math.PI / 2;
 const DYN_SUB = 16; // band dynamics gain computer interval (samples); the gain is interpolated in between
 const DYN_DET = 8; // detector sampling interval (samples, divides DYN_SUB): A² is smooth, see header
+const DYN_ANA_Q = 1.5; // analysis bandpass per band for the IN / OUT sources (about one band wide)
+const DYN_FILT_Q = 2; // input filter before the analysis
 const DB_PER_LN_POW = 10 / Math.LN10; // ln(power ratio) → dB
 const LN_GAIN_PER_DB = Math.LN10 / 20; // dB → ln(amplitude ratio)
 
@@ -264,6 +277,23 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private bTapCur = new Float64Array(NS).fill(1); // per-sample smoothed
   private bFbFactor = new Float64Array(NB).fill(1); // FEEDBACK knob: factor on the band's feedback
   private fbAllFactor = 1; // FEEDBACK knob: factor on Feedback All
+  // mode layers (FILTER → BAND, CLK MOD → SCAN): dB per slot on top of the fader
+  private bFaderDb = new Float64Array(NS); // fader level of every slot (dB)
+  private lyrDb = new Float64Array(NS); // band filter + scanner (dB, −Infinity = silent)
+  private lyrLive = false; // a layer is on (or just went off: one last update back to 0 dB)
+  private lyrFast = false; // the layers move (scanner, modulated band filter): the band gains glide fast
+  private bfL = new Float64Array(NB);
+  private bfR = new Float64Array(NB);
+  private iBfOn = paramIndex('filterBand.on');
+  private iBfType = paramIndex('filterBand.type');
+  private iBfCut = paramIndex('filterBand.cutoff');
+  private iBfSlope = paramIndex('filterBand.slope');
+  private iBfWidth = paramIndex('filterBand.width');
+  private iBfDepth = paramIndex('filterBand.depth');
+  private iBfOffset = paramIndex('filterBand.offset');
+  private iBfRofs = paramIndex('filterBand.rofs');
+  private iBfLock: number[] = [];
+  private bfModulated = false;
   // resonance setup (CONFIG): feedback route, knob mode, curve, band weights
   private iRoute = paramIndex('reso.route');
   private iKnob = paramIndex('reso.knob');
@@ -383,12 +413,60 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private dGTgt = new Float64Array(NB).fill(1);
   private dGStep = new Float64Array(NB);
   private mGr = new Float64Array(NB); // meter: applied gain change with the largest magnitude since the last frame
+  private mLvl = new Float64Array(NB); // meter: largest detector A² since the last frame (what the dynamics measure)
+  // R gains of the band dynamics: the same change, later by R DLY
+  private dGR = new Float64Array(NB).fill(1);
+  private dGRTgt = new Float64Array(NB).fill(1);
+  private dGRStep = new Float64Array(NB);
+  // source (BAND · IN · OUT), delay and input filter (docs/hardware-modi-und-pools-2026-10-16.md 7A)
+  private iDynSrc = paramIndex('dyn.source');
+  private iDynDelay = paramIndex('dyn.delay');
+  private iDynRdly = paramIndex('dyn.rdly');
+  private iDynFilt = paramIndex('dyn.filter');
+  private iDynFiltF = paramIndex('dyn.filterFreq');
+  private dynSrc = DYN_SRC_BAND;
+  // analysis bandpass per band (IN / OUT): coefficients per band, state per slot
+  private aA1 = new Float64Array(NB);
+  private aA2 = new Float64Array(NB);
+  private aA3 = new Float64Array(NB);
+  private aK = new Float64Array(NB);
+  private aG = new Float64Array(NB);
+  private aS1 = new Float64Array(NS);
+  private aS2 = new Float64Array(NS);
+  private aY = new Float64Array(NS);
+  // input filter before the analysis (bandpass, per channel)
+  private fOn = false;
+  private fHz = -1;
+  private fA1 = 0;
+  private fA2 = 0;
+  private fA3 = 0;
+  private fK = 1 / DYN_FILT_Q;
+  private fS1 = new Float64Array(2);
+  private fS2 = new Float64Array(2);
+  // delay line of the gain change per band (dB), one entry every DYN_SUB samples; L reads dDlyL back, R dDlyR
+  private dRing: Float32Array;
+  private dRingLen: number;
+  private dRingPos = 0;
+  private dDlyL = 0;
+  private dDlyR = 0;
 
   constructor(options?: unknown) {
     super(options);
     const fs = this.fs;
     this.mod = new ModEngine(fs, (m) => this.port.postMessage(m));
     for (let b = 0; b < NB; b++) this.iDynAmt.push(paramIndex(`band${b}.dyn`));
+    for (let b = 0; b < NB; b++) this.iBfLock.push(paramIndex(`filterBand.lock${b}`));
+    for (let b = 0; b < NB; b++) {
+      const g = Math.tan((Math.PI * Math.min(BAND_FREQS[b], 0.45 * fs)) / fs);
+      const k = 1 / DYN_ANA_Q;
+      this.aA1[b] = 1 / (1 + g * (g + k));
+      this.aA2[b] = g * this.aA1[b];
+      this.aA3[b] = g * this.aA2[b];
+      this.aK[b] = k;
+      this.aG[b] = g;
+    }
+    this.dRingLen = Math.ceil(((DYN_DELAY_MAX_MS + DYN_RDLY_MAX_MS) * 0.001 * fs) / DYN_SUB) + 2;
+    this.dRing = new Float32Array(this.dRingLen * NB);
     for (let b = 0; b < NB; b++) {
       this.iGain[b * 2] = bandParamIndex(b, 'gain');
       this.iGain[b * 2 + 1] = bandParamIndexR(b, 'gain');
@@ -473,7 +551,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const slotParam = [G.inputGain, G.analog, G.resOffset, G.fbAll, G.fbAllTone, G.spread, G.mix, G.mix, G.outputGain, I_FBALL_R, this.iSpreadMode];
     for (let j = 0; j < NUM_GS; j++) this.gA[j] = m[slotParam[j]] ? fast : slow;
     for (let i = 0; i < NS; i++) {
-      this.bGainA[i] = m[this.iGain[i]] ? fast : slow;
+      this.bGainA[i] = m[this.iGain[i]] || this.lyrFast ? fast : slow;
       this.bFbA[i] = m[this.iFb[i]] ? fast : slow;
       this.bResA[i] = m[this.iRes[i]] ? fastSub : slowSub;
     }
@@ -481,6 +559,42 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const fastDyn = 1 - Math.exp(-DYN_SUB / (TAU_FAST * fs));
     this.dSmA = m[this.iDynThr] || m[this.iDynRatio] || m[this.iDynRange] ? fastDyn : slowDyn;
     for (let b = 0; b < NB; b++) this.dAmtA[b] = m[this.iDynAmt[b]] ? fastDyn : slowDyn;
+    this.bfModulated = [this.iBfType, this.iBfCut, this.iBfSlope, this.iBfWidth, this.iBfDepth, this.iBfOffset, this.iBfRofs].some((i) => m[i] === 1);
+  }
+
+  /**
+   * mode layers, once per block: the band filter curve at the band centres plus the scanner's values,
+   * in dB on top of every slot's fader (locked bands of a mode get 0 dB from it). Off = nothing to do.
+   */
+  private applyLayers(p: Float32Array) {
+    const fOn = p[this.iBfOn] >= 0.5;
+    const scan = this.mod.scan;
+    if (!fOn && !scan.on && !this.lyrLive) return;
+    const ly = this.lyrDb;
+    if (fOn) {
+      const type = Math.round(p[this.iBfType]);
+      const fc = clamp(p[this.iBfCut], 20, 20000);
+      const slope = clamp(p[this.iBfSlope], 6, 48);
+      const width = clamp(p[this.iBfWidth], 0.25, 8);
+      const depth = clamp(p[this.iBfDepth], 0, 60);
+      const off = clamp(p[this.iBfOffset], -24, 12);
+      bandFilterLevels(this.bfL, type, fc, slope, width, depth, off, 0);
+      bandFilterLevels(this.bfR, type, fc, slope, width, depth, off, clamp(p[this.iBfRofs], -2, 2));
+      for (let b = 0; b < NB; b++) {
+        const open = p[this.iBfLock[b]] < 0.5;
+        ly[b * 2] = open ? this.bfL[b] : 0;
+        ly[b * 2 + 1] = open ? this.bfR[b] : 0;
+      }
+    } else ly.fill(0);
+    if (scan.on) for (let i = 0; i < NS; i++) ly[i] += scan.layerDb[i];
+    // both off: this last pass set the targets back to the bare faders
+    this.lyrLive = fOn || scan.on;
+    for (let i = 0; i < NS; i++) this.bGainTgt[i] = dbToGain(this.bFaderDb[i] + ly[i]);
+    const fast = scan.on || (fOn && this.bfModulated);
+    if (fast !== this.lyrFast) {
+      this.lyrFast = fast;
+      this.updateSmoothing();
+    }
   }
 
   /** band dynamics targets from the effective values; once per block (cheap, no per-sample work while off) */
@@ -502,6 +616,28 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.dRelMs = rel;
       this.dRelA = 1 - Math.exp(-DYN_SUB / (rel * 0.001 * this.fs));
     }
+    const src = clamp(Math.round(p[this.iDynSrc]), 0, 2);
+    if (src !== this.dynSrc) {
+      // the analysis starts clean on the new source
+      this.dynSrc = src;
+      this.aS1.fill(0);
+      this.aS2.fill(0);
+      this.aY.fill(0);
+      this.fS1.fill(0);
+      this.fS2.fill(0);
+    }
+    const perStep = (0.001 * this.fs) / DYN_SUB;
+    this.dDlyL = Math.min(this.dRingLen - 1, Math.round(clamp(p[this.iDynDelay], 0, DYN_DELAY_MAX_MS) * perStep));
+    this.dDlyR = Math.min(this.dRingLen - 1, this.dDlyL + Math.round(clamp(p[this.iDynRdly], 0, DYN_RDLY_MAX_MS) * perStep));
+    this.fOn = p[this.iDynFilt] >= 0.5;
+    const fHz = Math.min(clamp(p[this.iDynFiltF], 20, 20000), 0.45 * this.fs);
+    if (fHz !== this.fHz) {
+      this.fHz = fHz;
+      const g = Math.tan((Math.PI * fHz) / this.fs);
+      this.fA1 = 1 / (1 + g * (g + this.fK));
+      this.fA2 = g * this.fA1;
+      this.fA3 = g * this.fA2;
+    }
     if (!this.dynLive) {
       // waking up: start from the current settings and a clean detector, no glide from stale values
       this.dynLive = true;
@@ -515,7 +651,59 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.dG.fill(1);
       this.dGTgt.fill(1);
       this.dGStep.fill(0);
+      this.dGR.fill(1);
+      this.dGRTgt.fill(1);
+      this.dGRStep.fill(0);
+      this.dRing.fill(0);
+      this.aS1.fill(0);
+      this.aS2.fill(0);
+      this.aY.fill(0);
+      this.fS1.fill(0);
+      this.fS2.fill(0);
       this.dSub = 0;
+    }
+  }
+
+  /**
+   * IN / OUT source, every sample while the dynamics run: the input filter (if on), then the analysis
+   * bandpass of every band on that signal (TPT SVF, output k·BP, unity at the band centre).
+   */
+  private dynAnalyse(xL: number, xR: number) {
+    if (this.fOn) {
+      const a1 = this.fA1, a2 = this.fA2, a3 = this.fA3, k = this.fK, s1 = this.fS1, s2 = this.fS2;
+      for (let ch = 0; ch < 2; ch++) {
+        const v3 = (ch === 0 ? xL : xR) - s2[ch];
+        const v1 = a1 * s1[ch] + a2 * v3;
+        const v2 = s2[ch] + a2 * s1[ch] + a3 * v3;
+        s1[ch] = 2 * v1 - s1[ch];
+        s2[ch] = 2 * v2 - s2[ch];
+        if (ch === 0) xL = k * v1;
+        else xR = k * v1;
+      }
+      if (!(Math.abs(s1[0]) + Math.abs(s1[1]) + Math.abs(s2[0]) + Math.abs(s2[1]) < 1e8)) {
+        s1.fill(0);
+        s2.fill(0);
+      }
+    }
+    const A1 = this.aA1, A2 = this.aA2, A3 = this.aA3, K = this.aK, S1 = this.aS1, S2 = this.aS2, Y = this.aY;
+    for (let b = 0; b < NB; b++) {
+      const a1 = A1[b], a2 = A2[b], a3 = A3[b], k = K[b];
+      for (let ch = 0; ch < 2; ch++) {
+        const i = b * 2 + ch;
+        const c1 = S1[i], c2 = S2[i];
+        const v3 = (ch === 0 ? xL : xR) - c2;
+        const v1 = a1 * c1 + a2 * v3;
+        const v2 = c2 + a2 * c1 + a3 * v3;
+        const n1 = 2 * v1 - c1;
+        const n2 = 2 * v2 - c2;
+        if (!(Math.abs(n1) + Math.abs(n2) < 1e8)) {
+          S1[i] = S2[i] = Y[i] = 0;
+          continue;
+        }
+        S1[i] = n1;
+        S2[i] = n2;
+        Y[i] = k * v1;
+      }
     }
   }
 
@@ -526,12 +714,15 @@ class ResonatorProcessor extends AudioWorkletProcessor {
    * until the next gain computer step.
    */
   private dynDetect() {
-    const ic1 = this.ic1, ic2 = this.ic2, yPrev = this.yPrev, cK = this.cK, cG = this.cG, dPk = this.dPk;
+    const band = this.dynSrc === DYN_SRC_BAND;
+    // BAND: the band filters themselves; IN / OUT: the analysis bandpasses (same form, see dynAnalyse)
+    const ic1 = band ? this.ic1 : this.aS1, ic2 = band ? this.ic2 : this.aS2, yPrev = band ? this.yPrev : this.aY;
+    const cG = this.cG, cK = this.cK, aG = this.aG, aK = this.aK, dPk = this.dPk;
     for (let b = 0; b < NB; b++) {
       let pk = dPk[b];
       for (let i = b * 2; i < b * 2 + 2; i++) {
         // with BP = y/k, LP = s2 − g·BP, HP = (s1 − BP)/g:  k²·LP·HP = (k·s2 − g·y)(k·s1 − y)/g
-        const y = yPrev[i], k = cK[i], g = cG[i];
+        const y = yPrev[i], k = band ? cK[i] : aK[b], g = band ? cG[i] : aG[b];
         const a2 = y * y - ((k * ic2[i] - g * y) * (k * ic1[i] - y)) / g;
         if (a2 > pk) pk = a2;
       }
@@ -552,10 +743,17 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const thrP = Math.exp(thrDb / DB_PER_LN_POW); // threshold as A²
     const atkA = this.dAtkA, relA = this.dRelA;
     const dPk = this.dPk, dGr = this.dGr, dGc = this.dGc, dG = this.dG, dGTgt = this.dGTgt, dGStep = this.dGStep;
-    const amtCur = this.dAmtCur, amtTgt = this.dAmtTgt, amtA = this.dAmtA, mGr = this.mGr;
+    const dGR = this.dGR, dGRTgt = this.dGRTgt, dGRStep = this.dGRStep;
+    const amtCur = this.dAmtCur, amtTgt = this.dAmtTgt, amtA = this.dAmtA, mGr = this.mGr, mLvl = this.mLvl;
+    // delay line: write this step's change, L reads DELAY back, R DELAY + R DLY
+    const ring = this.dRing, len = this.dRingLen, pos = this.dRingPos, dl = this.dDlyL, dr = this.dDlyR;
+    this.dRingPos = pos + 1 < len ? pos + 1 : 0;
+    const rowL = (dl > pos ? pos - dl + len : pos - dl) * NB;
+    const rowR = (dr > pos ? pos - dr + len : pos - dr) * NB;
     for (let b = 0; b < NB; b++) {
       const pk = dPk[b];
       dPk[b] = 0;
+      if (pk > mLvl[b]) mLvl[b] = pk;
       let tgt = 0;
       if (pk > thrP) {
         tgt = DB_PER_LN_POW * Math.log(pk / thrP) * slope;
@@ -567,7 +765,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       if (gr < 1e-9 && gr > -1e-9) gr = 0;
       dGr[b] = gr;
       const amt = (amtCur[b] += (amtTgt[b] - amtCur[b]) * amtA[b]);
-      const gc = gr * amt * onRamp;
+      const gcNow = gr * amt * onRamp;
+      ring[pos * NB + b] = gcNow;
+      const gc = dl ? ring[rowL + b] : gcNow;
+      const gcR = dr ? ring[rowR + b] : gcNow;
       dGc[b] = gc;
       if (gc * gc > mGr[b] * mGr[b]) mGr[b] = gc;
       // land exactly on the previous target (so "no change" is exactly 1), then glide to the new one
@@ -576,6 +777,11 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       dG[b] = g0;
       dGTgt[b] = g1;
       dGStep[b] = (g1 - g0) * (1 / DYN_SUB);
+      const r0 = dGRTgt[b];
+      const r1 = gcR === gc ? g1 : gcR > 1e-6 || gcR < -1e-6 ? Math.exp(-gcR * LN_GAIN_PER_DB) : 1;
+      dGR[b] = r0;
+      dGRTgt[b] = r1;
+      dGRStep[b] = (r1 - r0) * (1 / DYN_SUB);
     }
   }
 
@@ -590,7 +796,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       const gc = this.dGc[b];
       const v = (gc < 0 ? -gc : gc) * inv;
       src[SRC_DYN0 + b] = v > 1 ? 1 : v;
-      if (this.dG[b] !== 1 || this.dGTgt[b] !== 1) settled = false;
+      if (this.dG[b] !== 1 || this.dGTgt[b] !== 1 || this.dGR[b] !== 1 || this.dGRTgt[b] !== 1) settled = false;
     }
     if (settled && this.dynOnTgt === 0) {
       this.dynLive = false;
@@ -625,7 +831,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       for (let b = 0; b < NB; b++) this.kW[b] = resKnobWeight(b, w);
     }
     for (let i = 0; i < NS; i++) {
-      this.bGainTgt[i] = dbToGain(p[this.iGain[i]]);
+      this.bFaderDb[i] = p[this.iGain[i]];
+      this.bGainTgt[i] = dbToGain(this.bFaderDb[i] + this.lyrDb[i]);
       this.bResTgt[i] = clamp(p[this.iRes[i]], 0, 1);
       this.bFbTgt[i] = clamp(p[this.iFb[i]], 0, 1);
     }
@@ -804,6 +1011,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.applyParams(mod.eff, false);
     }
     this.applyDyn(mod.eff);
+    this.applyLayers(mod.eff);
 
     /* --- pre filter (on a copy: never write into the input buffers) --- */
     const preL = this.preL, preR = this.preR;
@@ -841,7 +1049,9 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const dynAct = this.dynLive;
     const dynOnTgt = this.dynOnTgt;
     let dynOn = this.dynOnCur, dSub = this.dSub;
-    const dGain = this.dG, dGStep = this.dGStep;
+    const dGain = this.dG, dGStep = this.dGStep, dGainR = this.dGR, dGRStep = this.dGRStep;
+    const dynAna = dynAct && this.dynSrc !== DYN_SRC_BAND;
+    const dynIn = this.dynSrc === DYN_SRC_IN;
 
     // the per-slot glides (level, fb, makeup, tap) run per sample only while one of them still moves;
     // settled, the per-slot values are computed once per coefficient update (see bandsSettled)
@@ -941,8 +1151,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         for (let b = 0; b < NB; b++) {
           const dg = dGain[b];
           dGain[b] = dg + dGStep[b];
+          const dgr = dGainR[b];
+          dGainR[b] = dgr + dGRStep[b];
           fgA[b * 2] = bGainCur[b * 2] * dg;
-          fgA[b * 2 + 1] = bGainCur[b * 2 + 1] * dg;
+          fgA[b * 2 + 1] = bGainCur[b * 2 + 1] * dgr;
         }
       } else if (glide || dynAct || needPre) {
         needPre = false;
@@ -951,9 +1163,12 @@ class ResonatorProcessor extends AudioWorkletProcessor {
           // band dynamics are stereo-linked: one gain per band, after the band's own loop, before makeup
           // and the taps (folded into the fader gain)
           let dg = 1;
+          let dgr = 1;
           if (dynAct) {
             dg = dGain[b];
             dGain[b] = dg + dGStep[b];
+            dgr = dGainR[b];
+            dGainR[b] = dgr + dGRStep[b];
           }
           for (let i = b * 2; i < b * 2 + 2; i++) {
             let fbRaw = bFbCur[i] * bFbFactor[b];
@@ -962,7 +1177,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
             const fa = fbRaw < 0 ? -fbRaw : fbRaw;
             const gl = fa <= BAND_FB_EDGE ? fa * BAND_FB_SLOPE : 1 + ((fa - BAND_FB_EDGE) / (1 - BAND_FB_EDGE)) * bFbExcess[i];
             fbgA[i] = fbRaw < 0 ? -gl : gl;
-            fgA[i] = dynAct ? bGainCur[i] * dg : bGainCur[i];
+            fgA[i] = dynAct ? bGainCur[i] * (i & 1 ? dgr : dg) : bGainCur[i];
             tapA[i] = glide ? (bTapCur[i] += (bTap[i] - bTapCur[i]) * 0.002) : bTapCur[i];
           }
         }
@@ -1142,6 +1357,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       }
 
       tapRes[s] = 0.5 * (wetL + wetR);
+      if (dynAna) this.dynAnalyse(dynIn ? sL : wetL, dynIn ? sR : wetR);
       if (dynAct) {
         if (++dSub >= DYN_SUB) dSub = 0;
         if (dSub % DYN_DET === 0) this.dynDetect();
@@ -1240,12 +1456,19 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     // copied (not reused) so every frame keeps its own values, also in offline tests
     const dynGR = new Float32Array(this.mGr);
     this.mGr.fill(0);
+    const dynLvl = new Float32Array(NB);
+    for (let b = 0; b < NB; b++) dynLvl[b] = Math.sqrt(this.mLvl[b]);
+    this.mLvl.fill(0);
+    const scan = this.mod.scan;
     this.port.postMessage({
       type: 'meters',
       inPeak: [this.mInPk[0], this.mInPk[1]],
       outPeak: [this.mOutPk[0], this.mOutPk[1]],
       bands,
       dynGR,
+      dynLvl,
+      scanDb: new Float32Array(scan.layerDb),
+      scanPos: [scan.on ? scan.lastL : -1, scan.on ? scan.lastR : -1],
       hot,
     });
   }

@@ -24,6 +24,12 @@ export interface MeterFrame {
    * length NUM_BANDS: positive = gain reduction, negative = boost (upward expansion), 0 while off
    */
   dynGR: Float32Array;
+  /** per band the peak level the band dynamics measure (band, input or output analysis), 0 while off */
+  dynLvl: Float32Array;
+  /** band scanner (CLK MOD → SCAN): its layer per slot (band·2 + channel) in dB, 0 while off or locked */
+  scanDb: Float32Array;
+  /** band of the scanner's last step on L and R (−1 while off / before the first step) */
+  scanPos: [number, number];
   /** true if a band currently exceeds unity inside a feedback loop (UI may flash) */
   hot: boolean;
 }

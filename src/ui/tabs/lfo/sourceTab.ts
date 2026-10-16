@@ -34,6 +34,8 @@ export interface SourceTabOptions {
   name(i: number): string;
   /** routes list options; `sources` / `addFrom` default to the selected module */
   routes?: Partial<RoutesListOptions>;
+  /** false for an instance that is no modulation source (the band scanner on CLK MOD): no source chip */
+  isSource?(i: number): boolean;
 }
 
 /** where the picture ends and the routes list starts: the boundary between slot 6 and 7 */
@@ -46,6 +48,8 @@ export class SourceTab {
   readonly desc: HTMLElement;
   /** the picture box (left part of the visualisation, position relative) */
   readonly pic: HTMLElement;
+  /** the routes box (right part of the visualisation) */
+  readonly side: HTMLElement;
   private listeners = new Set<(i: number) => void>();
   private perInstance: HTMLElement[][] = [];
 
@@ -66,7 +70,7 @@ export class SourceTab {
       const m = opts.module(i);
       const on = new ParamToggle(p, `${m}.on`, { label: 'ON', ariaLabel: `${opts.name(i)} on` });
       ons.push(on.el);
-      chips.push(new SourceChip(engine, m).el);
+      chips.push(opts.isSource?.(i) === false ? h('span') : new SourceChip(engine, m).el);
     }
     this.track(ons);
     this.track(chips);
@@ -79,7 +83,8 @@ export class SourceTab {
       addFrom: () => this.module,
       ...opts.routes,
     });
-    tab.viz.append(this.pic, h('div', { class: 'srctab-routes' }, this.routes.el));
+    this.side = h('div', { class: 'srctab-routes' }, this.routes.el);
+    tab.viz.append(this.pic, this.side);
 
     /* ---------- selected instance: off state ---------- */
     const syncOff = () => toggleClass(tab.root, 'is-off', p.get(`${this.module}.on`) < 0.5);

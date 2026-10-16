@@ -75,6 +75,8 @@ const MODULE_TITLES: Record<string, string> = {
   dyn: 'Band Dynamics',
   filterPre: 'Pre Filter',
   filterPost: 'Post Filter',
+  filterBand: 'Band Filter',
+  scan: 'Band Scanner',
   clock: 'Clock',
 };
 

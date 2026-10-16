@@ -134,6 +134,46 @@ CONFIG → GENERAL → Spread wählt, was er tut (Parameter `reso.spread`, im Pr
   haben halbe Tiefe, damit sie gleich weit ausschlagen. Ein LFO, der früher an der 0 stehen blieb, schwingt jetzt
   in die Gegenrichtung weiter (Werks-Presets Breathing Bands und Singing Drone).
 
+### Hardware-Modi
+
+Stand 16.10.2026, Entscheidungen in `docs/hardware-modi-und-pools-2026-10-16.md`
+(`1A 2A 3A 4A 5A 6C 7A 8A 9A 10A 11A 12A`). Teil 1, die Modi, ist gebaut; Teil 2, die Pools, folgt.
+
+- Jeder Modus ist eine Ebene mit eigenem ON. Er rechnet seinen Pegel in dB auf den Fader jedes Bands
+  (Fader + Band-Filter + Scanner + DYN), die Fader selbst bewegen sich nicht. Mehrere Modi laufen gleichzeitig.
+- **Schlösser:** Band-Filter und Scanner haben je Band ein Schloss, in der Reihe am Fuß ihres Bilds oder per Klick
+  in die Spalte. Ein gesperrtes Band behält seinen Fader-Pegel. Im Preset gespeichert (`filterBand.lockN`,
+  `scan.lockN`).
+- **FILTER → BAND** (Band-Filter):
+  - TYPE LP · BP · HP · Notch, FREQ, SLOPE 6 bis 48 dB/Oktave, WIDTH 0,25 bis 8 Oktaven (nur BP und Notch),
+    DEPTH (wie tief der Sperrbereich geht, 60 dB = stumm), OFFSET (Pegel im Durchlassbereich).
+  - Jedes Band bekommt den Wert der Kurve an seiner Mitte. Ein Sweep wandert so hörbar von Band zu Band.
+  - **R OFS** versetzt den Cutoff von R um bis zu ±2 Oktaven (gestrichelte Kurve).
+  - Griff ziehen: seitlich FREQ, hoch und runter OFFSET. Die stetigen Werte lassen sich modulieren, die
+    Bandpegel folgen dann schnell (3 ms).
+- **CLK MOD → SCAN** (Band-Scanner): Bei jedem Schritt wird ein Wert abgetastet und ins nächste Band geschrieben.
+  - Takt **RATE · INT · MIDI** in der Statuszeile: RATE läuft frei mit 0,1 bis 160 Schritten pro Sekunde,
+    INT und MIDI im Takt mit DIV.
+  - **SOURCE:** der eigene LFO (SHAPE Sine, Square, Triangle, Saw, Random; LFO 0,01 bis 40 Hz) oder eine
+    Modulationsquelle (LFO 1–4, Env 1–4, CM 1–2, Makro 1–8).
+  - **DIR** Up, Down, Ping-Pong oder Random. Gesperrte Bänder werden übersprungen.
+  - Pegel eines Bands = OFFSET − DEPTH × (1 − Wert): beim höchsten Wert OFFSET, beim tiefsten OFFSET − DEPTH.
+  - **R DLY** (0 bis 16): R bekommt die Schritte von L so viele Schritte später. **R INV:** R bekommt den
+    gespiegelten Wert, die Bänder neigen sich auf R andersherum.
+  - Einschalten, RESET des Takts und MIDI Start lösen sofort einen Schritt aus.
+  - Das Bild zeigt je Band den Pegel des Scanners (L, mit R daneben), OFFSET, FLOOR und den laufenden Schritt.
+- **DYN EQ**, neu in der Statuszeile:
+  - **SRC** Band · In · Out. BAND misst wie bisher das eigene Bandsignal. IN misst den Eingang, OUT den Ausgang,
+    je durch ein Analysefilter pro Band und Kanal (Bandpass auf der Bandmitte, Güte 1,5). Das Bild zeigt dann den
+    gemessenen Pegel.
+  - **FILT** Off · BP mit **FREQ:** ein Bandpass (Güte 2) vor der Analyse, nur bei IN und OUT.
+  - **DLY** (bis 2 s) verzögert die Absenkung, **R DLY** (bis 1 s) die von R zusätzlich.
+  - Threshold, Ratio, Attack, Release, Range und AMT je Band bleiben.
+- Preset-Format 6. Alle neuen Werte stehen im Standard auf aus bzw. neutral, ältere Presets klingen gleich.
+- Code: `src/dsp/modules/bandFilter.ts`, `src/dsp/modules/scan.ts`, Ebenen und DYN-Quellen in
+  `src/dsp/resonator.worklet.ts`, Bilder in `src/ui/tabs/filter/viz.ts` und `src/ui/tabs/clk/scanViz.ts`,
+  Schlösser in `src/ui/components/lockRow.ts`. Tests: `scripts/test-modes.mjs`.
+
 ### ANALOG
 
 Stand 16.10.2026: Bis zur Mitte (0.5, Standard) klingt ANALOG wie bisher: leichte Sättigung, Bauteiltoleranz,

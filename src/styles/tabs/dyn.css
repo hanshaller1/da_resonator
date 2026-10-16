@@ -52,3 +52,8 @@
 
 /* visualisation: the threshold line is dragged on the canvas */
 .dyn-viz { touch-action: none; }
+
+/* source, input filter and delays (a second group in the status line) */
+.dyn-src { padding-left: var(--sp-3); box-shadow: -1px 0 0 var(--c-line-strong); }
+.dyn-src .pfield.is-dim { opacity: 0.38; }
+.is-dyn-off .dyn-src { opacity: 0.45; filter: saturate(0.15); }

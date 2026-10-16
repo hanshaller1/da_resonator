@@ -25,7 +25,91 @@ export function dynParams(): ParamDef[] {
     cont('dyn.range', 'Dyn Range', 'RANGE', 0, 36, 24, 'dB'),
   ];
   for (let b = 0; b < NUM_BANDS; b++) out.push(cont(`band${b}.dyn`, `Band ${b + 1} Dynamics`, 'DYN', 0, 1, 1, '%'));
+  // what the detector measures (docs/hardware-modi-und-pools-2026-10-16.md, 7A): the band itself, or the
+  // input / the output through analysis filters per band; the change comes delayed, on R later still (3A)
+  out.push(
+    fixedDef(discrete('dyn.source', 'Dyn Source', 'SRC', DYN_SOURCES, 0)),
+    cont('dyn.delay', 'Dyn Delay', 'DLY', 0, DYN_DELAY_MAX_MS, 0, 'ms'),
+    cont('dyn.rdly', 'Dyn R Delay', 'R DLY', 0, DYN_RDLY_MAX_MS, 0, 'ms'),
+    fixedDef(discrete('dyn.filter', 'Dyn Input Filter', 'FILT', DYN_FILTERS, 0)),
+    cont('dyn.filterFreq', 'Dyn Filter Freq', 'FREQ', 20, 20000, 1000, 'Hz', 'exp'),
+  );
   return out;
+}
+/** DYN EQ sources: the band's own signal, the input, the output (the resonator's wet sum) */
+export const DYN_SOURCES = ['Band', 'In', 'Out'] as const;
+export const DYN_SRC_BAND = 0;
+export const DYN_SRC_IN = 1;
+export const DYN_SRC_OUT = 2;
+/** input filter before the IN / OUT analysis: off or a bandpass at dyn.filterFreq */
+export const DYN_FILTERS = ['Off', 'BP'] as const;
+export const DYN_DELAY_MAX_MS = 2000;
+export const DYN_RDLY_MAX_MS = 1000;
+
+/** a param that is stored with the sound but never modulated (switches, setup choices) */
+function fixedDef(d: ParamDef): ParamDef {
+  return { ...d, modulatable: false };
+}
+
+/* ---------- mode layers (docs/hardware-modi-und-pools-2026-10-16.md, 1A): dB per band on top of the faders ---------- */
+/** lock toggles of a mode: a locked band keeps its fader level, the mode leaves it alone */
+function lockParams(m: string, L: string): ParamDef[] {
+  return Array.from({ length: NUM_BANDS }, (_, b) => toggle(`${m}.lock${b}`, `${L} Lock Band ${b + 1}`, `LOCK${b + 1}`));
+}
+
+/** band filter (FILTER → BAND): a filter curve read at the band centres */
+/** same order as the pre / post filter types */
+export const BAND_FILTER_TYPES = ['LP', 'BP', 'HP', 'Notch'] as const;
+export function bandFilterParams(): ParamDef[] {
+  const L = 'Band Filter';
+  return [
+    toggle('filterBand.on', L, 'BAND'),
+    discrete('filterBand.type', `${L} Type`, 'TYPE', BAND_FILTER_TYPES, 0),
+    cont('filterBand.cutoff', `${L} Cutoff`, 'FREQ', 20, 20000, 1000, 'Hz', 'exp'),
+    cont('filterBand.slope', `${L} Slope`, 'SLOPE', 6, 48, 24, 'dB/oct'),
+    cont('filterBand.width', `${L} Width`, 'WIDTH', 0.25, 8, 2, 'oct', 'exp'),
+    cont('filterBand.depth', `${L} Depth`, 'DEPTH', 0, 60, 60, 'dB'),
+    cont('filterBand.offset', `${L} Offset`, 'OFFSET', -24, 12, 0, 'dB'),
+    cont('filterBand.rofs', `${L} R Offset`, 'R OFS', -2, 2, 0, 'oct'),
+    ...lockParams('filterBand', L),
+  ];
+}
+
+/** band scanner (CLK MOD → SCAN): on every step a value is sampled and written into the next band */
+export const SCAN_SOURCES = ['LFO', 'LFO 1', 'LFO 2', 'LFO 3', 'LFO 4', 'EF 1', 'EF 2', 'EF 3', 'EF 4', 'CM 1', 'CM 2', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'] as const;
+/** mod source id of each SCAN_SOURCES entry ('' = the scanner's own LFO) */
+export const SCAN_SOURCE_IDS: readonly string[] = [
+  '',
+  ...Array.from({ length: NUM_LFOS }, (_, i) => `lfo${i + 1}`),
+  ...Array.from({ length: NUM_EFS }, (_, i) => `ef${i + 1}`),
+  ...Array.from({ length: NUM_CMODS }, (_, i) => `cmod${i + 1}`),
+  ...Array.from({ length: NUM_MACROS }, (_, i) => `macro${i + 1}`),
+];
+export const SCAN_SHAPES = ['Sine', 'Square', 'Triangle', 'Saw', 'Random'] as const;
+export const SCAN_DIRS = ['Up', 'Down', 'Ping-Pong', 'Random'] as const;
+/** steps per second at the top of RATE (≈ 10 000 BPM in 1/16) */
+export const SCAN_RATE_MAX = 160;
+/** largest R delay in steps */
+export const SCAN_RDLY_MAX = 16;
+export function scanParams(): ParamDef[] {
+  const m = 'scan';
+  const L = 'Scanner';
+  return [
+    toggle(`${m}.on`, L, 'SCAN'),
+    fixedDef(discrete(`${m}.src`, `${L} Source`, 'SOURCE', SCAN_SOURCES, 0)),
+    discrete(`${m}.shape`, `${L} LFO Shape`, 'SHAPE', SCAN_SHAPES, 0),
+    cont(`${m}.lfo`, `${L} LFO Rate`, 'LFO', 0.01, 40, 0.5, 'Hz', 'exp'),
+    toggle(`${m}.sync`, `${L} Sync`, 'SYNC'),
+    cont(`${m}.rate`, `${L} Rate`, 'RATE', 0.1, SCAN_RATE_MAX, 8, 'Hz', 'exp'),
+    discrete(`${m}.div`, `${L} Division`, 'DIV', DIVISION_LABELS, 4 /* 1/16 */),
+    clockChoice(m, L),
+    discrete(`${m}.dir`, `${L} Direction`, 'DIR', SCAN_DIRS, 0),
+    cont(`${m}.depth`, `${L} Depth`, 'DEPTH', 0, 48, 24, 'dB'),
+    cont(`${m}.offset`, `${L} Offset`, 'OFFSET', -24, 12, 0, 'dB'),
+    discrete(`${m}.rdly`, `${L} R Delay`, 'R DLY', intRange(0, SCAN_RDLY_MAX), 0),
+    toggle(`${m}.rinv`, `${L} R Invert`, 'R INV'),
+    ...lockParams(m, L),
+  ];
 }
 
 /* ---------- pre / post filter ---------- */
