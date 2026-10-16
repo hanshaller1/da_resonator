@@ -234,6 +234,13 @@ function inputOptions(engine: EngineAPI): HTMLOptionElement[] {
   return opts;
 }
 
+/** read the input list again whenever a select is opened, so a device plugged in a moment ago shows up */
+function rescanOnOpen(select: HTMLSelectElement, engine: EngineAPI): void {
+  const rescan = () => void engine.input.rescan();
+  select.addEventListener('pointerdown', rescan);
+  select.addEventListener('focus', rescan);
+}
+
 /** handle a chosen input option; false if it was not an input option */
 async function chooseInput(t: Transport, value: string, revert: () => void): Promise<boolean> {
   if (!value.startsWith(IN)) return false;
@@ -259,6 +266,7 @@ export function buildSourceSelect(t: Transport, opts: { label?: string } = {}): 
   sync();
   engine.onSourceChange(sync);
   engine.input.onChange(sync);
+  rescanOnOpen(select, engine);
 
   select.addEventListener('change', async () => {
     const k = select.value;
@@ -287,6 +295,7 @@ export function buildInputSelect(t: Transport): HTMLLabelElement {
   sync();
   engine.onSourceChange(sync);
   engine.input.onChange(sync);
+  rescanOnOpen(select, engine);
   select.addEventListener('change', () => void chooseInput(t, select.value, sync));
   return h('label', { class: 'select' }, h('span', { class: 'select-label micro-label' }, 'DEVICE'), select, icon('chevron', 'icon select-chevron'));
 }

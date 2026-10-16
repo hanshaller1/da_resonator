@@ -102,7 +102,7 @@ registerTab({
       const ch = inp.deviceChannels ? ` · ${inp.deviceChannels} ch` : '';
       let text: string;
       if (!inp.supported) text = 'Not available on this page';
-      else if (inp.status === 'open') text = `${inp.label}${ch}`;
+      else if (inp.status === 'open') text = `${inp.label}${ch}${inp.namesHidden ? ' · browser hides the other names' : ''}`;
       else if (inp.status === 'waiting') text = `${inp.label} not connected, waiting for it`;
       else if (engine.source === 'mic') text = `${inp.label || 'Audio input'} opens when audio starts`;
       else if (!inp.allowed) text = 'Not in use · choose a device to allow access';
@@ -116,20 +116,35 @@ registerTab({
     inp.onChange(syncInput);
     engine.onSourceChange(() => syncInput());
 
+    // CHECK: what the browser reports, in place of the note (to find out why a device is missing)
+    const NOTE = inp.supported
+      ? 'With AUTO, a plugged-in Elektron device (Digitakt, Digitone, Syntakt, Rytm, Four, Heat …) becomes the input, also while audio runs. The browser takes the first two channels (with Overbridge: the main out).'
+      : 'This page may not use audio inputs (an embedded window, or plain http). Open resonator-standalone.html in Chrome, or run the app locally, to play your synths through it.';
+    const note = h('p', { class: 'cfg-note' }, NOTE);
+    const checkBtn = h('button', { type: 'button', class: 'inst-btn cfg-check', title: 'Show what the browser reports about audio inputs (click again to hide)' }, 'CHECK');
+    checkBtn.addEventListener('click', async () => {
+      if (note.classList.contains('is-report')) {
+        note.classList.remove('is-report');
+        note.textContent = NOTE;
+        toggleClass(checkBtn, 'is-selected', false);
+        return;
+      }
+      await inp.rescan();
+      const lines = await inp.report();
+      console.info('[input report]\n' + lines.join('\n'));
+      note.textContent = lines.join('\n');
+      note.classList.add('is-report');
+      toggleClass(checkBtn, 'is-selected', true);
+    });
+
     const input = card(
       'Input',
       'cfg-input',
       h('div', { class: 'cfg-row' }, buildInputSelect(t)),
       h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'CHAN'), h('span', { class: 'inst', role: 'group', 'aria-label': 'Input channels' }, ...chanBtns.map((x) => x.b))),
-      h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'AUTO'), autoBtn),
+      h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'AUTO'), autoBtn, h('span', { class: 'cfg-grow' }), h('span', { class: 'inst' }, checkBtn)),
       h('div', { class: 'cfg-row' }, inLed, inState),
-      h(
-        'p',
-        { class: 'cfg-note' },
-        inp.supported
-          ? 'With AUTO, a plugged-in Elektron device (Digitakt, Digitone, Syntakt, Rytm, Four, Heat …) becomes the input, also while audio runs. The browser takes the first two channels (with Overbridge: the main out).'
-          : 'This page may not use audio inputs (an embedded window, or plain http). Open resonator-standalone.html in Chrome, or run the app locally, to play your synths through it.',
-      ),
+      note,
     );
 
     /* ---------- analog ---------- */

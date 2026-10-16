@@ -108,7 +108,7 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       inputsAllowed = true;
       await input.refresh();
       const d = input.find(id || (input.autoChoice() ?? '')) ?? input.elektron() ?? input.devices[0];
-      input.opened(d.id, d.label, 2);
+      input.opened(d.id, input.fullName(d.id), 2);
       source = 'mic';
       sourceEv.emit('mic', d.label);
     },

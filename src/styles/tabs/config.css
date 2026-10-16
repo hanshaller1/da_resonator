@@ -53,6 +53,7 @@
 .cfg-instate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-2); font-size: var(--fs-xs); }
 .cfg-input .inst-btn:disabled { opacity: 0.4; pointer-events: none; }
 .cfg-auto { height: 24px; padding: 0 var(--sp-4); }
+.cfg-note.is-report { min-height: 0; overflow: auto; white-space: pre-line; color: var(--c-text-2); font: var(--fs-2xs) / 1.5 var(--font-mono); user-select: text; }
 
 /* character + display: compact, stacked in one column */
 .cfg-analog, .cfg-display { gap: var(--sp-3); }

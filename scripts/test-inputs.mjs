@@ -3,7 +3,7 @@
 // Run: node scripts/test-inputs.mjs
 import { check, importTs, results } from './testkit.mjs';
 
-const { InputDevices, isElektron, cleanLabel } = importTs('src/core/inputs.ts');
+const { InputDevices, isElektron, cleanLabel, splitWindowsName, displayName } = importTs('src/core/inputs.ts');
 
 /* ---------- names ---------- */
 for (const n of ['Elektron Digitakt', 'Digitakt II', 'Elektron Digitone (1935:000e)', 'Syntakt', 'Analog Rytm MKII', 'Analog Four MKII', 'Analog Heat +FX', 'Model:Cycles', 'Model:Samples', 'Analog Keys'])
@@ -12,6 +12,7 @@ for (const n of ['MacBook Pro Microphone', 'Scarlett 2i2 USB', 'Analog input 1',
   check(`not Elektron: ${n}`, !isElektron(n));
 check('label: USB id removed', cleanLabel('Elektron Digitakt (1935:000c)') === 'Elektron Digitakt');
 check('label: default alias removed', cleanLabel('Default - Scarlett 2i2 USB') === 'Scarlett 2i2 USB');
+check('label: German Windows alias removed', cleanLabel('Standard - Mikrofon (Realtek(R) Audio)') === 'Mikrofon (Realtek(R) Audio)');
 check('label: built-in kept', cleanLabel('MacBook Pro Microphone (Built-in)') === 'MacBook Pro Microphone (Built-in)');
 
 /* ---------- a fake mediaDevices + storage ---------- */
@@ -126,6 +127,53 @@ const SC = { deviceId: 'sc', label: 'Scarlett 2i2 USB' };
   const inp = new InputDevices(undefined, undefined, async () => {});
   await inp.refresh();
   check('no mediaDevices: not supported, empty', !inp.supported && inp.devices.length === 0);
+}
+
+/* ---------- Windows names: the device in brackets ---------- */
+{
+  const W = ['Digitale Audioschnittstelle (Elektron Syntakt)', 'Mikrofon (Realtek(R) Audio)', 'Mic/Line/Inst 1-2 (MiniFuse 4)', 'Line 3-4 (MiniFuse 4)', 'Loopback Mix Left/Right (MiniFuse 4)'];
+  check('split: nested brackets', JSON.stringify(splitWindowsName('Mikrofon (Realtek(R) Audio)')) === JSON.stringify({ input: 'Mikrofon', device: 'Realtek(R) Audio' }));
+  check('split: "2- " numbering removed', splitWindowsName('Line (2- Elektron Syntakt)')?.device === 'Elektron Syntakt');
+  check('split: no brackets', splitWindowsName('Syntakt') === null && splitWindowsName('(only brackets)') === null);
+  check('shown: one input per device -> device', displayName(W[0], W, true) === 'Elektron Syntakt' && displayName(W[1], W, true) === 'Realtek(R) Audio');
+  check('shown: several inputs per device -> device · input', displayName(W[3], W, true) === 'MiniFuse 4 · Line 3-4');
+  check('shown: not Windows -> unchanged', displayName('MacBook Pro Microphone (Built-in)', ['MacBook Pro Microphone (Built-in)'], false) === 'MacBook Pro Microphone (Built-in)');
+
+  const store = memStorage();
+  const m = fakeMedia(W.map((label, i) => ({ deviceId: `d${i}`, label })));
+  const inp = new InputDevices(m, store, async () => {}, true);
+  await inp.refresh();
+  check('Windows list: shown names', inp.devices.map((d) => d.label).join('|') === 'Elektron Syntakt|Realtek(R) Audio|MiniFuse 4 · Mic/Line/Inst 1-2|MiniFuse 4 · Line 3-4|MiniFuse 4 · Loopback Mix Left/Right', inp.devices.map((d) => d.label).join('|'));
+  check('Windows list: Elektron recognised', inp.elektron()?.id === 'd0');
+  inp.opened('d0', inp.fullName('d0'), 2);
+  check('Windows: chosen label shown short, stored in full', inp.label === 'Elektron Syntakt' && JSON.parse(store.d['resonator.input']).label === 'Digitale Audioschnittstelle (Elektron Syntakt)');
+  check('Windows: another device is not the chosen one', inp.isChosen({ id: 'new', label: 'Elektron Syntakt', elektron: true }) === false);
+}
+
+/* ---------- browsers that hide or hold back the list ---------- */
+{
+  // names hidden although an input runs (privacy browsers): an open input still counts as access
+  const m = fakeMedia([{ deviceId: 'default', label: '', groupId: 'g1' }, { deviceId: 'rt', label: '', groupId: 'g1' }, { deviceId: 'syn', label: '', groupId: 'g2' }]);
+  m.enumerateDevices = async () => m.devs.map((d) => ({ kind: 'audioinput', ...d }));
+  const inp = new InputDevices(m, memStorage(), async () => {});
+  await inp.refresh();
+  check('hidden names, nothing open: not allowed', !inp.allowed && inp.devices.length === 0);
+  inp.opened('default', 'Mikrofon (Realtek(R) Audio)', 2, 'g1');
+  await inp.refresh();
+  check('hidden names, input open: listed, alias replaced by the real device', inp.allowed && inp.namesHidden && inp.deviceId === 'rt' && inp.devices.map((d) => d.label).join('|') === 'Mikrofon (Realtek(R) Audio)|Input 2 (name hidden)', inp.devices.map((d) => d.label).join('|'));
+  check('resolve by group', inp.resolve('default', '', 'g2')?.id === 'syn');
+}
+{
+  // the first list never answers: later reads still work
+  const m = fakeMedia([BUILTIN, DT]);
+  const real = m.enumerateDevices;
+  let first = true;
+  m.enumerateDevices = () => (first ? ((first = false), new Promise(() => {})) : real());
+  const inp = new InputDevices(m, memStorage(), async () => {});
+  const t0 = Date.now();
+  await inp.refresh();
+  await inp.refresh();
+  check('stalled first list: given up, next read fills the list', inp.devices.length === 2 && Date.now() - t0 < 4000, `${Date.now() - t0} ms`);
 }
 
 console.table(results);

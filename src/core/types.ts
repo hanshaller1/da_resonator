@@ -69,8 +69,10 @@ export interface AudioInputInfo {
 export interface InputAPI {
   /** this page may use audio input at all (needs https or a local file; an embedded window needs its host's permission) */
   readonly supported: boolean;
-  /** the browser has allowed audio input, so device names are known */
+  /** the browser has allowed audio input, so the devices are listed */
   readonly allowed: boolean;
+  /** the browser lists devices without names (Elektron devices can't be recognised then) */
+  readonly namesHidden: boolean;
   /** inputs of this computer; empty until allowed */
   readonly devices: readonly AudioInputInfo[];
   /** off: no input open (the source is something else, or audio has not started) · open: an input runs · waiting: the chosen device is not connected */
@@ -85,6 +87,10 @@ export interface InputAPI {
   readonly autoElektron: boolean;
   /** make a device the source; '' = automatic (Elektron with AUTO, else the last device, else the default). Asks for access if needed */
   use(deviceId: string): Promise<void>;
+  /** read the device list again (a plugged-in Elektron device takes over with AUTO) */
+  rescan(): Promise<void>;
+  /** what the browser reports (browser, page, access, raw device list), to find out why a device is missing */
+  report(): Promise<string[]>;
   setChannels(c: InputChannels): void;
   setAutoElektron(on: boolean): void;
   /** device list, choice, status, channels or AUTO changed */

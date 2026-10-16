@@ -319,9 +319,7 @@ export class AudioEngine implements EngineAPI {
   async useInput(deviceId: string): Promise<void> {
     if (!this.ctx) {
       // remembered; it opens when audio starts
-      const d = deviceId ? this.input.find(deviceId) : undefined;
-      if (deviceId) this.input.choose(deviceId, d?.label ?? '');
-      else this.input.choose(this.input.deviceId, this.input.label);
+      this.input.choose(deviceId || this.input.deviceId);
       this.setSourceInternal('mic', this.input.label || 'Audio input');
       return;
     }
@@ -341,14 +339,15 @@ export class AudioEngine implements EngineAPI {
     await this.input.refresh(); // names appear with the first access
     const track = stream.getAudioTracks()[0];
     const set = track?.getSettings() ?? {};
-    const dev = this.input.resolve(set.deviceId ?? id, track?.label ?? '');
+    const dev = this.input.resolve(set.deviceId ?? id, track?.label ?? '', set.groupId);
     // first access with AUTO: an Elektron device whose name was unknown until now takes over
     if (!deviceId && this.input.autoElektron && !dev?.elektron) {
       const el = this.input.elektron();
       if (el) return this.useInput(el.id);
     }
+    // the track's own name first: the list may only have a placeholder where the browser hides names
     // (a mono device skips the channel pick: onChange re-routes)
-    this.input.opened(dev?.id ?? set.deviceId ?? id, dev?.label ?? (cleanLabel(track?.label ?? '') || 'Audio input'), set.channelCount ?? 0);
+    this.input.opened(dev?.id ?? set.deviceId ?? id, cleanLabel(track?.label ?? '') || (dev ? this.input.fullName(dev.id) : '') || 'Audio input', set.channelCount ?? 0, set.groupId);
     this.setSourceInternal('mic', this.input.label);
   }
 
@@ -367,7 +366,7 @@ export class AudioEngine implements EngineAPI {
   private waitForInput() {
     this.stopSource();
     this.currentBuffer = null;
-    this.input.waiting(this.input.deviceId, this.input.label);
+    this.input.waiting();
     this.setSourceInternal('mic', this.input.label);
     this.input.notice(`${this.input.label} is not connected. It becomes the input when you plug it in.`);
   }
@@ -415,14 +414,14 @@ export class AudioEngine implements EngineAPI {
   private inputEnded(stream: MediaStream) {
     if (stream !== this.inStream) return;
     this.stopSource();
-    this.input.waiting(this.input.deviceId, this.input.label);
+    this.input.waiting();
     this.input.notice(`${this.input.label} disconnected. It becomes the input again when you plug it back in.`);
   }
 
   /** hot-plug: with AUTO an Elektron device takes over; the chosen device returns when plugged back in */
   private async inputsArrived(devices: AudioInputInfo[]) {
     const el = this.input.autoElektron ? devices.find((d) => d.elektron) : undefined;
-    const back = this._source === 'mic' && !this.inStream ? devices.find((d) => d.id === this.input.deviceId || d.label === this.input.label) : undefined;
+    const back = this._source === 'mic' && !this.inStream ? devices.find((d) => this.input.isChosen(d)) : undefined;
     const pick = el ?? back;
     if (!pick || (this.inStream && pick.id === this.input.deviceId)) return;
     if (!this.ctx) {
