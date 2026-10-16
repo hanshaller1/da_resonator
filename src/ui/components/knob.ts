@@ -1,5 +1,5 @@
 import type { ParamStoreAPI } from '../../core/types';
-import { twinId } from '../../shared/params';
+import { formatValue, twinId } from '../../shared/params';
 import { h, s } from '../dom';
 import { ParamControl, type ParamControlOptions } from './paramControl';
 
@@ -120,7 +120,13 @@ export class Knob extends ParamControl {
     const from = this.bipolar ? normToDeg(0.5) : START;
     this.valueArc.setAttribute('d', arc(R_TRACK, from, deg));
     this.pointer.setAttribute('transform', `rotate(${deg.toFixed(2)} ${C} ${C})`);
-    this.valueEl.textContent = this.valueText;
+    const split = this.splitValues();
+    if (split) {
+      // L+R with the channels apart: L over R (the readout never changes the knob's width)
+      const ln = (ch: string, v: number) => h('span', { class: 'knob-ro-line' }, h('span', { class: 'knob-ro-ch' }, ch), formatValue(this.spec, v));
+      this.valueEl.replaceChildren(ln('L', split[0]), ln('R', split[1]));
+    } else this.valueEl.textContent = this.valueText;
+    this.valueEl.classList.toggle('is-split', !!split);
   }
 
   protected override renderPair(marks: { ch: 'L' | 'R'; norm: number }[]): void {

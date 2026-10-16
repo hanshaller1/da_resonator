@@ -449,6 +449,7 @@
 }
 
 .knob-caption {
+  position: relative;
   display: grid;
   justify-items: center;
   min-width: 100%;
@@ -471,11 +472,39 @@
 }
 
 .knob-readout {
+  /* out of the flow: a longer value never widens the knob (that moved it under the pointer) */
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
   color: var(--c-accent);
   opacity: 0;
+  pointer-events: none;
+}
+
+/* L+R with the channels apart: L over R */
+.knob-readout.is-split {
+  z-index: 3;
+  display: grid;
+  padding: 0 2px;
+  border-radius: var(--r-xs);
+  background: var(--c-panel);
+  line-height: 9px;
+}
+
+.knob-ro-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 3px;
+}
+
+.knob-ro-ch {
+  color: var(--c-text-4);
+  font-size: 7px;
+  font-weight: var(--fw-bold);
 }
 
 .knob--fb .knob-readout {

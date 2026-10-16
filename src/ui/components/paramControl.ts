@@ -39,15 +39,9 @@ function unwatchMod(c: ParamControl): void {
   }
 }
 
-/** a value without its unit ("−6.0 dB" → "−6.0") */
-function bare(spec: ParamSpec, v: number): string {
-  const t = formatValue(spec, v);
-  return spec.unit && t.endsWith(` ${spec.unit}`) ? t.slice(0, -spec.unit.length - 1) : t;
-}
-
-/** "L|R" text of a pair whose channels differ, e.g. "−6.0|+3.0 dB" */
+/** text of a pair whose channels differ, e.g. "L −6.0 dB · R +3.0 dB" (accessible value, tooltips) */
 export function pairText(spec: ParamSpec, l: number, r: number): string {
-  return `${bare(spec, l)}|${bare(spec, r)}${spec.unit ? ` ${spec.unit}` : ''}`;
+  return `L ${formatValue(spec, l)} · R ${formatValue(spec, r)}`;
 }
 
 /**
@@ -131,14 +125,19 @@ export abstract class ParamControl implements AssignHost {
     return this.spec.min < 0 && this.spec.max > 0;
   }
 
+  /** the value of the channel the switch edits; L+R with the channels apart: both */
   get valueText(): string {
+    const split = this.splitValues();
+    if (split) return pairText(this.spec, split[0], split[1]);
     const pr = this.pairId;
-    if (pr) {
-      const l = this.params.get(this.id), r = this.params.get(pr);
-      if (Math.abs(this.params.getNorm(this.id) - this.params.getNorm(pr)) > 1e-4) return pairText(this.spec, l, r);
-      return formatValue(this.spec, channelSel.get() === 'R' ? r : l);
-    }
-    return formatValue(this.spec, this.params.get(this.id));
+    return formatValue(this.spec, this.params.get(pr && channelSel.get() === 'R' ? pr : this.id));
+  }
+
+  /** [L, R] while the switch is on L+R and the two channels differ, else null */
+  protected splitValues(): [number, number] | null {
+    const pr = this.pairId;
+    if (!pr || channelSel.get() !== 'LR' || Math.abs(this.params.getNorm(this.id) - this.params.getNorm(pr)) <= 1e-4) return null;
+    return [this.params.get(this.id), this.params.get(pr)];
   }
 
   /** the params an edit touches: the param, its twin, or both (channel switch) */
