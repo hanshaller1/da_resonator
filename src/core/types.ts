@@ -99,6 +99,68 @@ export interface InputAPI {
   onNotice(cb: (msg: string, tone: 'info' | 'error') => void): Unsubscribe;
 }
 
+/** unsupported: no Web MIDI (Safari) · blocked: this page may not use it · off · asking: the browser asks · on · denied */
+export type MidiStatus = 'unsupported' | 'blocked' | 'off' | 'asking' | 'on' | 'denied';
+
+export interface MidiInputInfo {
+  id: string;
+  name: string;
+  elektron: boolean;
+}
+
+/**
+ * MIDI input (docs/midi-2026-10-16.md): device, channels, CC map with MIDI learn, Program Change and
+ * the clock source. Remembered in the browser, for all presets.
+ */
+export interface MidiAPI {
+  readonly status: MidiStatus;
+  /** MIDI was on last time (it comes on by itself when the browser still allows it) */
+  readonly wasEnabled: boolean;
+  /** MIDI inputs of this computer; empty until MIDI is on */
+  readonly devices: readonly MidiInputInfo[];
+  /** chosen device ('' = none) and its name */
+  readonly deviceId: string;
+  readonly deviceName: string;
+  /** the chosen device is plugged in and listened to */
+  readonly connected: boolean;
+  /** an Elektron device becomes the MIDI device when MIDI comes on and when it is plugged in */
+  readonly autoElektron: boolean;
+  /** MIDI channels 1–16, 0 = off: IN moves both sides, IN L only L, IN R only R */
+  readonly channels: { in: number; l: number; r: number };
+  /** the clock runs on TEMPO / RUN (int) or follows MIDI clock (midi) */
+  readonly clockSource: 'int' | 'midi';
+  /** shifts the MIDI clock against the audio, −50 … +50 ms */
+  readonly offsetMs: number;
+  /** param waiting for MIDI learn */
+  readonly learning: string | null;
+  /** activity times (performance.now ms, -Infinity = never) and the last CC, for the CONFIG page */
+  readonly clockAt: number;
+  readonly ccAt: number;
+  readonly pcAt: number;
+  readonly lastCc: { ch: number; cc: number; value: number } | null;
+  enable(): Promise<void>;
+  disable(): void;
+  choose(id: string): void;
+  setAutoElektron(on: boolean): void;
+  setChannel(which: 'in' | 'l' | 'r', ch: number): void;
+  setClockSource(src: 'int' | 'midi'): void;
+  setOffset(ms: number): void;
+  ccOf(id: string): number | undefined;
+  paramOf(cc: number): string | undefined;
+  /** [param id, CC] by CC number */
+  mapEntries(): [string, number][];
+  setCc(id: string, cc: number | null): void;
+  learn(id: string | null): void;
+  resetMap(): void;
+  exportMap(): { fileName: string; text: string };
+  importMap(text: string): { ok: true; count: number; skipped: number } | { ok: false; reason: string };
+  onChange(cb: () => void): Unsubscribe;
+  onNotice(cb: (msg: string, tone: 'info' | 'error') => void): Unsubscribe;
+  /** Program Change n (0–127) on a listened channel */
+  onProgram(cb: (n: number) => void): Unsubscribe;
+  onLearn(cb: (id: string, cc: number) => void): Unsubscribe;
+}
+
 export interface EngineAPI {
   readonly params: ParamStoreAPI;
   readonly meters: MeterBusAPI;
@@ -122,6 +184,8 @@ export interface EngineAPI {
   setSourceLevel(v: number): void;
   /** audio inputs (the 'mic' source) */
   readonly input: InputAPI;
+  /** MIDI input: CCs, Program Change, clock */
+  readonly midi: MidiAPI;
 
   /** stop all feedback (band FB to 0, Feedback All off) and clear all filter / feedback state */
   panic(): void;
@@ -165,9 +229,11 @@ export interface ModAPI {
   removeTriggerRoute(source: string, target: string): void;
   /** latest value of a source (bipolar -1..1 or unipolar 0..1) */
   sourceValue(source: string): number;
-  /** clock position in beats and tempo from the latest readout */
+  /** clock position in beats and tempo from the latest readout (the measured tempo while it follows MIDI) */
   readonly beats: number;
   readonly bpm: number;
+  /** the clock moves (RUN, or MIDI Start / Stop while it follows MIDI) */
+  readonly running: boolean;
   resetClock(): void;
   /** routes changed */
   onChange(cb: () => void): Unsubscribe;

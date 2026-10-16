@@ -65,3 +65,54 @@
 .cfg-help-list { display: grid; grid-template-columns: auto 1fr; gap: 5px var(--sp-5); margin: 0; font-size: var(--fs-xs); }
 .cfg-help-list dt { color: var(--c-text); font-family: var(--font-mono); font-size: var(--fs-2xs); white-space: nowrap; }
 .cfg-help-list dd { margin: 0; color: var(--c-text-3); }
+
+/* pages: GENERAL (.cfg) and MIDI (.cfg-midi), switched in the status line */
+.cfg, .cfg-midi { height: 100%; box-sizing: border-box; }
+.cfg[hidden], .cfg-midi[hidden] { display: none; }
+
+/* MIDI page (ui/tabs/configMidi.ts): device + channels | clock | CC map */
+.cfg-midi {
+  display: grid;
+  grid-template-columns: 1.3fr 1.05fr 1.45fr;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+.cfg-midi .select { flex: 1 1 auto; min-width: 0; }
+.cfg-midi .select-native { min-width: 0; width: 100%; }
+.cfg-midi .select-native:disabled { color: var(--c-text-3); cursor: default; }
+.cfg-midi .range { flex: 1 1 auto; min-width: 0; }
+.cfg-mdev, .cfg-mclk { gap: var(--sp-3); }
+.cfg-midi-on { flex: none; }
+.cfg-midi .toggle:disabled { opacity: 0.45; cursor: default; }
+.cfg-acts { gap: var(--sp-5); }
+.cfg-act { display: inline-flex; align-items: center; gap: 5px; color: var(--c-text-3); font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-ui); letter-spacing: var(--ls-label); }
+.cfg-act .cfg-led.is-on { background: var(--c-accent); box-shadow: 0 0 6px var(--c-accent-glow); }
+.cfg-lastcc { margin-left: auto; color: var(--c-text-3); font: var(--fs-2xs) / 1 var(--font-mono); white-space: nowrap; }
+.cfg-mchs { gap: var(--sp-3); }
+.cfg-midi .cfg-mch { flex: 1 1 0; min-width: 0; padding-left: var(--sp-3); }
+.cfg-mch .select-label { padding-right: var(--sp-3); }
+.cfg-mch .select-native { padding-right: var(--sp-6); }
+.cfg-offval { width: 46px; text-align: right; white-space: nowrap; }
+
+/* CC map table */
+.cfg-mmap { gap: var(--sp-3); }
+.cfg-map-head, .cfg-map-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-4); }
+.cfg-map-head { padding: 0 var(--sp-2); }
+.cfg-map-head .micro-label { color: var(--c-text-3); }
+.cfg-map {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0 var(--sp-2);
+  border-top: 1px solid var(--c-line);
+  border-bottom: 1px solid var(--c-line);
+}
+.cfg-map-row { min-height: 20px; padding: 0 var(--sp-2); border-radius: var(--r-sm); font-size: var(--fs-xs); }
+.cfg-map-row:hover { background: var(--c-panel); }
+.cfg-map-row.is-hit { background: var(--c-accent-soft); }
+.cfg-map-row .mod-pop-remove { width: 20px; height: 18px; font-size: var(--fs-xs); }
+.cfg-map-cc { color: var(--c-accent); font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.cfg-map-head .cfg-map-cc { text-align: right; }
+.cfg-map-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-2); }
+.cfg-map .cfg-note { padding: var(--sp-4) 0; }

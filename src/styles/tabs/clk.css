@@ -18,6 +18,11 @@
 .clk-btn:focus-visible { outline: none; box-shadow: var(--sh-focus); }
 .clk-btn.is-flash { animation: clk-press var(--dur-slow) var(--ease-out); }
 @keyframes clk-press { 0% { background: var(--c-accent); color: var(--c-accent-ink); } }
+.clk-btn:disabled { opacity: 0.4; cursor: default; }
+.clk-btn:disabled:hover { color: var(--c-text-2); }
+.clk-clock .pfield[hidden] { display: none; }
+.clk-ext-bpm { cursor: default; }
+.clk-clock .toggle:disabled { opacity: 0.45; cursor: default; }
 .clk-beats { display: inline-flex; gap: 3px; }
 .clk-beat { width: 6px; height: 6px; border-radius: 50%; background: var(--c-meter-off); box-shadow: 0 0 0 1px var(--c-line-inset); }
 .clk-beat.is-on { background: var(--c-text-3); }

@@ -52,7 +52,7 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - Darunter immer die 10 Band-Fader (Pegel), rechts die Global-Spalte (Input, Resonance, Spread, Kanalwahl, FB All, Dry/Wet, Output).
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
 - Die Modulationsmatrix ist pro Quelle verteilt: jedes Quellen-Register (CLK, ENV, LFO, MACRO) zeigt die Ziele
-  seiner Quelle mit Tiefe; Rechtsklick auf jeden Regler öffnet weiterhin dessen Modulation.
+  seiner Quelle mit Tiefe; Rechtsklick auf jeden Regler öffnet weiterhin dessen Modulation und MIDI Learn.
 
 ### Resonanz und Feedback (CONFIG → Resonance)
 
@@ -113,6 +113,37 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
 - Eingebettete Fenster ohne Mikrofon-Erlaubnis (z. B. eine gehostete Vorschau) können keine Eingänge nutzen;
   dann `resonator-standalone.html` lokal in Chrome öffnen oder `npm run dev`.
 - Code: `src/core/inputs.ts` (Liste, Hot-Plug, Elektron, Speicher), `AudioEngine.useInput` (Stream, Kanalwahl).
+
+### MIDI
+
+Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6A 7A 8A`).
+
+- Web MIDI gibt es in Chrome, Edge und Opera, nicht in Safari. Eine gehostete Vorschau sperrt MIDI meist;
+  dann `resonator-standalone.html` lokal in Chrome öffnen oder `npm run dev`.
+- CONFIG → **MIDI** (Umschalter rechts in der Statuszeile): Schalter MIDI (der Browser fragt einmal), Gerät,
+  ELEKTRON AUTO (ein Elektron-Gerät wird beim Einschalten und beim Einstecken zum MIDI-Gerät), Anzeigen für
+  Clock, CC und Program Change, die Kanäle **IN**, **IN L**, **IN R** (1–16 oder OFF, Standard IN = 1).
+- **Kanäle:** IN bewegt L und R, IN L und IN R nur eine Seite der Bandwerte und von FB ALL. Alle anderen
+  Regler folgen allen drei Kanälen.
+- **CC:** Grundbelegung Bandpegel 20–29, RES 40–49, FB 50–59, RESONANCE 70, SPREAD 71, DRY/WET 72,
+  FB ALL 73 (an ab 64), FB ALL AMT 74, TONE 75, Makros 102–109. INPUT und OUTPUT sind frei, lassen sich aber
+  lernen. Ein CC setzt den Wert sofort (Parameter-Locks), wie eine Handbewegung; Modulation läuft darauf
+  weiter. Der CC-Wert, der dem Grundwert am nächsten liegt, trifft ihn genau (CC 64 = 0 dB).
+- **MIDI Learn:** Rechtsklick auf einen Regler (auch auf Schalter) → LEARN, dann an der Elektron einen Regler
+  bewegen. Ein CC gehört zu genau einem Regler. ✕ entfernt die Belegung. Belegte Regler zeigen beim
+  Überfahren `MIDI CC n`. CC 0, 32 und 120–127 sind gesperrt (Bank Select, Kanalmodus).
+- Die Belegung gilt für alle Presets und liegt im Browser (`localStorage` `resonator.midi`), mit DEFAULT,
+  EXPORT und IMPORT (Datei `resonator-midi-map.json`, Belegung und Kanäle).
+- **Program Change n** lädt Preset n: erst die 12 Werks-Presets, dann die eigenen in der Reihenfolge des
+  Speicherns. Die Nummer (ab 1) steht in der Preset-Liste vor dem Namen.
+- **Clock:** INT · MIDI neben TEMPO (CLK MOD) und in CONFIG → MIDI. Auf MIDI zeigt TEMPO das gemessene Tempo,
+  RUN, TAP und RESET ruhen. Start setzt auf Schlag 1 und startet, Stop hält, Continue läuft weiter. Ohne
+  Clock läuft das letzte Tempo weiter. **OFFSET** (−50 … +50 ms) verschiebt den Takt gegen das Audio (+ = später,
+  z. B. um die Latenz des Audio-Eingangs). Das Tempo im Preset bleibt unangetastet.
+- Keine Noten, keine SysEx, kein MIDI-Ausgang.
+- Code: `src/core/midi.ts` (Geräte, Kanäle, Learn, Speicher), `src/core/midiMap.ts` (Belegung, Datei),
+  `src/dsp/extClock.ts` (Takt aus der Clock, im Worklet), `src/presets/programs.ts`, `src/ui/tabs/configMidi.ts`,
+  `src/ui/midi/hook.ts` (Popup, Tooltip).
 
 ### Modulation
 

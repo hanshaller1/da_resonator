@@ -6,6 +6,7 @@
 import type { EngineAPI } from '../../../core/types';
 import { readTextFile, saveText } from '../../../presets/files';
 import { CATEGORY_MAX, DEFAULT_CATEGORY, NAME_MAX, type Preset } from '../../../presets/io';
+import { programNumbers } from '../../../presets/programs';
 import type { PresetSession } from '../../../presets/session';
 import { h, toggleClass } from '../../dom';
 import { picon } from './icons';
@@ -333,7 +334,9 @@ export class PresetBrowser {
   private renderList(): void {
     const ses = this.session;
     const shown = this.visible();
-    const sig = `${this.filter}|${this.query}|${shown.map((p) => `${p.id}:${p.name}:${p.category}`).join('/')}`;
+    // program numbers for MIDI Program Change (presets/programs.ts)
+    const nums = programNumbers(ses.store);
+    const sig = `${this.filter}|${this.query}|${shown.map((p) => `${p.id}:${p.name}:${p.category}:${nums.get(p.id) ?? ''}`).join('/')}`;
     if (sig !== this.listSig) {
       this.listSig = sig;
       const focusedId = (document.activeElement as HTMLElement | null)?.dataset?.id;
@@ -348,6 +351,7 @@ export class PresetBrowser {
         const b = h(
           'button',
           { type: 'button', class: 'pb-item', 'data-id': p.id, tabindex: -1 },
+          h('span', { class: 'pb-item-num', title: nums.has(p.id) ? `MIDI program change ${nums.get(p.id)} loads this preset` : 'Only the first 128 presets have a program number' }, String(nums.get(p.id) ?? '')),
           h('span', { class: 'pb-item-name' }, p.name),
           h('span', { class: 'pb-item-state', 'aria-hidden': 'true' }),
           h('span', { class: 'pb-item-dot', 'aria-hidden': 'true' }),

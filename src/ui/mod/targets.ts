@@ -13,6 +13,7 @@
  */
 import type { ModAPI, ParamStoreAPI, RouteInfo, Unsubscribe } from '../../core/types';
 import { newRouteChannel } from '../channel';
+import { midiOffered } from '../midi/hook';
 import { assign } from './assign';
 import { announce, hideBubble, showBubble } from './feedback';
 import { formatDepth, sourceBipolar, sourceLabel, targetLabel } from './labels';
@@ -177,6 +178,24 @@ export interface DragOpts {
   /** pixels for a full -1..1 depth sweep */
   dragRange: number;
   fineFactor?: number;
+}
+
+/** right-click lists routes (modulatable or routed params) and MIDI learn (mappable params) */
+function hasMenu(id: string, params: ParamStoreAPI): boolean {
+  return params.spec(id).modulatable || !!api?.routesTo(id).length || midiOffered(id);
+}
+
+if (typeof document !== 'undefined') {
+  // toggles, step bars and other loose [data-param] elements: right-click for MIDI learn
+  document.addEventListener('contextmenu', (e) => {
+    if (!api || !store || !openParamRoutes || !(e.target instanceof Element)) return;
+    const el = e.target.closest<HTMLElement>('[data-param]');
+    if (!el || ownerBinding(el)) return;
+    const id = el.dataset.param!;
+    if (!store.specs.some((p) => p.id === id) || !hasMenu(id, store)) return;
+    e.preventDefault();
+    openParamRoutes(el, id, api, store, e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : undefined);
+  });
 }
 
 export class AssignBinding {
@@ -441,8 +460,7 @@ export class AssignBinding {
 
   private onContext = (e: MouseEvent): void => {
     if (!api || !store || !openParamRoutes) return;
-    const spec = this.params.spec(this.host.id);
-    if (!spec.modulatable && !api.routesTo(this.host.id).length) return;
+    if (!hasMenu(this.host.id, this.params)) return;
     e.preventDefault();
     this.cancelPress();
     // keyboard-invoked context menus report 0/0: anchor to the control instead
@@ -456,7 +474,7 @@ export class AssignBinding {
       const p = this.press;
       this.press = null;
       if (!p || !api || !store || !openParamRoutes) return;
-      if (!this.params.spec(this.host.id).modulatable && !api.routesTo(this.host.id).length) return;
+      if (!hasMenu(this.host.id, this.params)) return;
       // end the value drag the control started, then show the list
       this.host.el.dispatchEvent(new PointerEvent('pointercancel', { pointerId: p.pointerId, bubbles: true }));
       openParamRoutes(this.host.el, this.host.id, api, store, { x: p.x, y: p.y });

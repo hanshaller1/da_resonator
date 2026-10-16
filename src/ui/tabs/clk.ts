@@ -1,5 +1,5 @@
 /**
- * CLK MOD tab: the clock (tempo, tap, run, reset, beat LEDs in the status line) and the two
+ * CLK MOD tab: the clock (tempo, INT · MIDI, run, tap, reset, beat LEDs in the status line) and the two
  * clock mods. Control row = the selected clock mod (MODE … UNI). Visualisation = its 16-step
  * lane (draw values in Steps mode, Euclid pulses, current step) with the output trace below,
  * and its targets on the right.
@@ -84,16 +84,60 @@ function clockGroup(engine: EngineAPI): HTMLElement {
     flash(resetBtn);
   });
 
+  /* INT · MIDI (docs/midi-2026-10-16.md 1B): on MIDI the tempo is measured, Start / Stop run the clock */
+  const midi = engine.midi;
+  const extBpm = h('span', { class: 'pfield clk-ext-bpm', role: 'status', 'aria-label': 'Tempo from MIDI clock' }, h('span', { class: 'pfield-label' }, 'TEMPO'), h('span', { class: 'pfield-value' }));
+  const extVal = extBpm.lastElementChild as HTMLElement;
+  const extLed = h('span', { class: 'inst-led', 'aria-hidden': 'true' });
+  const srcBtns = (['int', 'midi'] as const).map((src) => {
+    const b = h('button', { type: 'button', class: 'inst-btn', title: src === 'int' ? 'Internal clock: TEMPO, RUN, TAP' : 'Follow MIDI clock: tempo, Start, Stop and Continue of the MIDI device (CONFIG → MIDI)' }, ...(src === 'midi' ? [extLed, 'MIDI'] : ['INT']));
+    b.addEventListener('click', async () => {
+      // MIDI needs access first; where the page may not use MIDI the clock stays internal
+      if (src === 'midi' && midi.status !== 'on') await midi.enable();
+      if (src === 'int' || midi.status === 'on') midi.setClockSource(src);
+    });
+    return { src, b };
+  });
+  const srcGroup = h('span', { class: 'inst clk-src', role: 'group', 'aria-label': 'Clock source' }, ...srcBtns.map((x) => x.b));
+  const syncSrc = () => {
+    const ext = midi.clockSource === 'midi';
+    for (const { src, b } of srcBtns) {
+      toggleClass(b, 'is-selected', midi.clockSource === src);
+      b.setAttribute('aria-pressed', String(midi.clockSource === src));
+    }
+    bpm.el.hidden = ext;
+    extBpm.hidden = !ext;
+    run.el.disabled = tapBtn.disabled = resetBtn.disabled = ext;
+    toggleClass(run.el, 'is-ext', ext);
+    run.el.title = ext ? 'MIDI Start and Stop run the clock' : '';
+    resetBtn.title = ext ? 'MIDI Start restarts the clock at beat 1' : 'Restart the clock at beat 1';
+  };
+  syncSrc();
+  midi.onChange(syncSrc);
+
   /* beat LEDs: position in the bar, flash on each beat */
   const beats = Array.from({ length: 4 }, () => h('span', { class: 'clk-beat' }));
   const beatRow = h('span', { class: 'clk-beats', role: 'img', 'aria-label': 'Beat' }, ...beats);
   let lastBeat = -1;
   let lastFlash = false;
+  let lastExt = '';
   frameLoop.add(() => {
     const live = engine.state === 'running';
+    const ext = midi.clockSource === 'midi';
+    if (ext) {
+      // measured tempo; the LED shows that clock comes in
+      const fresh = performance.now() - midi.clockAt < 500;
+      const txt = `${engine.mod.bpm.toFixed(1)} BPM|${fresh}|${engine.mod.running}`;
+      if (txt !== lastExt) {
+        lastExt = txt;
+        extVal.textContent = `${engine.mod.bpm.toFixed(1)} BPM`;
+        toggleClass(extLed, 'is-on', fresh);
+        extBpm.title = !fresh ? 'No MIDI clock: the last tempo runs on' : engine.mod.running ? 'Tempo of the MIDI clock' : 'MIDI clock stopped';
+      }
+    }
     const b = engine.mod.beats;
     const beat = live ? Math.floor(b) : -1;
-    const on = live && p.get('clock.run') >= 0.5 && b - Math.floor(b) < FLASH;
+    const on = live && (ext ? engine.mod.running : p.get('clock.run') >= 0.5) && b - Math.floor(b) < FLASH;
     if (beat === lastBeat && on === lastFlash) return;
     const k = beat < 0 ? -1 : beat % 4;
     beats.forEach((el, i) => {
@@ -104,7 +148,7 @@ function clockGroup(engine: EngineAPI): HTMLElement {
     lastFlash = on;
   });
 
-  return h('span', { class: 'clk-clock' }, bpm.el, run.el, tapBtn, resetBtn, beatRow);
+  return h('span', { class: 'clk-clock' }, bpm.el, extBpm, srcGroup, run.el, tapBtn, resetBtn, beatRow);
 }
 
 let src: SourceTab | null = null;

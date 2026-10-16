@@ -93,6 +93,9 @@
  *  Modulation  : runs in this worklet (ModEngine): once per block the modulation graph computes effective
  *                values (base + routes) for every param; the resonator smooths towards them. Modulated params
  *                use τ = 3 ms instead of 20 ms so fast LFOs are not dulled.
+ *  MIDI clock  : with the clock on MIDI (message clockSource) the main thread forwards ticks, Start, Continue
+ *                and Stop with their AudioContext time (midiClock); dsp/extClock.ts turns them into tempo,
+ *                run state and beat position at the end of each block (currentTime + block length).
  *  Chain       : in ─► pre filter ─► resonator (above) ─► post filter ─► out. Tap buffers (input, every band,
  *                wet sum, output) feed the envelope followers.
  *  Smoothing   : all continuous params are smoothed per sample with a one-pole (τ = 20 ms); filter
@@ -135,6 +138,8 @@ declare class AudioWorkletProcessor {
 }
 declare function registerProcessor(name: string, ctor: new (options?: any) => AudioWorkletProcessor): void;
 declare const sampleRate: number;
+/** AudioContext time of the first sample of the current block */
+declare const currentTime: number;
 
 /* ---------- constants ---------- */
 const NB = NUM_BANDS;
@@ -378,7 +383,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'ready' });
   }
 
-  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig }) {
+  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; ext?: boolean; ev?: number; t?: number }) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'params':
@@ -410,6 +415,12 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         break;
       case 'meterRate':
         if (typeof msg.hz === 'number' && msg.hz > 0) this.meterInterval = Math.max(1, Math.round(this.fs / msg.hz));
+        break;
+      case 'clockSource':
+        this.mod.setClockSource(msg.ext === true);
+        break;
+      case 'midiClock':
+        if (typeof msg.ev === 'number' && typeof msg.t === 'number') this.mod.pushClock(msg.ev, msg.t);
         break;
     }
   }
@@ -720,7 +731,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
 
     /* --- modulation graph: effective values for this block --- */
     const mod = this.mod;
-    mod.beginBlock(n);
+    mod.beginBlock(n, typeof currentTime === 'number' ? currentTime : NaN);
     if (mod.baseVersion !== this.appliedVersion || mod.anyModulated(0, NUM_RESONATOR_PARAMS) || mod.anyModulated(R_FIRST, NUM_PARAMS)) {
       this.appliedVersion = mod.baseVersion;
       this.applyParams(mod.eff, false);

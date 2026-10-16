@@ -9,7 +9,9 @@ export type ToWorklet =
   | { type: 'modConfig'; config: ModConfig } // modulation routes (validated on the main thread)
   | { type: 'clockReset' } // clock to beat 0, LFO / clock mod phases to 0
   | { type: 'reset' } // clear all filter / feedback state (panic)
-  | { type: 'meterRate'; hz: number }; // meter frames per second (default 30)
+  | { type: 'meterRate'; hz: number } // meter frames per second (default 30)
+  | { type: 'clockSource'; ext: boolean } // the clock follows MIDI clock (true) or TEMPO / RUN
+  | { type: 'midiClock'; ev: number; t: number }; // MIDI clock event (dsp/extClock.ts MIDI_TICK …) at AudioContext time t
 
 /** One meter frame. All values linear amplitude (not dB). */
 export interface MeterFrame {
@@ -34,8 +36,10 @@ export interface ModFrame {
   mod: Float32Array;
   /** clock position in beats */
   beats: number;
-  /** effective tempo */
+  /** effective tempo (measured while the clock follows MIDI) */
   bpm: number;
+  /** 1 while the clock moves (RUN, or MIDI Start / Stop) */
+  run: number;
 }
 
 /** worklet -> main */

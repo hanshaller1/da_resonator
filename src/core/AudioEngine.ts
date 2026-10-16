@@ -4,6 +4,7 @@ import { NUM_BANDS, bandParamId, bandParamIdR } from '../shared/params';
 import { Emitter } from './Emitter';
 import { InputDevices, cleanLabel, inputAllowedHere, pageStorage } from './inputs';
 import { InsertChain } from './InsertChain';
+import { MidiService, browserMidiEnv } from './midi';
 import { ModController } from './ModController';
 import { ParamStore } from './ParamStore';
 import { StateHub } from './state';
@@ -70,6 +71,11 @@ export class AudioEngine implements EngineAPI {
     (id) => this.useInput(id),
   );
 
+  readonly midi = new MidiService(browserMidiEnv(pageStorage()), this.params, (ev, ms) => this.post({ type: 'midiClock', ev, t: this.midiTime(ms) }));
+  /** AudioContext time minus performance time (s), smoothed, for MIDI time stamps */
+  private midiK = NaN;
+  private clockExt = false;
+
   ctx: AudioContext | null = null;
   node: AudioWorkletNode | null = null;
   preInserts: InsertChain | null = null;
@@ -118,6 +124,13 @@ export class AudioEngine implements EngineAPI {
       this.sourceLabel = this.input.label || 'Audio input';
     }
     this.input.onArrive((devices) => void this.inputsArrived(devices));
+    // INT · MIDI: the worklet's clock follows MIDI clock or TEMPO / RUN
+    this.midi.onChange(() => {
+      const ext = this.midi.clockSource === 'midi';
+      if (ext === this.clockExt) return;
+      this.clockExt = ext;
+      this.post({ type: 'clockSource', ext });
+    });
     this.input.onChange(() => {
       if (this.inNode && this.routed !== this.routeMode()) this.routeInput();
     });
@@ -204,6 +217,8 @@ export class AudioEngine implements EngineAPI {
 
     this.flushParams(true);
     this.post({ type: 'modConfig', config: this.mod.routing.config() });
+    this.clockExt = this.midi.clockSource === 'midi';
+    this.post({ type: 'clockSource', ext: this.clockExt });
     await ctx.resume();
     this.setStateInternal(ctx.state === 'running' ? 'running' : 'suspended');
     // start the chosen source: an input (asks for access if needed), a loaded file or a test signal
@@ -223,6 +238,24 @@ export class AudioEngine implements EngineAPI {
 
   private post(m: ToWorklet) {
     this.node?.port.postMessage(m);
+  }
+
+  /**
+   * AudioContext time of a MIDI time stamp (performance time, ms) on the time line the worklet
+   * renders (output time + output latency), shifted by OFFSET. Without precise output time stamps
+   * the context's current time stands in.
+   */
+  private midiTime(ms: number): number {
+    const ctx = this.ctx;
+    if (!ctx) return 0;
+    let k: number;
+    const ts = typeof ctx.getOutputTimestamp === 'function' ? ctx.getOutputTimestamp() : null;
+    if (ts && ts.performanceTime && ts.contextTime) k = ts.contextTime - ts.performanceTime / 1000 + (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
+    else k = ctx.currentTime - performance.now() / 1000;
+    // the relation drifts only slowly: smooth out the steps of the context clock
+    if (!(Math.abs(k - this.midiK) < 0.05)) this.midiK = k;
+    else this.midiK += 0.02 * (k - this.midiK);
+    return ms / 1000 + this.midiK + this.midi.offsetMs / 1000;
   }
 
   /* ---------------- sources ---------------- */

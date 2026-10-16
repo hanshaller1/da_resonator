@@ -22,6 +22,8 @@ export class ModController implements ModAPI {
   private readout = new Emitter<[]>();
   beats = 0;
   bpm = 120;
+  /** the clock moves (RUN, or MIDI Start / Stop while it follows MIDI) */
+  running = true;
 
   constructor(
     private params: ParamStore,
@@ -106,6 +108,7 @@ export class ModController implements ModAPI {
     this.params.applyReadout(f.mod);
     this.beats = f.beats;
     this.bpm = f.bpm;
+    this.running = f.run !== 0;
     this.readout.emit();
   }
 }

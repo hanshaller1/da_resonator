@@ -3,13 +3,18 @@ import './tabs/index';
 import type { EngineAPI } from '../core/types';
 import { h, icon, toggleClass } from './dom';
 import { buildHeader } from './header';
+import { programList } from '../presets/programs';
+import { presetSession } from '../presets/session';
+import { setMidiApi } from './midi/hook';
 import { buildAssignBanner } from './mod/banner';
+import { targetLabel } from './mod/labels';
 import './mod/popover'; // registers the route list popover with the controls
 import { setModApi } from './mod/targets';
 import { buildFaders } from './shell/faders';
 import { buildGlobalColumn } from './shell/globalColumn';
 import { buildTabs } from './shell/panelHost';
 import { mountStage } from './shell/stage';
+import { loadSafely } from './tabs/play/browser';
 import { getTheme } from './theme';
 
 export { registerTab, nav } from './shell/tabs';
@@ -27,6 +32,7 @@ export function mountApp(root: HTMLElement, engine: EngineAPI): void {
   const theme = getTheme();
   // controls reach the modulation API through this hook (assign mode, route popovers)
   setModApi(engine.mod, engine.params);
+  setMidiApi(engine.midi);
 
   /* ---------- toast ---------- */
   const toast = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite' });
@@ -61,6 +67,17 @@ export function mountApp(root: HTMLElement, engine: EngineAPI): void {
   const app = h('div', { class: 'app' }, frame, buildAssignBanner(engine.mod), dropZone, toast);
   root.replaceChildren(app);
   mountStage(frame, stage);
+
+  /* ---------- MIDI: notices, learn, Program Change n loads preset n ---------- */
+  engine.midi.onNotice(notify);
+  engine.midi.onLearn((id, cc) => notify(`MIDI CC ${cc} → ${targetLabel(id)}`));
+  engine.midi.onProgram((n) => {
+    const session = presetSession(engine);
+    const p = programList(session.store)[n];
+    if (!p) return notify(`Program change ${n + 1}: there is no preset ${n + 1}.`, 'error');
+    loadSafely(() => session.load(p), notify);
+    notify(`Program change ${n + 1}: ${p.name}`);
+  });
 
   /* ---------- bypass styling ---------- */
   const syncBypass = (v: number) => toggleClass(app, 'is-bypassed', v >= 0.5);

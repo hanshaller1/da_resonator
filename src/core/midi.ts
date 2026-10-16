@@ -1,0 +1,458 @@
+/**
+ * MIDI input (docs/midi-2026-10-16.md): one device chosen in CONFIG (ELEKTRON AUTO takes an Elektron
+ * device, also when it is plugged in later), the channels IN / IN L / IN R, the CC map with MIDI
+ * learn, Program Change and the clock. Everything is remembered in the browser.
+ * The clock itself runs in the worklet: clock messages go out through `clock(ev, timeStampMs)`;
+ * the engine converts the time and sends them on. No MIDI out, no notes, no SysEx.
+ */
+import { MIDI_CONTINUE, MIDI_START, MIDI_STOP, MIDI_TICK } from '../dsp/extClock';
+import { Emitter } from './Emitter';
+import { isElektron, type StorageLike } from './inputs';
+import {
+  DEFAULT_CHANNELS,
+  applyCc,
+  ccReserved,
+  channelHits,
+  cleanChannel,
+  defaultMidiMap,
+  midiMappable,
+  parseMidiMapFile,
+  sanitizeMidiMap,
+  serializeMidiMap,
+  type MidiChannels,
+} from './midiMap';
+import type { MidiAPI, MidiInputInfo, MidiStatus, ParamStoreAPI, Unsubscribe } from './types';
+
+const STORE_KEY = 'resonator.midi';
+export const OFFSET_MIN_MS = -50;
+export const OFFSET_MAX_MS = 50;
+
+/* ---------- the part of Web MIDI used here (a stand-in in tests) ---------- */
+
+export interface MidiMessageLike {
+  data: Uint8Array | null;
+  timeStamp: number;
+}
+export interface MidiInputLike {
+  readonly id: string;
+  readonly name: string | null;
+  readonly manufacturer?: string | null;
+  readonly state: string;
+  onmidimessage: ((e: MidiMessageLike) => void) | null;
+}
+export interface MidiAccessLike {
+  readonly inputs: { forEach(cb: (input: MidiInputLike) => void): void };
+  onstatechange: ((e: unknown) => void) | null;
+}
+
+export interface MidiEnv {
+  /** navigator.requestMIDIAccess without SysEx; undefined where the browser has no Web MIDI */
+  request?: () => Promise<MidiAccessLike>;
+  /** state of the MIDI permission ('granted', 'prompt', 'denied'), to switch on without asking */
+  permission?: () => Promise<string>;
+  /** false in an embedded window whose host does not allow MIDI */
+  allowed?: boolean;
+  storage?: StorageLike;
+  /** clock time base for the activity LEDs (ms) */
+  now?: () => number;
+}
+
+interface Stored {
+  /** MIDI was switched on (it comes on again by itself when the browser keeps the permission) */
+  enabled: boolean;
+  deviceId: string;
+  deviceName: string;
+  autoElektron: boolean;
+  channels: MidiChannels;
+  clock: 'int' | 'midi';
+  offsetMs: number;
+  map: Map<string, number>;
+}
+
+function load(storage: StorageLike | undefined): Stored {
+  const d: Stored = { enabled: false, deviceId: '', deviceName: '', autoElektron: true, channels: { ...DEFAULT_CHANNELS }, clock: 'int', offsetMs: 0, map: defaultMidiMap() };
+  try {
+    const s = JSON.parse(storage?.getItem(STORE_KEY) ?? 'null') as Record<string, unknown> | null;
+    if (s && typeof s === 'object') {
+      if (typeof s.enabled === 'boolean') d.enabled = s.enabled;
+      if (typeof s.deviceId === 'string') d.deviceId = s.deviceId;
+      if (typeof s.deviceName === 'string') d.deviceName = s.deviceName;
+      if (typeof s.autoElektron === 'boolean') d.autoElektron = s.autoElektron;
+      const c = s.channels as Partial<MidiChannels> | undefined;
+      if (c && typeof c === 'object') d.channels = { in: cleanChannel(c.in, d.channels.in), l: cleanChannel(c.l, d.channels.l), r: cleanChannel(c.r, d.channels.r) };
+      if (s.clock === 'int' || s.clock === 'midi') d.clock = s.clock;
+      if (typeof s.offsetMs === 'number' && Number.isFinite(s.offsetMs)) d.offsetMs = clampOffset(s.offsetMs);
+      if (s.map && typeof s.map === 'object') d.map = sanitizeMidiMap(s.map);
+    }
+  } catch {
+    /* storage unavailable or broken: defaults */
+  }
+  return d;
+}
+
+function clampOffset(ms: number): number {
+  return Math.round(Math.min(OFFSET_MAX_MS, Math.max(OFFSET_MIN_MS, ms)));
+}
+
+/** port name without the "2- " numbering Windows adds to duplicates */
+export function cleanPortName(name: string): string {
+  return name.replace(/^\d+\s*-\s*/, '').trim();
+}
+
+/** False when this page may not use MIDI: an embedded window whose host does not allow it. */
+export function midiAllowedHere(): boolean {
+  if (typeof document === 'undefined') return false;
+  type Policy = { allowsFeature(feature: string): boolean };
+  const d = document as Document & { permissionsPolicy?: Policy; featurePolicy?: Policy };
+  const policy = d.permissionsPolicy ?? d.featurePolicy;
+  try {
+    return policy ? policy.allowsFeature('midi') : true;
+  } catch {
+    return true;
+  }
+}
+
+/** Web MIDI of this browser, if any */
+export function browserMidiEnv(storage: StorageLike | undefined): MidiEnv {
+  const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { requestMIDIAccess?: (o?: { sysex?: boolean }) => Promise<unknown> }) : undefined;
+  const req = nav?.requestMIDIAccess;
+  return {
+    request: req ? () => req.call(nav, { sysex: false }) as Promise<MidiAccessLike> : undefined,
+    permission: async () => (await navigator.permissions.query({ name: 'midi' as PermissionName })).state,
+    allowed: midiAllowedHere(),
+    storage,
+    now: () => performance.now(),
+  };
+}
+
+export class MidiService implements MidiAPI {
+  private st: Stored;
+  private access: MidiAccessLike | null = null;
+  private port: MidiInputLike | null = null;
+  private list: MidiInputInfo[] = [];
+  private _status: MidiStatus;
+  private _learning: string | null = null;
+  private changeE = new Emitter<[]>();
+  private noticeE = new Emitter<[string, 'info' | 'error']>();
+  private programE = new Emitter<[number]>();
+  private learnE = new Emitter<[string, number]>();
+  private now: () => number;
+  /** activity, in `now` time (ms); -Infinity = never */
+  clockAt = -Infinity;
+  ccAt = -Infinity;
+  pcAt = -Infinity;
+  /** last CC seen on a listened channel, for the CONFIG page */
+  lastCc: { ch: number; cc: number; value: number } | null = null;
+
+  /**
+   * @param clock receives clock messages (extClock.ts MIDI_TICK …) with their timeStamp (ms, performance
+   *   time) while the clock follows MIDI
+   */
+  constructor(
+    private env: MidiEnv,
+    private params: Pick<ParamStoreAPI, 'spec' | 'setNorm'>,
+    private clock: (ev: number, timeStampMs: number) => void = () => {},
+  ) {
+    this.st = load(env.storage);
+    this.now = env.now ?? (() => Date.now());
+    this._status = !env.request ? 'unsupported' : env.allowed === false ? 'blocked' : 'off';
+    // switched on last time and the browser still allows it: on again without asking
+    if (this.st.enabled && this._status === 'off' && env.permission) {
+      env.permission().then(
+        (s) => {
+          if (s === 'granted' && this._status === 'off') void this.enable();
+        },
+        () => {},
+      );
+    }
+  }
+
+  get status() { return this._status; }
+  get devices(): readonly MidiInputInfo[] { return this.list; }
+  get deviceId() { return this.st.deviceId; }
+  get deviceName() { return this.st.deviceName; }
+  /** the chosen device is plugged in and listened to */
+  get connected() { return this.port !== null; }
+  get autoElektron() { return this.st.autoElektron; }
+  get channels(): MidiChannels { return { ...this.st.channels }; }
+  get clockSource() { return this.st.clock; }
+  get offsetMs() { return this.st.offsetMs; }
+  get learning() { return this._learning; }
+  /** MIDI was on last time but needs a click (the browser asks again) */
+  get wasEnabled() { return this.st.enabled; }
+
+  onChange(cb: () => void): Unsubscribe { return this.changeE.on(cb); }
+  onNotice(cb: (msg: string, tone: 'info' | 'error') => void): Unsubscribe { return this.noticeE.on(cb); }
+  /** Program Change n (0–127) on a listened channel */
+  onProgram(cb: (n: number) => void): Unsubscribe { return this.programE.on(cb); }
+  /** MIDI learn mapped a CC */
+  onLearn(cb: (id: string, cc: number) => void): Unsubscribe { return this.learnE.on(cb); }
+
+  /* ---------- access ---------- */
+
+  async enable(): Promise<void> {
+    if (!this.env.request || this._status === 'on' || this._status === 'asking') return;
+    if (this._status === 'blocked') {
+      this.noticeE.emit('This page may not use MIDI. Open resonator-standalone.html in Chrome or Edge.', 'error');
+      return;
+    }
+    this._status = 'asking';
+    this.changeE.emit();
+    try {
+      const a = await this.env.request();
+      this.access = a;
+      a.onstatechange = () => this.refresh(true);
+      this._status = 'on';
+      this.st.enabled = true;
+      this.refresh(false);
+      this.save();
+    } catch (e) {
+      // an embedded window without MIDI in its permissions policy, or the person said no
+      const blocked = e instanceof Error && /policy/i.test(e.message);
+      this._status = blocked ? 'blocked' : 'denied';
+      this.st.enabled = false;
+      this.save();
+      this.noticeE.emit(
+        blocked ? 'This page may not use MIDI. Open resonator-standalone.html in Chrome or Edge.' : 'MIDI access was refused. Allow MIDI in the site settings of the browser, then switch it on again.',
+        'error',
+      );
+    }
+  }
+
+  disable(): void {
+    if (this._status !== 'on') return;
+    this.detach();
+    if (this.access) this.access.onstatechange = null;
+    this.access = null;
+    this.list = [];
+    this._status = 'off';
+    this.st.enabled = false;
+    this._learning = null;
+    this.save();
+  }
+
+  /* ---------- devices ---------- */
+
+  private inputs(): MidiInputLike[] {
+    const out: MidiInputLike[] = [];
+    this.access?.inputs.forEach((i) => {
+      if (i.state !== 'disconnected') out.push(i);
+    });
+    return out;
+  }
+
+  /** read the port list again; plug = a device came or went while MIDI was on */
+  private refresh(plug: boolean): void {
+    if (!this.access) return;
+    const before = new Set(this.list.map((d) => d.id));
+    const wasConnected = this.port !== null;
+    const ports = this.inputs();
+    this.list = ports.map((p) => {
+      const name = cleanPortName(p.name ?? '') || 'MIDI input';
+      return { id: p.id, name, elektron: isElektron(`${p.manufacturer ?? ''} ${name}`) };
+    });
+    const arrived = plug ? this.list.filter((d) => !before.has(d.id)) : [];
+    const el = this.st.autoElektron ? (arrived.find((d) => d.elektron) ?? (!plug ? this.list.find((d) => d.elektron) : undefined)) : undefined;
+    if (el && el.id !== this.port?.id) {
+      this.use(el);
+      this.noticeE.emit(plug ? `${el.name} connected: MIDI comes from it.` : `MIDI from ${el.name}.`, 'info');
+    } else {
+      this.attach();
+      if (plug && wasConnected && !this.port) this.noticeE.emit(`${this.st.deviceName || 'The MIDI device'} disconnected. It is used again when you plug it back in.`, 'info');
+      else if (plug && !wasConnected && this.port) this.noticeE.emit(`${this.st.deviceName} is back.`, 'info');
+    }
+    this.changeE.emit();
+  }
+
+  /** listen to the chosen device, if it is there (by id, else by name) */
+  private attach(): void {
+    const ports = this.inputs();
+    const p = this.st.deviceId ? (ports.find((x) => x.id === this.st.deviceId) ?? ports.find((x) => this.st.deviceName && cleanPortName(x.name ?? '') === this.st.deviceName)) : undefined;
+    if (p === this.port && p) return;
+    this.detach();
+    if (!p) return;
+    if (p.id !== this.st.deviceId) {
+      this.st.deviceId = p.id;
+      this.persist();
+    }
+    this.port = p;
+    p.onmidimessage = this.onMessage;
+  }
+
+  private detach(): void {
+    if (this.port && this.port.onmidimessage === this.onMessage) this.port.onmidimessage = null;
+    this.port = null;
+  }
+
+  private use(d: MidiInputInfo): void {
+    this.st.deviceId = d.id;
+    this.st.deviceName = d.name;
+    this.detach();
+    this.attach();
+    this.save();
+  }
+
+  /** the device to listen to ('' = none) */
+  choose(id: string): void {
+    const d = this.list.find((x) => x.id === id);
+    if (!d) {
+      this.detach();
+      this.st.deviceId = '';
+      this.st.deviceName = '';
+      this.save();
+      return;
+    }
+    this.use(d);
+  }
+
+  setAutoElektron(on: boolean): void {
+    if (on === this.st.autoElektron) return;
+    this.st.autoElektron = on;
+    this.save();
+    if (on && this.access) this.refresh(false);
+  }
+
+  setChannel(which: keyof MidiChannels, ch: number): void {
+    const v = cleanChannel(ch, this.st.channels[which]);
+    if (v === this.st.channels[which]) return;
+    this.st.channels[which] = v;
+    this.save();
+  }
+
+  /* ---------- clock ---------- */
+
+  setClockSource(src: 'int' | 'midi'): void {
+    if (src === this.st.clock) return;
+    this.st.clock = src;
+    this.save();
+  }
+
+  setOffset(ms: number): void {
+    const v = clampOffset(ms);
+    if (v === this.st.offsetMs) return;
+    this.st.offsetMs = v;
+    this.save();
+  }
+
+  /* ---------- map ---------- */
+
+  ccOf(id: string): number | undefined {
+    return this.st.map.get(id);
+  }
+
+  paramOf(cc: number): string | undefined {
+    for (const [id, c] of this.st.map) if (c === cc) return id;
+    return undefined;
+  }
+
+  /** [param id, CC] by CC number */
+  mapEntries(): [string, number][] {
+    return [...this.st.map].sort((a, b) => a[1] - b[1]);
+  }
+
+  /** give param `id` CC `cc` (a param or CC mapped before lets go); null removes its CC */
+  setCc(id: string, cc: number | null): void {
+    if (!midiMappable(id)) return;
+    if (cc === null) {
+      if (!this.st.map.delete(id)) return;
+    } else {
+      if (!Number.isInteger(cc) || cc < 0 || cc > 127 || ccReserved(cc)) return;
+      const other = this.paramOf(cc);
+      if (other === id) return;
+      if (other) this.st.map.delete(other);
+      this.st.map.set(id, cc);
+    }
+    this.save();
+  }
+
+  /** wait for the next CC and map it to `id` (null cancels) */
+  learn(id: string | null): void {
+    const next = id && midiMappable(id) ? id : null;
+    if (next === this._learning) return;
+    this._learning = next;
+    this.changeE.emit();
+  }
+
+  resetMap(): void {
+    this.st.map = defaultMidiMap();
+    this.save();
+  }
+
+  exportMap(): { fileName: string; text: string } {
+    return { fileName: 'resonator-midi-map.json', text: serializeMidiMap(this.st.map, this.st.channels) };
+  }
+
+  /** replace the map (and the channels, if the file has them) by a map file */
+  importMap(text: string): { ok: true; count: number; skipped: number } | { ok: false; reason: string } {
+    const r = parseMidiMapFile(text);
+    if (!r.ok) return r;
+    this.st.map = r.map;
+    if (r.channels) this.st.channels = r.channels;
+    this.save();
+    return { ok: true, count: r.map.size, skipped: r.skipped };
+  }
+
+  /* ---------- messages ---------- */
+
+  private onMessage = (e: MidiMessageLike): void => {
+    const d = e.data;
+    if (!d || !d.length) return;
+    this.handle(d, e.timeStamp);
+  };
+
+  /** one message from the device (exposed for tests) */
+  handle(d: ArrayLike<number>, timeStamp: number): void {
+    const s = d[0];
+    if (s >= 0xf8) {
+      // system real-time: clock, Start, Continue, Stop
+      const ev = s === 0xf8 ? MIDI_TICK : s === 0xfa ? MIDI_START : s === 0xfb ? MIDI_CONTINUE : s === 0xfc ? MIDI_STOP : -1;
+      if (ev < 0) return;
+      this.clockAt = this.now();
+      if (this.st.clock === 'midi') this.clock(ev, timeStamp);
+      return;
+    }
+    const kind = s & 0xf0;
+    if (kind !== 0xb0 && kind !== 0xc0) return; // notes, pressure, pitch bend, SysEx: not used
+    const ch = (s & 0x0f) + 1;
+    const hit = channelHits(ch, this.st.channels);
+    if (!hit.left && !hit.right) return;
+    if (kind === 0xc0) {
+      if (d.length < 2) return;
+      this.pcAt = this.now();
+      this.programE.emit(d[1] & 0x7f);
+      return;
+    }
+    if (d.length < 3) return;
+    const cc = d[1] & 0x7f;
+    const v = d[2] & 0x7f;
+    if (ccReserved(cc)) return;
+    this.ccAt = this.now();
+    this.lastCc = { ch, cc, value: v };
+    if (this._learning) {
+      const id = this._learning;
+      this._learning = null;
+      this.setCc(id, cc);
+      this.learnE.emit(id, cc);
+      this.changeE.emit();
+    }
+    const id = this.paramOf(cc);
+    if (id) applyCc(this.params, id, v, hit.left, hit.right);
+  }
+
+  private save(): void {
+    this.persist();
+    this.changeE.emit();
+  }
+
+  private persist(): void {
+    const s = this.st;
+    try {
+      this.env.storage?.setItem(
+        STORE_KEY,
+        JSON.stringify({ enabled: s.enabled, deviceId: s.deviceId, deviceName: s.deviceName, autoElektron: s.autoElektron, channels: s.channels, clock: s.clock, offsetMs: s.offsetMs, map: Object.fromEntries(s.map) }),
+      );
+    } catch {
+      /* not persisted */
+    }
+  }
+}

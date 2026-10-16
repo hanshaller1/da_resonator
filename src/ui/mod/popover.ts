@@ -8,6 +8,7 @@ import type { ModAPI, ParamStoreAPI, RouteInfo, Unsubscribe } from '../../core/t
 import { SOURCES } from '../../shared/mod/sources';
 import { newRouteChannel } from '../channel';
 import { h } from '../dom';
+import { midiPopoverRow } from '../midi/hook';
 import { formatDepth, onSourceNames, SOURCE_GROUPS, sourceLabel, sourcesOf, targetLabel } from './labels';
 import { routeChannelButton } from './routeChannel';
 import { setRoutesOpener } from './targets';
@@ -33,6 +34,10 @@ interface PopoverSpec {
   /** optional footer (add select …), rebuilt with the rows */
   footer?: () => HTMLElement | null;
   hint?: string;
+  /** no route list (a control that can't be modulated, shown for its MIDI row) */
+  noRoutes?: boolean;
+  /** a section under the routes with its own updates (MIDI learn), disposed on close */
+  extra?: () => { el: HTMLElement; dispose(): void } | null;
 }
 
 function openPopover(anchor: HTMLElement, spec: PopoverSpec, mod: ModAPI, params: ParamStoreAPI, at?: { x: number; y: number }): void {
@@ -49,6 +54,9 @@ function openPopover(anchor: HTMLElement, spec: PopoverSpec, mod: ModAPI, params
     spec.hint ? h('p', { class: 'mod-pop-hint' }, spec.hint) : null,
   );
   const subs: Unsubscribe[] = [];
+  const extra = spec.extra?.() ?? null;
+  if (extra) el.insertBefore(extra.el, el.querySelector('.mod-pop-hint'));
+  if (spec.noRoutes) list.hidden = true;
 
   const render = () => {
     subs.splice(0).forEach((u) => u());
@@ -110,6 +118,7 @@ function openPopover(anchor: HTMLElement, spec: PopoverSpec, mod: ModAPI, params
     if (current?.el !== el) return;
     current = null;
     subs.forEach((u) => u());
+    extra?.dispose();
     offMod();
     offNames();
     document.removeEventListener('pointerdown', onDocDown, true);
@@ -141,12 +150,13 @@ function openPopover(anchor: HTMLElement, spec: PopoverSpec, mod: ModAPI, params
   document.addEventListener('pointerdown', onDocDown, true);
   window.addEventListener('scroll', onScroll, true);
   window.addEventListener('resize', close);
-  (el.querySelector<HTMLElement>('.mod-pop-range, select, .mod-pop-remove') ?? closeBtn).focus({ preventScroll: true });
+  (el.querySelector<HTMLElement>('.mod-pop-range, select, .mod-pop-remove:not([hidden]), .mod-pop-midi-btn') ?? closeBtn).focus({ preventScroll: true });
 }
 
-/** popover listing the routes into param `id` (+ "add source") */
+/** popover listing the routes into param `id` (+ "add source") and its MIDI CC (learn / remove) */
 export function openParamRoutes(anchor: HTMLElement, id: string, mod: ModAPI, params: ParamStoreAPI, at?: { x: number; y: number }): void {
   const title = targetLabel(id, mod.routes());
+  const modOk = params.spec(id).modulatable || mod.routesTo(id).length > 0;
   openPopover(
     anchor,
     {
@@ -154,7 +164,9 @@ export function openParamRoutes(anchor: HTMLElement, id: string, mod: ModAPI, pa
       routes: () => mod.routesTo(id),
       rowLabel: (r) => sourceLabel(r.source),
       empty: 'Not modulated.',
-      hint: 'Or arm a source chip and drag on a control.',
+      hint: modOk ? 'Or arm a source chip and drag on a control.' : undefined,
+      noRoutes: !modOk,
+      extra: () => midiPopoverRow(id),
       footer: () => {
         if (!params.spec(id).modulatable) return null;
         const sel = h('select', { class: 'mod-pop-add', 'aria-label': `Add modulation source to ${title}` }, h('option', { value: '' }, 'Add source…'));

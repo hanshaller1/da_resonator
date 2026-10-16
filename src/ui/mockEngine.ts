@@ -6,6 +6,7 @@
 import { ModController } from '../core/ModController';
 import { ParamStore } from '../core/ParamStore';
 import { InputDevices } from '../core/inputs';
+import { MidiService, type MidiInputLike } from '../core/midi';
 import { StateHub } from '../core/state';
 import type { EngineAPI, EngineState, MeterBusAPI, SourceInfo, SourceKind, Unsubscribe } from '../core/types';
 import type { MeterFrame } from '../shared/messages';
@@ -114,6 +115,20 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       sourceEv.emit('mic', d.label);
     },
   );
+
+  /* ---------- MIDI: two pretend devices that send nothing, access granted on the first click ---------- */
+  const fakeMidi = new Map<string, MidiInputLike>(
+    [
+      { id: 'mock-midi-digitakt', name: 'Elektron Digitakt', manufacturer: 'Elektron Music Machines', state: 'connected', onmidimessage: null },
+      { id: 'mock-midi-iac', name: 'IAC Driver Bus 1', manufacturer: 'Apple Inc.', state: 'connected', onmidimessage: null },
+    ].map((i) => [i.id, i]),
+  );
+  const midi = new MidiService(
+    { request: async () => ({ inputs: fakeMidi, onstatechange: null }), permission: async () => 'prompt', allowed: true, now: () => performance.now() },
+    params,
+    (ev, ms) => modEngine.pushClock(ev, modEngine.now + (ms - performance.now()) / 1000),
+  );
+  midi.onChange(() => modEngine.setClockSource(midi.clockSource === 'midi'));
 
   /* ---------- meters ---------- */
   const meterEv = emitter<[MeterFrame]>();
@@ -238,6 +253,7 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       srcLevel = v;
     },
     input,
+    midi,
     panic() {
       for (let b = 0; b < NUM_BANDS; b++) {
         params.set(bandParamId(b, 'fb'), 0);

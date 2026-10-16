@@ -323,6 +323,21 @@
   box-shadow: inset 2px 0 0 var(--c-accent);
 }
 
+/* program number for MIDI Program Change */
+.pb-item-num {
+  flex: none;
+  width: 22px;
+  margin-right: calc(-1 * var(--sp-2));
+  color: var(--c-text-3);
+  font: var(--fs-2xs) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pb-item[aria-current='true'] .pb-item-num {
+  color: var(--c-accent);
+}
+
 .pb-item-name {
   flex: 1 1 auto;
   min-width: 0;

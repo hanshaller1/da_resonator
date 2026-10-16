@@ -1,9 +1,10 @@
 /**
- * CONFIG tab: a settings page. Audio (engine state, start, panic, bypass) and source (select,
- * play, level, file), the audio input (device, channels, Elektron AUTO), the resonance setup
- * (feedback route, what the RESONANCE knob does, its curve and bands), the Analog character,
- * display (theme, window scale) and a short help. The source and audio controls share the
- * header's Transport, so both always agree.
+ * CONFIG tab: two pages, switched in the status line.
+ * GENERAL: audio (engine state, start, panic, bypass) and source (select, play, level, file), the
+ * audio input (device, channels, Elektron AUTO), the resonance setup (feedback route, what the
+ * RESONANCE knob does, its curve and bands), the Analog character, display (theme, window scale)
+ * and a short help. The source and audio controls share the header's Transport, so both always agree.
+ * MIDI: device, channels, clock and CC map (configMidi.ts).
  */
 import '../../styles/tabs/config.css';
 import type { EngineState, InputChannels, ParamStoreAPI } from '../../core/types';
@@ -14,13 +15,14 @@ import { audioStateText, buildInputSelect, buildLevelSlider, buildPanicButton, b
 import { DESIGN_H, DESIGN_W, onScaleChange, uiScale } from '../shell/stage';
 import { registerTab } from '../shell/tabs';
 import { getTheme, type ThemePref } from '../theme';
+import { buildMidiPage, runWhileVisible } from './configMidi';
 
 const HELP: [string, string][] = [
   ['Drag', 'Change a value (up / down)'],
   ['Shift + drag', 'Fine adjustment'],
   ['Wheel · ↑ ↓', 'Step a value'],
   ['Double-click', 'Back to default'],
-  ['Right-click', 'Modulation of that control'],
+  ['Right-click', 'Modulation and MIDI learn of that control'],
   ['ASSIGN', 'Arm a source, then drag a control'],
   ['← →', 'Next tab (on the tab row)'],
   ['Esc', 'Panic: all feedback off, ringing cleared'],
@@ -58,7 +60,9 @@ registerTab({
     const t = getTransport(engine, tab.notify);
     const theme = getTheme();
     const body = tab.useBody();
-    body.classList.add('cfg');
+    const general = h('div', { class: 'cfg' });
+    const midiPage = buildMidiPage(engine, tab.notify);
+    body.append(general, midiPage.el);
 
     /* ---------- audio + source ---------- */
     const stLed = h('span', { class: 'cfg-led', 'aria-hidden': 'true' });
@@ -255,11 +259,29 @@ registerTab({
       h('dl', { class: 'cfg-help-list' }, ...HELP.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
     );
 
-    body.append(audio, input, reso, character, help);
+    general.append(audio, input, reso, character, help);
 
-    /* ---------- status line + audio state ---------- */
+    /* ---------- status line: state, page switch GENERAL · MIDI ---------- */
     const status = h('span', { class: 'cfg-status' });
-    tab.status.append(status);
+    let page: 'general' | 'midi' = 'general';
+    const pageBtns = (['general', 'midi'] as const).map((pg) => {
+      const b = h('button', { type: 'button', class: 'inst-btn', title: pg === 'general' ? 'Audio, input, resonance, display' : 'MIDI device, channels, clock and CC map' }, pg.toUpperCase());
+      b.addEventListener('click', () => showPage(pg));
+      return { pg, b };
+    });
+    const showPage = (pg: 'general' | 'midi') => {
+      page = pg;
+      general.hidden = pg !== 'general';
+      midiPage.el.hidden = pg !== 'midi';
+      for (const { pg: x, b } of pageBtns) {
+        toggleClass(b, 'is-selected', x === pg);
+        b.setAttribute('aria-pressed', String(x === pg));
+      }
+      sync();
+    };
+    tab.status.append(status, h('span', { class: 'tp-spacer' }), h('span', { class: 'inst', role: 'group', 'aria-label': 'Settings page' }, ...pageBtns.map((x) => x.b)));
+    runWhileVisible(() => tab.visible && page === 'midi', midiPage.tick);
+    engine.midi.onChange(() => sync());
     const sync = (st: EngineState = engine.state) => {
       const txt = audioStateText(st);
       stLabel.textContent = txt.label;
@@ -269,9 +291,10 @@ registerTab({
       startBtn.hidden = !txt.action;
       startBtn.textContent = (txt.action ?? '').toUpperCase();
       startBtn.title = txt.title;
-      status.textContent = ['Settings', txt.label + (st === 'running' ? ` · ${formatSampleRate(engine.sampleRate)}` : ''), `Source ${t.sourceLabel}`].join(' · ');
+      status.textContent =
+        page === 'midi' ? midiPage.status() : ['Settings', txt.label + (st === 'running' ? ` · ${formatSampleRate(engine.sampleRate)}` : ''), `Source ${t.sourceLabel}`].join(' · ');
     };
-    sync();
+    showPage('general');
     engine.onStateChange(sync);
     t.onSourceLabel(() => sync());
     t.onBusy((b) => toggleClass(startBtn, 'is-busy', b));

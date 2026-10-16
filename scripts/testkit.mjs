@@ -39,6 +39,8 @@ export function loadProcessor({ linkR = true } = {}) {
   );
   const names = Object.keys(registry);
   const proc = new registry[names[0]]({ numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  // the worklet's globals (currentTime …), for tests that move the AudioContext time
+  proc.scope = ctx;
   if (linkR) {
     twins ??= importTs('src/shared/params.ts').PARAMS.filter((p) => p.twinOf !== undefined).map((p) => [p.twinOf, p.index]);
     const handle = proc.port.onmessage;

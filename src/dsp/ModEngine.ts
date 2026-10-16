@@ -18,6 +18,7 @@ import { EnvFollowerDsp } from './modules/ef';
 import { FilterStage } from './modules/filter';
 import { LfoDsp } from './modules/lfo';
 import type { BlockCtx, ClockState, SourceDsp } from './modules/types';
+import { ExtClock } from './extClock';
 
 export const MAX_BLOCK = 128;
 const READOUT_SEC = 1 / 60;
@@ -32,6 +33,8 @@ export interface ModReadout {
   mod: Float32Array;
   beats: number;
   bpm: number;
+  /** 1 while the clock moves */
+  run: number;
 }
 
 export class ModEngine {
@@ -47,6 +50,11 @@ export class ModEngine {
   baseVersion = 0;
 
   readonly clock: ClockState = { bpm: 120, running: true, beats: 0, beatsPrev: 0 };
+  /** MIDI clock (docs/midi-2026-10-16.md): replaces tempo, run and position while extClock is on */
+  readonly ext = new ExtClock();
+  private extClock = false;
+  /** time at the end of the current block (seconds; AudioContext time in the worklet) */
+  private time = 0;
   readonly taps: Float32Array[] = [];
   readonly preFilter = new FilterStage('filterPre');
   readonly postFilter = new FilterStage('filterPost');
@@ -205,17 +213,48 @@ export class ModEngine {
 
   private advanceClock(): void {
     const c = this.clock;
-    c.bpm = this.eff[this.iBpm];
-    c.running = this.eff[this.iRun] >= 0.5;
-    c.beatsPrev = c.beats;
-    if (c.running) c.beats += (this.ctx.dt * c.bpm) / 60;
+    if (this.extClock) {
+      // MIDI Start: beat 1, sources start over (like RESET)
+      if (this.ext.advance(c, this.time, this.ctx.dt)) for (const s of this.sources.values()) s.dsp.reset();
+    } else {
+      c.bpm = this.eff[this.iBpm];
+      c.running = this.eff[this.iRun] >= 0.5;
+      c.beatsPrev = c.beats;
+      if (c.running) c.beats += (this.ctx.dt * c.bpm) / 60;
+    }
     if (Math.floor(c.beats) !== Math.floor(c.beatsPrev)) this.ctx.fire(this.beatTrig);
   }
 
-  /** run the graph for a block of n samples (before the audio pass) */
-  beginBlock(n: number): void {
+  /** the clock follows MIDI clock (true) or runs on TEMPO and RUN; the position carries over */
+  setClockSource(ext: boolean): void {
+    if (ext === this.extClock) return;
+    this.extClock = ext;
+    // until MIDI clock comes in, TEMPO goes on (clock.bpm may not have seen the first params yet)
+    if (ext) this.ext.reset(this.clock.beats, this.eff[this.iBpm]);
+  }
+
+  get clockSource(): 'int' | 'midi' {
+    return this.extClock ? 'midi' : 'int';
+  }
+
+  /** a MIDI clock event (extClock.ts MIDI_TICK …) at time t on the block time line */
+  pushClock(ev: number, t: number): void {
+    if (this.extClock) this.ext.push(ev, t);
+  }
+
+  /** time at the end of the last block */
+  get now(): number {
+    return this.time;
+  }
+
+  /**
+   * run the graph for a block of n samples (before the audio pass); t0 = time of its first sample
+   * (the worklet's currentTime; without it the engine counts its own time)
+   */
+  beginBlock(n: number, t0: number = this.time): void {
     this.ctx.n = n;
     this.ctx.dt = n / this.fs;
+    this.time = (Number.isFinite(t0) ? t0 : this.time) + this.ctx.dt;
     const off = this.offset;
     for (let k = 0; k < this.routeDsts.length; k++) off[this.routeDsts[k]] = 0;
     for (let k = 0; k < this.steps.length; k++) this.steps[k]();
@@ -231,7 +270,7 @@ export class ModEngine {
         mod[2 * k] = i;
         mod[2 * k + 1] = toNorm(PARAMS[i], this.eff[i]);
       });
-      this.post({ type: 'mod', src: this.srcVals.slice(), mod, beats: this.clock.beats, bpm: this.clock.bpm });
+      this.post({ type: 'mod', src: this.srcVals.slice(), mod, beats: this.clock.beats, bpm: this.clock.bpm, run: this.clock.running ? 1 : 0 });
     }
   }
 
@@ -243,6 +282,7 @@ export class ModEngine {
 
   resetClock(): void {
     this.clock.beats = this.clock.beatsPrev = 0;
+    if (this.extClock) this.ext.rewind();
     for (const s of this.sources.values()) s.dsp.reset();
   }
 
