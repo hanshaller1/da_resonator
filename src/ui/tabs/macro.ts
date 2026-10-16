@@ -20,7 +20,7 @@ import { colLeft } from '../shell/bandAxis';
 import { nav, registerTab } from '../shell/tabs';
 
 const PENCIL = '✎';
-const MODULE_SHORT: Record<string, string> = { filterPre: 'PRE', filterPost: 'POST', dyn: 'DYN', clock: 'CLK', resonator: '' };
+const MODULE_SHORT: Record<string, string> = { filterPre: 'PRE', filterPost: 'POST', filterBand: 'BAND', dyn: 'DYN', clock: 'CLK', resonator: '' };
 
 /** short target caption for a narrow card ('B5 RES', 'LFO2 RATE', 'PRE FREQ') */
 function shortTarget(id: string): string {

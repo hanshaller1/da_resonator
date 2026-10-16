@@ -165,8 +165,8 @@ export function buildTabs(engine: EngineAPI, notify: Notify): { tabRow: HTMLElem
   const p = engine.params;
   const anyOn = (ids: string[]) => ids.some((x) => p.get(x) >= 0.5);
   const syncLeds = () => {
-    led('filter', anyOn(['filterPre.on', 'filterPost.on']));
-    led('clk', anyOn(['cmod1.on', 'cmod2.on']));
+    led('filter', anyOn(['filterPre.on', 'filterPost.on', 'filterBand.on']));
+    led('clk', anyOn(['cmod1.on', 'cmod2.on', 'scan.on']));
     led('dyn', anyOn(['dyn.on']));
     led('env', anyOn(['ef1.on', 'ef2.on', 'ef3.on', 'ef4.on']));
     led('lfo', anyOn(['lfo1.on', 'lfo2.on', 'lfo3.on', 'lfo4.on']));
