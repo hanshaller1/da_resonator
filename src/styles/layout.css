@@ -399,7 +399,7 @@ select {
 
 /* commands on all bands under the heading RESET: R = L, FADER / RES/BAND, FB/BAND */
 .gc-ch { flex-direction: column; gap: var(--sp-2); }
-.gc-ch-title { align-self: flex-start; padding-left: 2px; line-height: 1; }
+.gc-ch-title { align-self: center; line-height: 1; }
 .gc-ch-sel { width: 100%; }
 .gc-ch-sel .inst-btn { flex: 1; justify-content: center; padding: 0; }
 .gc-ch-row { display: flex; gap: var(--sp-2); width: 100%; }
