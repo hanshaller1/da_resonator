@@ -1,7 +1,9 @@
 /* Modulation source tabs (CLK MOD, LFO MOD, ENV MOD): shared layout (tabs/lfo/sourceTab.ts) */
 
 /* status line: description left, instance group right */
-.srctab-desc { color: var(--c-text-2); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* a fixed width, so the clock and the instance group do not move with the text (ENV MOD has no clock: wider) */
+.srctab-desc { flex: 0 1 270px; width: 270px; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tab-panel--env .srctab-desc { flex-basis: 360px; width: 360px; }
 .srctab-desc b { margin-left: 4px; }
 .srctab-on,
 .srctab-chip { display: inline-flex; align-items: center; }

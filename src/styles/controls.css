@@ -45,11 +45,16 @@
 
 .btn:focus-visible,
 .toggle:focus-visible,
-.select:focus-within,
 .range:focus-visible {
   outline: none;
   box-shadow: var(--sh-raised), var(--sh-focus);
 }
+
+/* selects never get an accent frame, open or focused: only a quiet ring for the keyboard */
+select { accent-color: var(--c-text-3); }
+select:focus { outline: none; }
+select:focus-visible { border-color: var(--c-text-4); }
+.select:has(select:focus-visible) { box-shadow: var(--sh-well), 0 0 0 1px var(--c-line-strong); }
 
 .btn--icon {
   width: var(--ctl-h);
@@ -913,8 +918,7 @@ body.is-assigning .knob.is-assign-target:hover .knob-cap {
 }
 
 .mod-pop-close:focus-visible,
-.mod-pop-remove:focus-visible,
-.mod-pop-add:focus-visible {
+.mod-pop-remove:focus-visible {
   outline: 2px solid var(--c-mod);
   outline-offset: 1px;
 }

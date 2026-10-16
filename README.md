@@ -50,7 +50,7 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - Oben die Kopfzeile, darunter 10 Register, je eines über einer Fader-Spalte. Jedes Register füllt dasselbe
   Panel (1044 × 336): Statuszeile, Visualisierung, Reglerreihe mit 10 festen Plätzen (Platz k über Fader k).
 - Darunter immer die 10 Band-Fader (Pegel), rechts die Global-Spalte: INPUT mit ANALOG darunter, RESONANCE,
-  SPREAD mit der Kanalwahl, die Befehle für alle Bänder (R = L, RESET, RES RESET, FB RESET), FB ALL, DRY/WET,
+  SPREAD mit der Kanalwahl, die Befehle für alle Bänder unter RESET (R = L, FADER, RES/BAND, FB/BAND), FB ALL, DRY/WET,
   OUTPUT.
 - **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
   ist; PLAY/LOAD und CONFIG haben keine.
@@ -70,8 +70,8 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
     CONFIG → CLOCK), INT · MIDI (beim LFO RATE · INT · MIDI) und die Schlag-LEDs. Ist der gewählte Takt aus, ist sein Knopf nur umrandet.
     Das Tempo bleibt Teil des Presets.
   - Trigger-Ausgänge: INT Clock Beat (`clock.beat`) und MIDI Clock Beat (`clock.midiBeat`).
-- **LFO:** RATE · INT · MIDI in der Statuszeile. RATE lässt das LFO frei auf seinem RATE-Regler laufen (Tempo und
-  Schlag-LEDs sind dann abgedunkelt), INT oder MIDI bindet es mit DIV an diesen Takt. Der nicht genutzte Regler
+- **LFO:** RATE · INT · MIDI in der Statuszeile. RATE lässt das LFO frei auf seinem RATE-Regler laufen (TEMPO zeigt
+  dann ---, die Schlag-LEDs sind abgedunkelt), INT oder MIDI bindet es mit DIV an diesen Takt. Der nicht genutzte Regler
   ist abgedunkelt.
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
 - Die Modulationsmatrix ist pro Quelle verteilt: jedes Quellen-Register (CLK, ENV, LFO, MACRO) zeigt die Ziele
@@ -109,8 +109,8 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
   - Der Fader-Griff zeigt den gewählten Kanal, in L+R die Mitte. Weicht ein Kanal ab, zeigt eine dünne Marke
     mit Buchstabe seine Stellung; die Anzeige darunter zeigt beide Werte (`−6.0|+3.0`). Die Knöpfe zeigen den
     anderen Kanal als dünnen zweiten Zeiger. FB ALL leuchtet halb, wenn nur ein Kanal an ist.
-  - **R = L** setzt alle R-Werte auf die von L. **RESET** setzt alle 10 Fader in L und R auf 0 dB.
-    **RES RESET** und **FB RESET** darunter setzen RES bzw. FB aller Bänder in L und R zurück.
+  - Unter der Überschrift RESET: **R = L** setzt alle R-Werte auf die von L. **FADER** setzt alle 10 Fader in L
+    und R auf 0 dB. **RES/BAND** und **FB/BAND** darunter setzen RES bzw. FB aller Bänder in L und R zurück.
 - FB-Register: Die Kurve folgt dem Umschalter (L, R oder Mittel), weichen die Kanäle ab, zeigen gestrichelte
   Linien die anderen. Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R.
 - Jede Route auf einen Bandwert oder FB ALL AMT hat eine Kanalwahl (Knopf in Routenliste, Popup und

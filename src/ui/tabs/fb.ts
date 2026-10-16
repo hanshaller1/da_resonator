@@ -1,8 +1,8 @@
 /**
  * FB tab: the bands. Visualisation = live input / output spectrum with the filterbank response;
  * each band node sits over its fader and glows with its feedback. Control row = per band
- * RES and FB (slot k = band k). Status line = global resonance, spread, feedback state (RES RESET
- * and FB RESET sit in the global column).
+ * RES and FB (slot k = band k). Status line = global resonance, spread, feedback state (RES/BAND
+ * and FB/BAND under RESET sit in the global column).
  * L/R per band: the response follows the channel switch (L, R, or both averaged); once the
  * channels differ, the other channel(s) show as thin dashed lines. A node's ring is split: left
  * half L feedback, right half R feedback.

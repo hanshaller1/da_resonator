@@ -1,7 +1,7 @@
 /**
  * Global column right of tabs, panel and faders: input with Analog under it, resonance (large),
- * spread with the channel switch (L · L+R · R), the commands on all bands (R = L, RESET, RES RESET,
- * FB RESET), feedback-all (switch, amount, tone), dry/wet and output, with the input and output meters.
+ * spread with the channel switch (L · L+R · R), the commands on all bands under RESET (R = L, FADER,
+ * RES/BAND, FB/BAND), feedback-all (switch, amount, tone), dry/wet and output, with the input and output meters.
  */
 import type { EngineAPI, ParamStoreAPI } from '../../core/types';
 import { channelSel, copyLtoR, resetBands, type ChannelSel } from '../channel';
@@ -35,7 +35,7 @@ function channelSwitch(): HTMLElement {
   return h('span', { class: 'inst gc-ch-sel', role: 'group', 'aria-label': 'Channel to edit' }, ...btns);
 }
 
-/** commands on all bands, in L and R: R = L and RESET (faders), RES RESET and FB RESET */
+/** commands on all bands, in L and R, under the heading RESET: R = L, FADER (levels), RES/BAND and FB/BAND */
 function bandsCell(p: ParamStoreAPI): HTMLElement {
   const btn = (label: string, title: string, run: () => void) => {
     const b = h('button', { type: 'button', class: 'btn gc-ch-btn', title }, label);
@@ -44,18 +44,19 @@ function bandsCell(p: ParamStoreAPI): HTMLElement {
   };
   return h(
     'div',
-    { class: 'gc-cell gc-ch', role: 'group', 'aria-label': 'All bands' },
+    { class: 'gc-cell gc-ch', role: 'group', 'aria-label': 'Reset all bands' },
+    h('span', { class: 'gc-ch-title micro-label' }, 'RESET'),
     h(
       'div',
       { class: 'gc-ch-row' },
       btn('R = L', 'Set every R value to its L value (levels, RES, FB, FB ALL)', () => copyLtoR(p)),
-      btn('RESET', 'All 10 faders to 0 dB, in L and R', () => resetBands(p, 'gain')),
+      btn('FADER', 'All 10 faders to 0 dB, in L and R', () => resetBands(p, 'gain')),
     ),
     h(
       'div',
       { class: 'gc-ch-row' },
-      btn('RES RESET', 'RES of all 10 bands back to broad, in L and R', () => resetBands(p, 'res')),
-      btn('FB RESET', 'FB of all 10 bands to 0, in L and R', () => resetBands(p, 'fb')),
+      btn('RES/BAND', 'RES of all 10 bands back to broad, in L and R', () => resetBands(p, 'res')),
+      btn('FB/BAND', 'FB of all 10 bands to 0, in L and R', () => resetBands(p, 'fb')),
     ),
   );
 }

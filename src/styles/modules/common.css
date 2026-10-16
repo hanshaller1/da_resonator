@@ -38,7 +38,9 @@
   min-width: 52px;
   cursor: pointer;
 }
-.pselect-native:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.pselect-native:focus-visible { outline: none; }
+/* focused: the frame only brightens a little (no accent frame, it reads like a selected state) */
+.pselect-row:has(.pselect-native:focus-visible) { border-color: var(--c-text-4); }
 .pselect-native option { background: var(--c-panel); color: var(--c-text); }
 .pselect-step { border: 0; background: none; color: var(--c-text-3); width: 18px; height: 24px; cursor: pointer; font-size: var(--fs-md); }
 .pselect-step:hover { color: var(--c-text); }

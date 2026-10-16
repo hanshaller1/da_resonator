@@ -231,8 +231,8 @@ export function clockChoice(engine: EngineAPI, module: string, name: string, wit
   return el;
 }
 
-/** the tempo of the clock `which()` names as a readout; a click opens CONFIG → CLOCK */
-function tempoReadout(engine: EngineAPI, which: () => ClockName): HTMLElement {
+/** the tempo of the clock `which()` names as a readout, "---" while `free()` (an LFO on RATE); a click opens CONFIG → CLOCK */
+function tempoReadout(engine: EngineAPI, which: () => ClockName, free: () => boolean = () => false): HTMLElement {
   const val = h('span', { class: 'pfield-value' });
   const el = h('button', { type: 'button', class: 'pfield clk-tempo', 'aria-label': 'Tempo, set in CONFIG → CLOCK' }, h('span', { class: 'pfield-label' }, 'TEMPO'), val);
   el.addEventListener('click', () => nav.reveal('clock.bpm'));
@@ -242,11 +242,14 @@ function tempoReadout(engine: EngineAPI, which: () => ClockName): HTMLElement {
     const v = clockView(engine, w);
     const on = clockOn(engine, w);
     const f = fresh(engine);
-    const key = `${w}|${v.bpm.toFixed(1)}|${on}|${f}|${v.running}`;
+    const rate = free();
+    const key = `${w}|${v.bpm.toFixed(1)}|${on}|${f}|${v.running}|${rate}`;
     if (key === last) return;
     last = key;
-    val.textContent = bpmText(v.bpm);
-    el.title = !on
+    val.textContent = rate ? '---' : bpmText(v.bpm);
+    el.title = rate
+      ? 'Runs free on RATE: no tempo (INT or MIDI syncs it to a clock)'
+      : !on
       ? 'Both clocks are off (CONFIG → CLOCK)'
       : w === 'int'
         ? `Internal clock${v.running ? '' : ', stopped'}: TEMPO, RUN, TAP and RESET in CONFIG → CLOCK`
@@ -337,7 +340,8 @@ export function clockInfo(engine: EngineAPI): HTMLElement {
  */
 export function clockStatus(engine: EngineAPI, module: string, name: string, withRate = false): HTMLElement {
   const follow = () => followedClock(engine, module);
-  const el = h('span', { class: 'clk-clock' }, tempoReadout(engine, follow), clockChoice(engine, module, name, withRate), beatLeds(engine, follow));
+  const free = () => withRate && engine.params.get(`${module}.sync`) < 0.5;
+  const el = h('span', { class: 'clk-clock' }, tempoReadout(engine, follow, free), clockChoice(engine, module, name, withRate), beatLeds(engine, follow));
   if (withRate) {
     const sync = () => toggleClass(el, 'is-rate', engine.params.get(`${module}.sync`) < 0.5);
     sync();

@@ -25,8 +25,9 @@
 .clk-btn:disabled:hover { color: var(--c-text-2); }
 .toggle.is-ext:disabled { opacity: 0.45; cursor: default; }
 
-/* tempo readout: looks like the field, opens CONFIG */
+/* tempo readout: looks like the field, opens CONFIG; a fixed width for "120.0 BPM" and "---" */
 .clk-tempo { border: 0; font-family: inherit; cursor: pointer; }
+.clk-tempo .pfield-value { display: inline-block; min-width: 9ch; }
 
 .clk-beats { display: inline-flex; gap: 3px; }
 .clk-beat { width: 6px; height: 6px; border-radius: 50%; background: var(--c-meter-off); box-shadow: 0 0 0 1px var(--c-line-inset); }
