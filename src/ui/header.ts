@@ -2,6 +2,7 @@ import { Emitter } from '../core/Emitter';
 import type { EngineAPI, EngineState, SourceKind, Unsubscribe } from '../core/types';
 import { ParamToggle } from './components/toggle';
 import { h, icon, s, toggleClass } from './dom';
+import { nav } from './shell/tabs';
 import { buildPresetBar } from './tabs/play/bar';
 import type { ThemeController } from './theme';
 
@@ -282,22 +283,29 @@ export function buildSourceSelect(t: Transport, opts: { label?: string } = {}): 
   return h('label', { class: 'select' }, h('span', { class: 'select-label micro-label' }, opts.label ?? 'SRC'), select, icon('chevron', 'icon select-chevron'));
 }
 
-/** audio input device select (CONFIG): choosing a device makes it the source */
-export function buildInputSelect(t: Transport): HTMLLabelElement {
-  const { engine } = t;
-  const select = h('select', { class: 'select-native', 'aria-label': 'Audio input device' });
+/** header: the current source as a button; a click shows the source in CONFIG instead of a list */
+function buildSourceButton(t: Transport): HTMLButtonElement {
+  const name = h('span', { class: 'src-btn-name' });
+  const btn = h(
+    'button',
+    { type: 'button', class: 'select src-btn', 'aria-controls': 'tabpanel-config' },
+    h('span', { class: 'select-label micro-label' }, 'SRC'),
+    name,
+    icon('chevron', 'icon select-chevron src-btn-go'),
+  );
   const sync = () => {
-    const off = engine.source !== 'mic';
-    select.replaceChildren(...(off ? [h('option', { value: '', disabled: true }, 'Not in use')] : []), ...inputOptions(engine));
-    select.value = off ? '' : inputValue(engine);
-    select.title = off ? 'Choose an input to make it the source' : engine.input.label;
+    name.textContent = t.sourceLabel;
+    btn.title = `${t.sourceLabel}: choose the source in CONFIG`;
+    btn.setAttribute('aria-label', `Source ${t.sourceLabel}. Show the source in CONFIG`);
   };
   sync();
-  engine.onSourceChange(sync);
-  engine.input.onChange(sync);
-  rescanOnOpen(select, engine);
-  select.addEventListener('change', () => void chooseInput(t, select.value, sync));
-  return h('label', { class: 'select' }, h('span', { class: 'select-label micro-label' }, 'DEVICE'), select, icon('chevron', 'icon select-chevron'));
+  t.onSourceLabel(sync);
+  btn.addEventListener('click', () => nav.reveal('config.source'));
+  // lit while CONFIG is the shown tab, like the preset name for PLAY/LOAD
+  const syncTab = () => toggleClass(btn, 'is-open', nav.current === 'config');
+  syncTab();
+  nav.onChange(syncTab);
+  return btn;
 }
 
 /** play / pause the source */
@@ -378,8 +386,8 @@ export function buildHeader(engine: EngineAPI, theme: ThemeController, notify: N
   t.onBusy((b) => toggleClass(power, 'is-busy', b));
   power.addEventListener('click', () => void t.ensureStarted());
 
-  /* ---------- source, play, level ---------- */
-  const source = buildSourceSelect(t);
+  /* ---------- source (opens CONFIG), play, level ---------- */
+  const source = buildSourceButton(t);
   const play = buildPlayButton(t);
   const levelWrap = h('div', { class: 'level', title: 'Source level' }, icon('volume', 'icon level-icon'), buildLevelSlider(t));
 

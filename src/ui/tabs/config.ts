@@ -1,17 +1,19 @@
 /**
  * CONFIG tab: two pages, switched in the status line.
- * GENERAL: audio (engine state, start, panic, bypass) and source (select, play, level, file), the
- * audio input (device, channels, Elektron AUTO), the resonance setup (feedback route, what the
- * RESONANCE knob does, its curve and bands), the Analog character, display (theme, window scale)
- * and a short help. The source and audio controls share the header's Transport, so both always agree.
+ * GENERAL: the source (select, play, level, file) with the audio input under it (channels,
+ * Elektron AUTO; the device is chosen in the source list), the internal clock (TEMPO, RUN, TAP,
+ * RESET, INT · MIDI) that CLK MOD and the LFOs follow, the resonance setup (feedback route, what
+ * the RESONANCE knob does, its curve and bands) over display (theme, window scale), and a short
+ * help. The source controls share the header's Transport, so both always agree; SRC in the header
+ * opens this page.
  * MIDI: device, channels, clock and CC map (configMidi.ts).
  */
 import '../../styles/tabs/config.css';
 import type { EngineState, InputChannels, ParamStoreAPI } from '../../core/types';
-import { Knob } from '../components/knob';
-import { ParamToggle } from '../components/toggle';
+import { beatLeds, clockSourceSwitch, clockState, intClockControls } from '../clock';
 import { h, toggleClass } from '../dom';
-import { audioStateText, buildInputSelect, buildLevelSlider, buildPanicButton, buildPlayButton, buildSourceSelect, formatSampleRate, getTransport } from '../header';
+import { audioStateText, buildLevelSlider, buildPlayButton, buildSourceSelect, formatSampleRate, getTransport } from '../header';
+import { flash } from '../shell/panelHost';
 import { DESIGN_H, DESIGN_W, onScaleChange, uiScale } from '../shell/stage';
 import { registerTab } from '../shell/tabs';
 import { getTheme, type ThemePref } from '../theme';
@@ -52,9 +54,17 @@ function paramButtons(p: ParamStoreAPI, id: string, items: [string, string][], a
   return h('span', { class: 'inst', role: 'group', 'aria-label': ariaLabel }, ...btns);
 }
 
+/** set while mounted: show the GENERAL page (and flash the source card for 'config.source') */
+let revealHere: ((id: string) => void) | null = null;
+
 registerTab({
   id: 'config',
-  reveal: (id) => id === 'analog' || id.startsWith('reso.'),
+  // 'config.source' is not a param: SRC in the header asks for the source card
+  reveal: (id) => {
+    if (id !== 'config.source' && !id.startsWith('reso.') && !id.startsWith('clock.')) return false;
+    revealHere?.(id);
+    return true;
+  },
   mount(tab) {
     const { engine } = tab;
     const t = getTransport(engine, tab.notify);
@@ -64,13 +74,7 @@ registerTab({
     const midiPage = buildMidiPage(engine, tab.notify);
     body.append(general, midiPage.el);
 
-    /* ---------- audio + source ---------- */
-    const stLed = h('span', { class: 'cfg-led', 'aria-hidden': 'true' });
-    const stLabel = h('b', { class: 'cfg-state' });
-    const stRate = h('span', { class: 'cfg-rate' });
-    const startBtn = h('button', { type: 'button', class: 'btn cfg-start' });
-    startBtn.addEventListener('click', () => void t.ensureStarted());
-    const bypass = new ParamToggle(engine.params, 'bypass', { label: 'BYPASS', tone: 'neutral', ariaLabel: 'Bypass resonator' });
+    /* ---------- source, with the audio input under LOAD FILE ---------- */
     const fileBtn = h('button', { type: 'button', class: 'btn cfg-file' }, 'LOAD FILE…');
     fileBtn.addEventListener('click', () => t.pickFile());
     const srcName = h('span', { class: 'cfg-srcname' });
@@ -81,18 +85,6 @@ registerTab({
     syncSrc(t.sourceLabel);
     t.onSourceLabel(syncSrc);
 
-    const audio = card(
-      'Audio',
-      'cfg-audio',
-      h('div', { class: 'cfg-row' }, stLed, stLabel, stRate, h('span', { class: 'cfg-grow' }), startBtn),
-      h('div', { class: 'cfg-row' }, bypass.el, buildPanicButton(engine)),
-      h('h3', { class: 'cfg-title micro-label cfg-sub' }, 'Source'),
-      h('div', { class: 'cfg-row' }, buildSourceSelect(t), buildPlayButton(t)),
-      h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'LEVEL'), buildLevelSlider(t)),
-      h('div', { class: 'cfg-row' }, fileBtn, srcName),
-    );
-
-    /* ---------- audio input ---------- */
     const inp = engine.input;
     const CHANNELS: [InputChannels, string, string][] = [
       ['stereo', 'STEREO', 'Both channels as they are'],
@@ -125,12 +117,12 @@ registerTab({
       autoBtn.setAttribute('aria-pressed', String(inp.autoElektron));
       const ch = inp.deviceChannels ? ` · ${inp.deviceChannels} ch` : '';
       let text: string;
-      if (!inp.supported) text = 'Not available on this page';
+      if (!inp.supported) text = 'Audio input not available on this page';
       else if (inp.status === 'open') text = `${inp.label}${ch}${inp.namesHidden ? ' · browser hides the other names' : ''}`;
       else if (inp.status === 'waiting') text = `${inp.label} not connected, waiting for it`;
       else if (engine.source === 'mic') text = `${inp.label || 'Audio input'} opens when audio starts`;
-      else if (!inp.allowed) text = 'Not in use · choose a device to allow access';
-      else text = `Not in use · ${inp.devices.length} input${inp.devices.length === 1 ? '' : 's'} found`;
+      else if (!inp.allowed) text = 'No input yet · pick one under SRC';
+      else text = `Input not in use · ${inp.devices.length} input${inp.devices.length === 1 ? '' : 's'} found`;
       inState.textContent = text;
       inState.title = text;
       toggleClass(inLed, 'is-on', inp.status === 'open');
@@ -142,9 +134,9 @@ registerTab({
 
     // CHECK: what the browser reports, in place of the note (to find out why a device is missing)
     const NOTE = inp.supported
-      ? 'With AUTO, a plugged-in Elektron device (Digitakt, Digitone, Syntakt, Rytm, Four, Heat …) becomes the input, also while audio runs. The browser takes the first two channels (with Overbridge: the main out).'
+      ? 'Audio inputs are in the SRC list. With AUTO, a plugged-in Elektron device (Digitakt, Digitone, Syntakt, Rytm …) becomes the input, also while audio runs. The browser takes the first two channels.'
       : 'This page may not use audio inputs (an embedded window, or plain http). Open resonator-standalone.html in Chrome, or run the app locally, to play your synths through it.';
-    const note = h('p', { class: 'cfg-note' }, NOTE);
+    const note = h('p', { class: 'cfg-note cfg-src-note' }, NOTE);
     const checkBtn = h('button', { type: 'button', class: 'inst-btn cfg-check', title: 'Show what the browser reports about audio inputs (click again to hide)' }, 'CHECK');
     checkBtn.addEventListener('click', async () => {
       if (note.classList.contains('is-report')) {
@@ -161,15 +153,37 @@ registerTab({
       toggleClass(checkBtn, 'is-selected', true);
     });
 
-    const input = card(
-      'Input',
-      'cfg-input',
-      h('div', { class: 'cfg-row' }, buildInputSelect(t)),
-      h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'CHAN'), h('span', { class: 'inst', role: 'group', 'aria-label': 'Input channels' }, ...chanBtns.map((x) => x.b))),
+    const source = card(
+      'Source',
+      'cfg-src',
+      h('div', { class: 'cfg-row' }, buildSourceSelect(t), buildPlayButton(t)),
+      h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'LEVEL'), buildLevelSlider(t)),
+      h('div', { class: 'cfg-row' }, fileBtn, srcName),
+      h('div', { class: 'cfg-row cfg-sep' }, h('span', { class: 'cfg-key' }, 'CHAN'), h('span', { class: 'inst', role: 'group', 'aria-label': 'Input channels' }, ...chanBtns.map((x) => x.b))),
       h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'AUTO'), autoBtn, h('span', { class: 'cfg-grow' }), h('span', { class: 'inst' }, checkBtn)),
       h('div', { class: 'cfg-row' }, inLed, inState),
       note,
     );
+
+    /* ---------- clock: the internal clock, and which clock the mods follow ---------- */
+    const ic = intClockControls(engine);
+    const clkLed = h('span', { class: 'cfg-led', 'aria-hidden': 'true' });
+    const clkState = h('span', { class: 'cfg-instate' });
+    const clock = card(
+      'Clock',
+      'cfg-clock',
+      h('div', { class: 'cfg-row' }, ic.tempo, h('span', { class: 'cfg-grow' }), ic.tap),
+      h('div', { class: 'cfg-row' }, ic.run, ic.reset, h('span', { class: 'cfg-grow' }), beatLeds(engine)),
+      h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'SOURCE'), clockSourceSwitch(engine)),
+      h('div', { class: 'cfg-row' }, clkLed, clkState),
+      h('p', { class: 'cfg-note' }, 'The clock mods and the LFOs on DIV follow this clock, everywhere. On MIDI they follow the MIDI device: Start, Stop and OFFSET are on the MIDI page.'),
+    );
+    const tickClock = () => {
+      const cs = clockState(engine);
+      toggleClass(clkLed, 'is-on', cs.led === 'on');
+      toggleClass(clkLed, 'is-wait', cs.led === 'wait');
+      if (clkState.textContent !== cs.text) clkState.textContent = clkState.title = cs.text;
+    };
 
     /* ---------- resonance setup ---------- */
     const p = engine.params;
@@ -210,19 +224,6 @@ registerTab({
       resoNote,
     );
 
-    /* ---------- analog ---------- */
-    const analog = new Knob(engine.params, 'analog', { size: 'sm', label: 'ANALOG' });
-    const character = card(
-      'Character',
-      'cfg-analog',
-      h(
-        'div',
-        { class: 'cfg-row', title: 'Saturation, detune, Q tolerance, drift and a −96 dBFS noise floor per band' },
-        analog.el,
-        h('p', { class: 'cfg-note' }, 'Saturation, detune, drift and noise per band. 0 is clean.'),
-      ),
-    );
-
     /* ---------- display ---------- */
     const themeBtns = (['auto', 'light', 'dark'] as ThemePref[]).map((pref) => {
       const b = h('button', { type: 'button', class: 'inst-btn' }, pref.toUpperCase());
@@ -240,8 +241,9 @@ registerTab({
     const syncScale = (k: number) => (scale.textContent = `${Math.round(k * 100)} %`);
     syncScale(uiScale());
     onScaleChange(syncScale);
-    audio.append(
-      h('h3', { class: 'cfg-title micro-label cfg-sub' }, 'Display'),
+    const display = card(
+      'Display',
+      'cfg-display',
       h(
         'div',
         { class: 'cfg-row' },
@@ -259,13 +261,13 @@ registerTab({
       h('dl', { class: 'cfg-help-list' }, ...HELP.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
     );
 
-    general.append(audio, input, reso, character, help);
+    general.append(source, clock, reso, display, help);
 
     /* ---------- status line: state, page switch GENERAL · MIDI ---------- */
     const status = h('span', { class: 'cfg-status' });
     let page: 'general' | 'midi' = 'general';
     const pageBtns = (['general', 'midi'] as const).map((pg) => {
-      const b = h('button', { type: 'button', class: 'inst-btn', title: pg === 'general' ? 'Audio, input, resonance, display' : 'MIDI device, channels, clock and CC map' }, pg.toUpperCase());
+      const b = h('button', { type: 'button', class: 'inst-btn', title: pg === 'general' ? 'Source, input, clock, resonance, display' : 'MIDI device, channels, clock and CC map' }, pg.toUpperCase());
       b.addEventListener('click', () => showPage(pg));
       return { pg, b };
     });
@@ -279,24 +281,21 @@ registerTab({
       }
       sync();
     };
+    revealHere = (id) => {
+      showPage('general');
+      if (id === 'config.source') requestAnimationFrame(() => flash(source));
+    };
     tab.status.append(status, h('span', { class: 'tp-spacer' }), h('span', { class: 'inst', role: 'group', 'aria-label': 'Settings page' }, ...pageBtns.map((x) => x.b)));
     runWhileVisible(() => tab.visible && page === 'midi', midiPage.tick);
+    runWhileVisible(() => tab.visible && page === 'general', tickClock);
     engine.midi.onChange(() => sync());
     const sync = (st: EngineState = engine.state) => {
       const txt = audioStateText(st);
-      stLabel.textContent = txt.label;
-      stRate.textContent = st === 'running' ? formatSampleRate(engine.sampleRate) : '';
-      toggleClass(stLed, 'is-on', st === 'running');
-      toggleClass(stLed, 'is-error', st === 'error');
-      startBtn.hidden = !txt.action;
-      startBtn.textContent = (txt.action ?? '').toUpperCase();
-      startBtn.title = txt.title;
       status.textContent =
         page === 'midi' ? midiPage.status() : ['Settings', txt.label + (st === 'running' ? ` · ${formatSampleRate(engine.sampleRate)}` : ''), `Source ${t.sourceLabel}`].join(' · ');
     };
     showPage('general');
     engine.onStateChange(sync);
     t.onSourceLabel(() => sync());
-    t.onBusy((b) => toggleClass(startBtn, 'is-busy', b));
   },
 });

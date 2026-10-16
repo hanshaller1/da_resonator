@@ -32,6 +32,8 @@ export interface ParamStoreAPI {
   /** gestures: lets future undo / automation recording group changes */
   beginGesture(id: string): void;
   endGesture(id: string): void;
+  /** called when a control starts / ends editing a param (not for presets, MIDI or modulation) */
+  onGesture(cb: (id: string, phase: 'begin' | 'end') => void): Unsubscribe;
 }
 
 export interface MeterBusAPI {

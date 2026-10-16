@@ -30,7 +30,7 @@ src/
   core/state.ts             Snapshot-Format v3 (Presets), Migration von v1 und v2
   presets/                  Preset-Speicher und Werks-Presets
   ui/shell/                 Bühne 1200 × 700 (skaliert), Register, Fader-Block, Global-Spalte, Band-Achse
-  ui/tabs/                  Die 10 Register (FB, FILTER, CLK MOD, DYN EQ, MACRO, ENV MOD, LFO MOD, PLAY/LOAD, SPECTR, CONFIG)
+  ui/tabs/                  Die 10 Register (FB, FILTER, CLK MOD, DYN EQ, MACRO, ENV MOD, LFO MOD, SPECTR, PLAY/LOAD, CONFIG)
   ui/components/, ui/viz/   Regler, Routenlisten, Canvas- und Spektrum-Bausteine
   ui/mod/                   Assign-Modus, Routen-Popover, Beschriftungen
   styles/                   Design-Tokens und Styles
@@ -49,7 +49,18 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - Feste Fläche 1200 × 700, gleichmäßig auf das Fenster skaliert (nichts verschiebt sich je nach Fenstergröße).
 - Oben die Kopfzeile, darunter 10 Register, je eines über einer Fader-Spalte. Jedes Register füllt dasselbe
   Panel (1044 × 336): Statuszeile, Visualisierung, Reglerreihe mit 10 festen Plätzen (Platz k über Fader k).
-- Darunter immer die 10 Band-Fader (Pegel), rechts die Global-Spalte (Input, Resonance, Spread, Kanalwahl, FB All, Dry/Wet, Output).
+- Darunter immer die 10 Band-Fader (Pegel), rechts die Global-Spalte: INPUT mit ANALOG darunter, RESONANCE,
+  SPREAD mit der Kanalwahl, die Befehle für alle Bänder (R = L, RESET, RES RESET, FB RESET), FB ALL, DRY/WET,
+  OUTPUT.
+- **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
+  ist; PLAY/LOAD und CONFIG haben keine.
+- **CONFIG** (Seite GENERAL): Source mit dem Audio-Eingang unter LOAD FILE, Clock, Resonance mit Display
+  darunter, Help. Der Audio-Zustand steht im Kopf.
+- **Clock:** Der interne Takt wird in CONFIG gesetzt (TEMPO, RUN, TAP, RESET) und gilt für alles. CLK MOD und
+  LFO MOD zeigen in der Statuszeile das Tempo (Klick öffnet CONFIG), INT · MIDI und die Schlag-LEDs. Das Tempo
+  bleibt Teil des Presets.
+- **LFO:** Es gibt keinen SYNC-Schalter mehr. Was zuletzt eingestellt wurde, gilt: RATE dreht das LFO frei,
+  eine DIV bindet es an den Takt. Der nicht genutzte Regler ist abgedunkelt.
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
 - Die Modulationsmatrix ist pro Quelle verteilt: jedes Quellen-Register (CLK, ENV, LFO, MACRO) zeigt die Ziele
   seiner Quelle mit Tiefe; Rechtsklick auf jeden Regler öffnet weiterhin dessen Modulation und MIDI Learn.
@@ -87,9 +98,9 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
     mit Buchstabe seine Stellung; die Anzeige darunter zeigt beide Werte (`−6.0|+3.0`). Die Knöpfe zeigen den
     anderen Kanal als dünnen zweiten Zeiger. FB ALL leuchtet halb, wenn nur ein Kanal an ist.
   - **R = L** setzt alle R-Werte auf die von L. **RESET** setzt alle 10 Fader in L und R auf 0 dB.
+    **RES RESET** und **FB RESET** darunter setzen RES bzw. FB aller Bänder in L und R zurück.
 - FB-Register: Die Kurve folgt dem Umschalter (L, R oder Mittel), weichen die Kanäle ab, zeigen gestrichelte
-  Linien die anderen. Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R. Rechts in der
-  Statuszeile setzen **RES RESET** und **FB RESET** RES bzw. FB aller Bänder in L und R zurück.
+  Linien die anderen. Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R.
 - Jede Route auf einen Bandwert oder FB ALL AMT hat eine Kanalwahl (Knopf in Routenliste, Popup und
   Makro-Karte): L+R, L, R oder INV (R gegenläufig, ein LFO lässt das Band zwischen links und rechts wandern).
   Neue Routen übernehmen die Stellung des Umschalters.
@@ -99,9 +110,9 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
 
 ### Audio-Eingang (Synths, Elektron)
 
-- Quelle wählen im Kopf (Gruppe „Audio inputs“) oder in CONFIG → Input. Vor der ersten Freigabe steht dort nur
+- Quelle wählen in CONFIG → Source, Liste SRC (Gruppe „Audio inputs“). Vor der ersten Freigabe steht dort nur
   „Audio input… (allow access)“; nach der Freigabe erscheinen alle Eingänge mit Namen.
-- Kanalwahl STEREO / LEFT / RIGHT (L oder R gehen auf beide Seiten). Mono-Geräte laufen immer auf beide Seiten.
+- Unter LOAD FILE: Kanalwahl STEREO / LEFT / RIGHT (L oder R gehen auf beide Seiten). Mono-Geräte laufen immer auf beide Seiten.
 - ELEKTRON AUTO (Standard an): ein Elektron-Gerät (Digitakt, Digitone, Syntakt, Analog Rytm / Four / Heat …)
   wird beim Start und beim Einstecken im Betrieb automatisch zum Eingang. Das geht nur, wenn der Browser die
   Gerätenamen kennt, also nach einer ersten Freigabe.
@@ -136,8 +147,8 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
   EXPORT und IMPORT (Datei `resonator-midi-map.json`, Belegung und Kanäle).
 - **Program Change n** lädt Preset n: erst die 12 Werks-Presets, dann die eigenen in der Reihenfolge des
   Speicherns. Die Nummer (ab 1) steht in der Preset-Liste vor dem Namen.
-- **Clock:** INT · MIDI neben TEMPO (CLK MOD) und in CONFIG → MIDI. Auf MIDI zeigt TEMPO das gemessene Tempo,
-  RUN, TAP und RESET ruhen. Start setzt auf Schlag 1 und startet, Stop hält, Continue läuft weiter. Ohne
+- **Clock:** INT · MIDI in CLK MOD, LFO MOD und CONFIG (eine Einstellung). Auf MIDI zeigt TEMPO in CLK MOD und
+  LFO MOD das gemessene Tempo, RUN, TAP und RESET in CONFIG ruhen. Start setzt auf Schlag 1 und startet, Stop hält, Continue läuft weiter. Ohne
   Clock läuft das letzte Tempo weiter. **OFFSET** (−50 … +50 ms) verschiebt den Takt gegen das Audio (+ = später,
   z. B. um die Latenz des Audio-Eingangs). Das Tempo im Preset bleibt unangetastet.
 - Keine Noten, keine SysEx, kein MIDI-Ausgang.

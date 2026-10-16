@@ -1,0 +1,29 @@
+/* the clock (ui/clock.ts): status line group of CLK MOD and LFO MOD, and the INT clock in CONFIG */
+.clk-clock { display: inline-flex; align-items: center; gap: var(--sp-3); padding-left: var(--sp-4); border-left: 1px solid var(--c-line); }
+.clk-btn {
+  height: 20px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--c-raised);
+  box-shadow: var(--sh-raised);
+  color: var(--c-text-2);
+  font: var(--fw-bold) var(--fs-2xs) / 1 var(--font-ui);
+  letter-spacing: var(--ls-label);
+  cursor: pointer;
+}
+.clk-btn:hover { color: var(--c-text); }
+.clk-btn:focus-visible { outline: none; box-shadow: var(--sh-focus); }
+.clk-btn.is-flash { animation: clk-press var(--dur-slow) var(--ease-out); }
+@keyframes clk-press { 0% { background: var(--c-accent); color: var(--c-accent-ink); } }
+.clk-btn:disabled { opacity: 0.4; cursor: default; }
+.clk-btn:disabled:hover { color: var(--c-text-2); }
+.toggle.is-ext:disabled { opacity: 0.45; cursor: default; }
+
+/* tempo readout: looks like the field, opens CONFIG */
+.clk-tempo { border: 0; font-family: inherit; cursor: pointer; }
+
+.clk-beats { display: inline-flex; gap: 3px; }
+.clk-beat { width: 6px; height: 6px; border-radius: 50%; background: var(--c-meter-off); box-shadow: 0 0 0 1px var(--c-line-inset); }
+.clk-beat.is-on { background: var(--c-text-3); }
+.clk-beat.is-flash { background: var(--c-accent); box-shadow: 0 0 8px var(--c-accent-glow); }

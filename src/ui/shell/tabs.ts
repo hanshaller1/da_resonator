@@ -16,6 +16,8 @@ export interface TabInfo {
   label: string;
   /** accessible / tooltip description */
   title: string;
+  /** false: no LED (pages that switch nothing on) */
+  led?: boolean;
 }
 
 /** left to right, one per fader column */
@@ -27,9 +29,9 @@ export const TABS: readonly TabInfo[] = [
   { id: 'macro', label: 'MACRO', title: 'Macros' },
   { id: 'env', label: 'ENV MOD', title: 'Envelope followers' },
   { id: 'lfo', label: 'LFO MOD', title: 'LFOs' },
-  { id: 'play', label: 'PLAY/LOAD', title: 'Presets' },
   { id: 'spectr', label: 'SPECTR', title: 'Analyser' },
-  { id: 'config', label: 'CONFIG', title: 'Source, analog and settings' },
+  { id: 'play', label: 'PLAY/LOAD', title: 'Presets', led: false },
+  { id: 'config', label: 'CONFIG', title: 'Source, input, clock and settings', led: false },
 ];
 
 export const NUM_SLOTS = 10;

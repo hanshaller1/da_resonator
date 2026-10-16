@@ -6,6 +6,7 @@
 import { OFFSET_MAX_MS, OFFSET_MIN_MS } from '../../core/midi';
 import type { EngineAPI, MidiAPI } from '../../core/types';
 import { readTextFile, saveText } from '../../presets/files';
+import { clockState } from '../clock';
 import { h, icon, toggleClass } from '../dom';
 import { targetLabel } from '../mod/labels';
 import { frameLoop } from '../scheduler';
@@ -111,7 +112,7 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
 
   /* ---------- clock ---------- */
   const srcBtns = (['int', 'midi'] as const).map((src) => {
-    const b = h('button', { type: 'button', class: 'inst-btn', title: src === 'int' ? 'TEMPO, RUN and TAP in CLK MOD' : 'Tempo, Start, Stop and Continue from the MIDI device' }, src.toUpperCase());
+    const b = h('button', { type: 'button', class: 'inst-btn', title: src === 'int' ? 'Internal clock: TEMPO, RUN and TAP on the GENERAL page' : 'Tempo, Start, Stop and Continue from the MIDI device' }, src.toUpperCase());
     b.addEventListener('click', async () => {
       if (src === 'midi' && m.status !== 'on') await m.enable();
       if (src === 'int' || m.status === 'on') m.setClockSource(src);
@@ -142,7 +143,7 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
     h('div', { class: 'cfg-row' }, h('span', { class: 'cfg-key' }, 'SOURCE'), h('span', { class: 'inst', role: 'group', 'aria-label': 'Clock source' }, ...srcBtns.map((x) => x.b))),
     h('div', { class: 'cfg-row', title: 'Shifts the MIDI clock against the audio. + moves the LFOs and clock mods later, e.g. by the latency of the audio input. Double-click: 0' }, h('span', { class: 'cfg-key' }, 'OFFSET'), offset, offVal),
     h('div', { class: 'cfg-row' }, clkLed, clkState),
-    h('p', { class: 'cfg-note' }, 'On MIDI, LFOs with SYNC and the clock mods follow the device. Start begins at beat 1, Stop holds, Continue goes on. Without clock the last tempo keeps running.'),
+    h('p', { class: 'cfg-note' }, 'On MIDI, the clock mods and LFOs on DIV follow the device. Start begins at beat 1, Stop holds, Continue goes on. Without clock the last tempo keeps running.'),
   );
 
   /* ---------- CC map ---------- */
@@ -226,16 +227,10 @@ export function buildMidiPage(engine: EngineAPI, notify: Notify): { el: HTMLElem
       hitRow?.classList.add('is-hit');
       lastHit = hit;
     }
-    const fresh = now - m.clockAt < 500;
-    const ext = m.clockSource === 'midi';
-    toggleClass(clkLed, 'is-on', ext && fresh && engine.mod.running);
-    toggleClass(clkLed, 'is-wait', ext && fresh && !engine.mod.running);
-    const live = engine.state === 'running';
-    clkState.textContent = !ext
-      ? `Internal · ${engine.params.get('clock.bpm').toFixed(1)} BPM`
-      : !fresh
-        ? `No MIDI clock · ${live ? `${engine.mod.bpm.toFixed(1)} BPM runs on` : 'waiting'}`
-        : `MIDI clock · ${engine.mod.bpm.toFixed(1)} BPM · ${engine.mod.running ? 'running' : 'stopped'}${live ? '' : ' (start audio)'}`;
+    const cs = clockState(engine);
+    toggleClass(clkLed, 'is-on', cs.led === 'on');
+    toggleClass(clkLed, 'is-wait', cs.led === 'wait');
+    clkState.textContent = cs.text;
   };
 
   const status = () => ['MIDI', m.status === 'on' ? (m.connected ? m.deviceName : 'no device') : m.status === 'off' ? 'off' : m.status, `clock ${m.clockSource === 'midi' ? 'MIDI' : 'INT'}`].join(' · ');

@@ -1,16 +1,16 @@
-/* CONFIG tab (ui/tabs/config.ts): audio (source, display) | input | resonance over character | help */
+/* CONFIG tab (ui/tabs/config.ts): source with the input under it | clock | resonance over display | help */
 .cfg {
   display: grid;
-  grid-template-columns: 1.25fr 1.35fr 1.1fr 1.3fr;
+  grid-template-columns: 1.45fr 1.15fr 1.15fr 1.25fr;
   grid-template-rows: auto 1fr;
-  grid-template-areas: 'audio input reso help' 'audio input analog help';
+  grid-template-areas: 'src clock reso help' 'src clock display help';
   gap: var(--sp-4);
   padding: var(--sp-4);
 }
-.cfg-audio { grid-area: audio; }
-.cfg-input { grid-area: input; }
+.cfg-src { grid-area: src; }
+.cfg-clock { grid-area: clock; }
 .cfg-reso { grid-area: reso; }
-.cfg-analog { grid-area: analog; }
+.cfg-display { grid-area: display; }
 .cfg-help { grid-area: help; }
 .cfg-card {
   display: flex;
@@ -28,38 +28,36 @@
 .cfg-row { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; }
 .cfg-grow { flex: 1; }
 .cfg-key { flex: none; width: 44px; color: var(--c-text-3); font-size: var(--fs-2xs); font-weight: var(--fw-medium); letter-spacing: var(--ls-label); }
-.cfg-val { color: var(--c-accent); font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono); }
+.cfg-val { color: var(--c-accent); font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono); white-space: nowrap; }
 .cfg-note { margin: 0; color: var(--c-text-3); font-size: var(--fs-xs); line-height: 1.45; }
 .cfg-status { color: var(--c-text-2); }
 
-/* audio */
-.cfg-led { width: 7px; height: 7px; border-radius: 50%; background: var(--c-text-4); }
+/* source, with the audio input under LOAD FILE */
+.cfg-led { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c-text-4); }
 .cfg-led.is-on { background: var(--c-ok); box-shadow: 0 0 6px var(--c-ok); }
 .cfg-led.is-error { background: var(--c-fb); box-shadow: 0 0 6px var(--c-fb-glow); }
-.cfg-state { color: var(--c-text); font-size: var(--fs-sm); }
-.cfg-rate { color: var(--c-text-3); font: var(--fs-xs) / 1 var(--font-mono); }
-.cfg-start[hidden] { display: none; }
-.cfg-start.is-busy { opacity: 0.6; pointer-events: none; }
-.cfg-audio .select { flex: 1 1 auto; min-width: 0; }
-.cfg-audio .select-native { min-width: 0; width: 100%; }
-.cfg-audio .range { flex: 1 1 auto; min-width: 0; }
+.cfg-led.is-wait { background: var(--c-mod); box-shadow: 0 0 6px var(--c-mod); }
+.cfg-src { gap: var(--sp-3); }
+.cfg-src .select { flex: 1 1 auto; min-width: 0; }
+.cfg-src .select-native { min-width: 0; width: 100%; }
+.cfg-src .range { flex: 1 1 auto; min-width: 0; }
+.cfg-src .inst-btn:disabled { opacity: 0.4; pointer-events: none; }
+.cfg-sep { margin-top: var(--sp-1); padding-top: var(--sp-4); border-top: 1px solid var(--c-line); }
 .cfg-file { flex: none; }
 .cfg-srcname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-3); font-size: var(--fs-xs); }
-
-/* input */
-.cfg-input .select { flex: 1 1 auto; min-width: 0; }
-.cfg-input .select-native { min-width: 0; width: 100%; }
-.cfg-led.is-wait { background: var(--c-mod); box-shadow: 0 0 6px var(--c-mod); }
 .cfg-instate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-2); font-size: var(--fs-xs); }
-.cfg-input .inst-btn:disabled { opacity: 0.4; pointer-events: none; }
 .cfg-auto { height: 24px; padding: 0 var(--sp-4); }
+.cfg-src-note { flex: 1 1 auto; min-height: 0; }
 .cfg-note.is-report { min-height: 0; overflow: auto; white-space: pre-line; color: var(--c-text-2); font: var(--fs-2xs) / 1.5 var(--font-mono); user-select: text; }
 
 .cfg-key--auto { width: auto; }
 
-/* resonance setup and character: compact, stacked in one column */
-.cfg-reso, .cfg-analog { gap: var(--sp-3); }
-.cfg-analog .cfg-row { align-items: center; }
+/* clock: the internal clock and INT · MIDI */
+.cfg-clock { gap: var(--sp-4); }
+.cfg-clock .toggle { height: 20px; padding: 0 var(--sp-4); }
+
+/* resonance setup and display: compact, stacked in one column */
+.cfg-reso, .cfg-display { gap: var(--sp-3); }
 
 /* help */
 .cfg-help-list { display: grid; grid-template-columns: auto 1fr; gap: 5px var(--sp-5); margin: 0; font-size: var(--fs-xs); }

@@ -43,7 +43,7 @@ export function buildTabs(engine: EngineAPI, notify: Notify): { tabRow: HTMLElem
     const btn = h(
       'button',
       { type: 'button', class: 'tab', role: 'tab', id: `tab-${t.id}`, 'aria-controls': `tabpanel-${t.id}`, 'aria-selected': 'false', tabindex: '-1', title: t.title, 'data-tab': t.id },
-      h('span', { class: 'tab-led', 'aria-hidden': 'true' }),
+      t.led === false ? null : h('span', { class: 'tab-led', 'aria-hidden': 'true' }),
       h('span', { class: 'tab-label' }, t.label),
     );
     btn.addEventListener('click', () => nav.show(t.id));

@@ -1,7 +1,7 @@
 /**
- * Global column right of tabs, panel and faders: input, resonance (large), spread, the channel
- * switch (L · L+R · R, with R = L and RESET), feedback-all (switch, amount, tone), dry/wet and
- * output, with the input and output meters.
+ * Global column right of tabs, panel and faders: input with Analog under it, resonance (large),
+ * spread with the channel switch (L · L+R · R), the commands on all bands (R = L, RESET, RES RESET,
+ * FB RESET), feedback-all (switch, amount, tone), dry/wet and output, with the input and output meters.
  */
 import type { EngineAPI, ParamStoreAPI } from '../../core/types';
 import { channelSel, copyLtoR, resetBands, type ChannelSel } from '../channel';
@@ -11,8 +11,8 @@ import { ParamToggle } from '../components/toggle';
 import { h, toggleClass } from '../dom';
 import { frameLoop } from '../scheduler';
 
-/** which channel the faders, band RES / FB and Feedback All edit; R = L and RESET act on all bands */
-function channelCell(p: ParamStoreAPI): HTMLElement {
+/** which channel the faders, band RES / FB and Feedback All edit (sits under SPREAD) */
+function channelSwitch(): HTMLElement {
   const items: [ChannelSel, string, string][] = [
     ['L', 'L', 'Edit the left channel'],
     ['LR', 'L+R', 'Edit both channels (an offset between them stays)'],
@@ -32,15 +32,31 @@ function channelCell(p: ParamStoreAPI): HTMLElement {
   };
   sync();
   channelSel.onChange(sync);
-  const copy = h('button', { type: 'button', class: 'btn gc-ch-btn', title: 'Set every R value to its L value (levels, RES, FB, FB ALL)' }, 'R = L');
-  copy.addEventListener('click', () => copyLtoR(p));
-  const reset = h('button', { type: 'button', class: 'btn gc-ch-btn', title: 'All 10 faders to 0 dB, in L and R' }, 'RESET');
-  reset.addEventListener('click', () => resetBands(p, 'gain'));
+  return h('span', { class: 'inst gc-ch-sel', role: 'group', 'aria-label': 'Channel to edit' }, ...btns);
+}
+
+/** commands on all bands, in L and R: R = L and RESET (faders), RES RESET and FB RESET */
+function bandsCell(p: ParamStoreAPI): HTMLElement {
+  const btn = (label: string, title: string, run: () => void) => {
+    const b = h('button', { type: 'button', class: 'btn gc-ch-btn', title }, label);
+    b.addEventListener('click', run);
+    return b;
+  };
   return h(
     'div',
-    { class: 'gc-cell gc-ch' },
-    h('span', { class: 'inst gc-ch-sel', role: 'group', 'aria-label': 'Channel to edit' }, ...btns),
-    h('div', { class: 'gc-ch-row' }, copy, reset),
+    { class: 'gc-cell gc-ch', role: 'group', 'aria-label': 'All bands' },
+    h(
+      'div',
+      { class: 'gc-ch-row' },
+      btn('R = L', 'Set every R value to its L value (levels, RES, FB, FB ALL)', () => copyLtoR(p)),
+      btn('RESET', 'All 10 faders to 0 dB, in L and R', () => resetBands(p, 'gain')),
+    ),
+    h(
+      'div',
+      { class: 'gc-ch-row' },
+      btn('RES RESET', 'RES of all 10 bands back to broad, in L and R', () => resetBands(p, 'res')),
+      btn('FB RESET', 'FB of all 10 bands to 0, in L and R', () => resetBands(p, 'fb')),
+    ),
   );
 }
 
@@ -50,6 +66,8 @@ export function buildGlobalColumn(engine: EngineAPI): HTMLElement {
   const outMeter = new StereoMeter('OUT');
 
   const input = new Knob(p, 'inputGain', { size: 'md', label: 'INPUT', ariaLabel: 'Input gain' });
+  const analog = new Knob(p, 'analog', { size: 'sm', label: 'ANALOG', ariaLabel: 'Analog character' });
+  analog.el.title = 'Saturation, detune, Q tolerance, drift and a −96 dBFS noise floor per band. 0 is clean.';
   const res = new Knob(p, 'resOffset', { size: 'lg', label: 'RESONANCE', ariaLabel: 'Global resonance' });
   // what the knob does is set in CONFIG (shift RES, or scale all feedback like the hardware)
   const syncResTitle = () => {
@@ -79,10 +97,10 @@ export function buildGlobalColumn(engine: EngineAPI): HTMLElement {
   const el = h(
     'aside',
     { class: 'globals', 'aria-label': 'Global controls' },
-    h('div', { class: 'gc-cell gc-io' }, input.el, inMeter.el),
+    h('div', { class: 'gc-cell gc-io gc-in' }, input.el, inMeter.el, analog.el),
     h('div', { class: 'gc-cell gc-res' }, res.el),
-    h('div', { class: 'gc-cell' }, spread.el),
-    channelCell(p),
+    h('div', { class: 'gc-cell gc-spread' }, spread.el, channelSwitch()),
+    bandsCell(p),
     fbGroup,
     h('div', { class: 'gc-cell' }, mix.el),
     h('div', { class: 'gc-cell gc-io' }, out.el, outMeter.el),

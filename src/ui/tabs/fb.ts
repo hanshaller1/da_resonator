@@ -1,8 +1,8 @@
 /**
  * FB tab: the bands. Visualisation = live input / output spectrum with the filterbank response;
  * each band node sits over its fader and glows with its feedback. Control row = per band
- * RES and FB (slot k = band k). Status line = global resonance, spread, feedback state, and
- * RES RESET / FB RESET for all bands in L and R.
+ * RES and FB (slot k = band k). Status line = global resonance, spread, feedback state (RES RESET
+ * and FB RESET sit in the global column).
  * L/R per band: the response follows the channel switch (L, R, or both averaged); once the
  * channels differ, the other channel(s) show as thin dashed lines. A node's ring is split: left
  * half L feedback, right half R feedback.
@@ -10,7 +10,7 @@
 import '../../styles/tabs/fb.css';
 import type { EngineAPI } from '../../core/types';
 import { BAND_FREQS, NUM_BANDS, bandParamId, bandParamIdR, formatValue } from '../../shared/params';
-import { channelSel, resetBands } from '../channel';
+import { channelSel } from '../channel';
 import { Knob } from '../components/knob';
 import { h, toggleClass } from '../dom';
 import { bandResFb, readModel, responseAt, type ModelChannel, type ResponseModel } from '../response';
@@ -33,17 +33,12 @@ function statusLine(engine: EngineAPI, el: HTMLElement): void {
   const fbAll = h('b');
   const bands = h('b');
   const hot = h('span', { class: 'fb-hot' }, h('span', { class: 'led' }), 'HOT');
-  const resReset = h('button', { type: 'button', class: 'inst-btn', title: 'RES of all 10 bands back to broad, in L and R' }, 'RES RESET');
-  resReset.addEventListener('click', () => resetBands(p, 'res'));
-  const fbReset = h('button', { type: 'button', class: 'inst-btn', title: 'FB of all 10 bands to 0, in L and R' }, 'FB RESET');
-  fbReset.addEventListener('click', () => resetBands(p, 'fb'));
   el.append(
     h('span', null, 'Resonance ', res),
     h('span', null, 'Spread ', spread),
     h('span', null, 'FB All ', fbAll),
     h('span', null, 'Feedback ', bands),
     h('span', { class: 'tp-spacer' }),
-    h('span', { class: 'inst fb-resets', role: 'group', 'aria-label': 'Reset all bands' }, resReset, fbReset),
     hot,
   );
   const allText = (on: string, amt: string) => (p.get(on) >= 0.5 ? `on ${val(amt)}` : 'off');
