@@ -268,6 +268,8 @@ select {
   position: relative;
   display: grid;
   grid-template-rows: 200px 1fr;
+  /* the column never takes its width from the foot text (a wider foot shifted the fader under the pointer) */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }
 
@@ -315,9 +317,13 @@ select {
   box-shadow: var(--sh-well);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .fcol-freq {
+  min-width: 0;
+  white-space: nowrap;
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--c-text-2);
@@ -335,8 +341,18 @@ select {
 }
 
 .fcol-readout.is-off { color: var(--c-text-3); }
-/* L|R differ: both values in the same foot */
-.fcol-readout.is-split { font-size: var(--fs-2xs); letter-spacing: -0.02em; }
+.fcol-readout { flex: none; text-align: right; white-space: nowrap; }
+.fcol-ro-one[hidden], .fcol-ro-pair[hidden] { display: none; }
+/* L|R differ: L over R, two short lines in the same foot */
+.fcol-ro-pair {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 2px;
+  align-items: baseline;
+  font-size: var(--fs-2xs);
+  line-height: 10px;
+}
+.fcol-ro-ch { color: var(--c-text-4); font-size: 7px; font-weight: var(--fw-bold); }
 .fcol:has(.fader.is-active) .fcol-readout { color: var(--c-accent); }
 
 /* ---------- global column ---------- */

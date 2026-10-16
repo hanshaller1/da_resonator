@@ -30,14 +30,25 @@ function buildColumn(engine: EngineAPI, i: number): Column {
   const name = `Band ${i + 1} (${f.value} ${f.unit})`;
   const fader = new Fader(p, id, { ariaLabel: `${name} level` });
   const meter = new LevelMeter({ law: faderDbToNorm });
-  const readout = h('output', { class: 'fcol-readout', for: id });
+  // one value, or L over R while the channels differ (two short lines keep the foot's width)
+  const one = h('span', { class: 'fcol-ro-one' });
+  const lineL = h('span', { class: 'fcol-ro-line' });
+  const lineR = h('span', { class: 'fcol-ro-line' });
+  const pair = h('span', { class: 'fcol-ro-pair' }, h('span', { class: 'fcol-ro-ch' }, 'L'), lineL, h('span', { class: 'fcol-ro-ch' }, 'R'), lineR);
+  const readout = h('output', { class: 'fcol-readout', for: id }, one, pair);
   const spec = p.spec(id);
   const text = (v: number) => formatValue(spec, v).replace(' dB', '');
   const sync = () => {
     const l = p.get(id), r = p.get(idR);
-    const v = channelSel.get() === 'R' ? r : l;
-    readout.textContent = l === r ? text(v) : `${text(l)}|${text(r)}`;
-    toggleClass(readout, 'is-split', l !== r);
+    const split = l !== r;
+    if (split) {
+      lineL.textContent = text(l);
+      lineR.textContent = text(r);
+    } else one.textContent = text(l);
+    one.hidden = split;
+    pair.hidden = !split;
+    readout.title = split ? `L ${text(l)} dB, R ${text(r)} dB` : '';
+    toggleClass(readout, 'is-split', split);
     toggleClass(readout, 'is-off', Math.max(l, r) <= spec.min);
   };
   sync();
