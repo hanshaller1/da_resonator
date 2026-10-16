@@ -75,9 +75,9 @@
 .cfg-help-list dt { color: var(--c-text); font-family: var(--font-mono); font-size: var(--fs-2xs); white-space: nowrap; }
 .cfg-help-list dd { margin: 0; color: var(--c-text-3); }
 
-/* pages: GENERAL (.cfg), MIDI (.cfg-midi) and CLOCK (.cfg-clk), switched in the status line */
-.cfg, .cfg-midi, .cfg-clk { height: 100%; box-sizing: border-box; }
-.cfg[hidden], .cfg-midi[hidden], .cfg-clk[hidden] { display: none; }
+/* pages: GENERAL (.cfg), MIDI (.cfg-midi), CLOCK (.cfg-clk) and FOOT (.cfg-foot), switched in the status line */
+.cfg, .cfg-midi, .cfg-clk, .cfg-foot { height: 100%; box-sizing: border-box; }
+.cfg[hidden], .cfg-midi[hidden], .cfg-clk[hidden], .cfg-foot[hidden] { display: none; }
 
 /* MIDI page (ui/tabs/configMidi.ts): device + channels | CC map */
 .cfg-midi {
@@ -145,3 +145,24 @@
 .cfg-clk .clk-users { color: var(--c-text-2); }
 .cfg-clk .cfg-card.is-used { box-shadow: 0 0 0 1px var(--c-accent-soft), inset 0 2px 0 var(--c-accent); }
 .cfg-chelp { gap: var(--sp-4); }
+
+/* FOOT page (ui/tabs/configFoot.ts): footswitch | pool advance | how it works */
+.cfg-foot {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 1fr;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+.ft-card { gap: var(--sp-4); }
+.ft-select { flex: 1; min-width: 0; height: 28px; }
+.ft-btn { height: 24px; padding: 0 var(--sp-4); font-size: var(--fs-2xs); }
+.ft-btn.is-on { color: var(--c-accent); }
+.ft-btn[hidden] { display: none; }
+.ft-key.is-off { color: var(--c-text-4); }
+.ft-trig { flex: 1; font-family: var(--font-mono); color: var(--c-text-3); }
+.ft-trig.is-set { color: var(--c-accent); }
+.ft-test { flex: none; height: 30px; padding: 0 var(--sp-6); }
+.ft-test .led { width: 7px; height: 7px; border-radius: 50%; background: var(--c-text-4); }
+.ft-test.is-on { color: var(--c-accent); }
+.ft-test.is-on .led { background: var(--c-accent); box-shadow: 0 0 6px var(--c-accent-glow); }
+.ft-fired { color: var(--c-text-2); }

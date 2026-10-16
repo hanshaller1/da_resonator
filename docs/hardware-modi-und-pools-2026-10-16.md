@@ -5,8 +5,8 @@ Stand: 16.10.2026. Das ist Punkt 3 der offenen Liste. Er umfasst die Punkte 8, 9
 in [abgleich-original.md](abgleich-original.md) (M2–M4, P3, S2) und der heutige Stand der App mit L/R pro Band,
 MIDI, den beiden Takten, dem bipolaren SPREAD und dem neuen ANALOG.
 
-**Entschieden:** `1A 2A 3A 4A 5A 6C 7A 8A 9A 10A 11A 12A` (alle Empfehlungen). Teil 1, die Modi, ist gebaut,
-siehe README, Abschnitt „Hardware-Modi“.
+**Entschieden:** `1A 2A 3A 4A 5A 6C 7A 8A 9A 10A 11A 12A` (alle Empfehlungen). Beide Teile sind gebaut,
+siehe README, Abschnitte „Hardware-Modi“ und „Pools, Morph und Fußschalter“.
 
 ## Vorweg
 

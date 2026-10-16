@@ -1,7 +1,8 @@
 /**
  * Preset browser page (PLAY/LOAD tab): library list with categories, search and an
  * All / Factory / User filter on the left; the loaded preset, A/B compare, save / rename /
- * delete and file import / export on the right.
+ * delete and file import / export in the middle (the pools sit on the right, play/pools.ts).
+ * Library rows can be dragged into a pool.
  */
 import type { EngineAPI } from '../../../core/types';
 import { readTextFile, saveText } from '../../../presets/files';
@@ -12,6 +13,9 @@ import { h, toggleClass } from '../../dom';
 import { picon } from './icons';
 
 export type Notify = (msg: string, tone?: 'error' | 'info') => void;
+
+/** drag data of a library row: the preset id */
+export const PRESET_DRAG_TYPE = 'application/x-resonator-preset';
 
 type Filter = 'all' | 'factory' | 'user';
 type Mode = 'list' | 'saveas' | 'rename' | 'delete';
@@ -58,7 +62,7 @@ export class PresetBrowser {
   private listSig = '';
 
   private list = h('ul', { class: 'pb-list', 'aria-label': 'Presets' });
-  private search = h('input', { type: 'search', class: 'pb-search-input', placeholder: 'Search name or category', 'aria-label': 'Search presets', autocomplete: 'off', spellcheck: 'false' });
+  private search = h('input', { type: 'search', class: 'pb-search-input', placeholder: 'Search', title: 'Search name or category', 'aria-label': 'Search presets', autocomplete: 'off', spellcheck: 'false' });
   private filterBtns: Record<Filter, HTMLButtonElement>;
   private abBtns: Record<'A' | 'B', HTMLButtonElement>;
   private abCopy = h('button', { type: 'button', class: 'pb-chip pb-ab-copy' });
@@ -245,6 +249,11 @@ export class PresetBrowser {
     mounted = this;
   }
 
+  /** another row of buttons under Preset and Files (the pools' file buttons) */
+  addActionRow(label: string, ...btns: HTMLElement[]): void {
+    this.actions.append(h('div', { class: 'pp-act-row', role: 'group', 'aria-label': label }, h('span', { class: 'micro-label pp-act-label' }, label), h('div', { class: 'pb-actions-group' }, ...btns)));
+  }
+
   /** focus the loaded preset (or the search field when the list is empty) */
   focusCurrent(): void {
     if (this.mode !== 'list') this.setMode('list', false);
@@ -356,6 +365,12 @@ export class PresetBrowser {
           h('span', { class: 'pb-item-state', 'aria-hidden': 'true' }),
           h('span', { class: 'pb-item-dot', 'aria-hidden': 'true' }),
         );
+        // drag a preset into a pool (PLAY/LOAD → pool list)
+        b.draggable = true;
+        b.addEventListener('dragstart', (e) => {
+          e.dataTransfer?.setData(PRESET_DRAG_TYPE, p.id);
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
+        });
         b.addEventListener('click', () => {
           // look up at click time: Save replaces the stored sound without rebuilding the list
           const fresh = ses.store.get(p.id);

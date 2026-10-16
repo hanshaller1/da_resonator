@@ -7,7 +7,11 @@
  * The MIDI clock itself runs in the worklet, next to the internal clock: while it is on, clock
  * messages go out through `clock(ev, timeStampMs)`; the engine converts the time and sends them on.
  * Tempo and beat of the incoming clock are also followed here, for the display while audio is off
- * or the MIDI clock is off. No MIDI out, no notes, no SysEx.
+ * or the MIDI clock is off.
+ * Triggers (docs/hardware-modi-und-pools-2026-10-16.md, points 9A and 11A): a learned note or CC
+ * presses a named trigger ('pool' advances the running pool, 'foot' is the footswitch); note on /
+ * off or CC ≥ 64 / < 64 press and release it. A CC belongs either to a control or to a trigger.
+ * No MIDI out, no other notes, no SysEx.
  */
 import { MIDI_CONTINUE, MIDI_START, MIDI_STOP, MIDI_TICK } from '../dsp/extClock';
 import { Emitter } from './Emitter';
@@ -25,7 +29,7 @@ import {
   serializeMidiMap,
   type MidiChannels,
 } from './midiMap';
-import type { MidiAPI, MidiInputInfo, MidiStatus, ParamStoreAPI, Unsubscribe } from './types';
+import type { MidiAPI, MidiInputInfo, MidiStatus, MidiTrigger, ParamStoreAPI, Unsubscribe } from './types';
 
 const STORE_KEY = 'resonator.midi';
 export const OFFSET_MIN_MS = -50;
@@ -82,10 +86,27 @@ interface Stored {
   midiClock: boolean;
   offsetMs: number;
   map: Map<string, number>;
+  /** trigger name → note or CC */
+  triggers: Map<string, MidiTrigger>;
+}
+
+function cleanTrigger(v: unknown): MidiTrigger | null {
+  if (!v || typeof v !== 'object') return null;
+  const t = v as Partial<MidiTrigger>;
+  if ((t.kind !== 'note' && t.kind !== 'cc') || !Number.isInteger(t.num) || t.num! < 0 || t.num! > 127) return null;
+  if (t.kind === 'cc' && ccReserved(t.num!)) return null;
+  return { kind: t.kind, num: t.num! };
+}
+
+/** "Note C3" / "CC 64" (middle C = C3, as Elektron devices count) */
+export function triggerText(t: MidiTrigger): string {
+  if (t.kind === 'cc') return `CC ${t.num}`;
+  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  return `Note ${names[t.num % 12]}${Math.floor(t.num / 12) - 2}`;
 }
 
 function load(storage: StorageLike | undefined): Stored {
-  const d: Stored = { enabled: false, deviceId: '', deviceName: '', clockDeviceId: '', clockDeviceName: '', autoElektron: true, channels: { ...DEFAULT_CHANNELS }, intClock: true, midiClock: false, offsetMs: 0, map: defaultMidiMap() };
+  const d: Stored = { enabled: false, deviceId: '', deviceName: '', clockDeviceId: '', clockDeviceName: '', autoElektron: true, channels: { ...DEFAULT_CHANNELS }, intClock: true, midiClock: false, offsetMs: 0, map: defaultMidiMap(), triggers: new Map() };
   try {
     const s = JSON.parse(storage?.getItem(STORE_KEY) ?? 'null') as Record<string, unknown> | null;
     if (s && typeof s === 'object') {
@@ -103,6 +124,13 @@ function load(storage: StorageLike | undefined): Stored {
       else if (s.clock === 'midi') d.midiClock = true;
       if (typeof s.offsetMs === 'number' && Number.isFinite(s.offsetMs)) d.offsetMs = clampOffset(s.offsetMs);
       if (s.map && typeof s.map === 'object') d.map = sanitizeMidiMap(s.map);
+      if (s.triggers && typeof s.triggers === 'object')
+        for (const [k, v] of Object.entries(s.triggers as Record<string, unknown>)) {
+          const t = cleanTrigger(v);
+          if (t) d.triggers.set(k, t);
+        }
+      // a CC is a control's or a trigger's
+      for (const t of d.triggers.values()) if (t.kind === 'cc') for (const [id, cc] of d.map) if (cc === t.num) d.map.delete(id);
     }
   } catch {
     /* storage unavailable or broken: defaults */
@@ -168,6 +196,11 @@ export class MidiService implements MidiAPI {
   private noticeE = new Emitter<[string, 'info' | 'error']>();
   private programE = new Emitter<[number]>();
   private learnE = new Emitter<[string, number]>();
+  private triggerE = new Emitter<[string, boolean]>();
+  private triggerLearnE = new Emitter<[string, MidiTrigger]>();
+  private _triggerLearning: string | null = null;
+  /** triggers held down now (a CC sweep presses once) */
+  private held = new Set<string>();
   private now: () => number;
   /** activity, in `now` time (ms); -Infinity = never */
   clockAt = -Infinity;
@@ -231,6 +264,12 @@ export class MidiService implements MidiAPI {
   onProgram(cb: (n: number) => void): Unsubscribe { return this.programE.on(cb); }
   /** MIDI learn mapped a CC */
   onLearn(cb: (id: string, cc: number) => void): Unsubscribe { return this.learnE.on(cb); }
+  /** a trigger was pressed (true) or released (false) */
+  onTrigger(cb: (name: string, down: boolean) => void): Unsubscribe { return this.triggerE.on(cb); }
+  /** a trigger learned its note or CC */
+  onTriggerLearn(cb: (name: string, t: MidiTrigger) => void): Unsubscribe { return this.triggerLearnE.on(cb); }
+  /** trigger waiting for its note or CC */
+  get triggerLearning() { return this._triggerLearning; }
 
   /* ---------- access ---------- */
 
@@ -272,6 +311,7 @@ export class MidiService implements MidiAPI {
     this._status = 'off';
     this.st.enabled = false;
     this._learning = null;
+    this._triggerLearning = null;
     this.save();
   }
 
@@ -452,6 +492,7 @@ export class MidiService implements MidiAPI {
       if (other === id) return;
       if (other) this.st.map.delete(other);
       this.st.map.set(id, cc);
+      for (const [k, t] of this.st.triggers) if (t.kind === 'cc' && t.num === cc) this.st.triggers.delete(k);
     }
     this.save();
   }
@@ -461,12 +502,77 @@ export class MidiService implements MidiAPI {
     const next = id && midiMappable(id) ? id : null;
     if (next === this._learning) return;
     this._learning = next;
+    if (next) this._triggerLearning = null;
     this.changeE.emit();
+  }
+
+  /* ---------- triggers ---------- */
+
+  triggerOf(name: string): MidiTrigger | undefined {
+    return this.st.triggers.get(name);
+  }
+
+  /** give trigger `name` a note or CC (taken from another trigger or control); null removes it */
+  setTrigger(name: string, t: MidiTrigger | null): void {
+    if (t === null) {
+      if (!this.st.triggers.delete(name)) return;
+    } else {
+      const c = cleanTrigger(t);
+      if (!c) return;
+      for (const [k, x] of this.st.triggers) if (k !== name && x.kind === c.kind && x.num === c.num) this.st.triggers.delete(k);
+      if (c.kind === 'cc') {
+        const id = this.paramOf(c.num);
+        if (id) this.st.map.delete(id);
+      }
+      this.st.triggers.set(name, c);
+    }
+    this.held.delete(name);
+    this.save();
+  }
+
+  /** wait for the next note or CC and give it to trigger `name` (null cancels) */
+  learnTrigger(name: string | null): void {
+    if (name === this._triggerLearning) return;
+    this._triggerLearning = name;
+    if (name) this._learning = null;
+    this.changeE.emit();
+  }
+
+  private press(name: string, down: boolean): void {
+    if (down === this.held.has(name)) return;
+    if (down) this.held.add(name);
+    else this.held.delete(name);
+    this.triggerE.emit(name, down);
+  }
+
+  /** a note or CC: learned by a waiting trigger, or pressing / releasing the trigger it belongs to; true if it was a trigger's */
+  private trigger(kind: 'note' | 'cc', num: number, down: boolean): boolean {
+    if (this._triggerLearning && down) {
+      const name = this._triggerLearning;
+      this._triggerLearning = null;
+      this.setTrigger(name, { kind, num });
+      this.triggerLearnE.emit(name, { kind, num });
+      return true;
+    }
+    let hit = false;
+    for (const [name, t] of this.st.triggers) {
+      if (t.kind !== kind || t.num !== num) continue;
+      hit = true;
+      this.press(name, down);
+    }
+    return hit;
   }
 
   resetMap(): void {
     this.st.map = defaultMidiMap();
+    this.dropMappedTriggers();
     this.save();
+  }
+
+  /** a new map wins: triggers on CCs it maps let go */
+  private dropMappedTriggers(): void {
+    const mapped = new Set(this.st.map.values());
+    for (const [k, t] of this.st.triggers) if (t.kind === 'cc' && mapped.has(t.num)) this.st.triggers.delete(k);
   }
 
   exportMap(): { fileName: string; text: string } {
@@ -479,6 +585,7 @@ export class MidiService implements MidiAPI {
     if (!r.ok) return r;
     this.st.map = r.map;
     if (r.channels) this.st.channels = r.channels;
+    this.dropMappedTriggers();
     this.save();
     return { ok: true, count: r.map.size, skipped: r.skipped };
   }
@@ -538,10 +645,16 @@ export class MidiService implements MidiAPI {
     }
     if (from === 'clock') return;
     const kind = s & 0xf0;
-    if (kind !== 0xb0 && kind !== 0xc0) return; // notes, pressure, pitch bend, SysEx: not used
+    if (kind !== 0xb0 && kind !== 0xc0 && kind !== 0x90 && kind !== 0x80) return; // pressure, pitch bend, SysEx: not used
     const ch = (s & 0x0f) + 1;
     const hit = channelHits(ch, this.st.channels);
     if (!hit.left && !hit.right) return;
+    if (kind === 0x90 || kind === 0x80) {
+      // notes only press triggers (note on with velocity 0 is a note off)
+      if (d.length < 3) return;
+      this.trigger('note', d[1] & 0x7f, kind === 0x90 && (d[2] & 0x7f) > 0);
+      return;
+    }
     if (kind === 0xc0) {
       if (d.length < 2) return;
       this.pcAt = this.now();
@@ -554,6 +667,7 @@ export class MidiService implements MidiAPI {
     if (ccReserved(cc)) return;
     this.ccAt = this.now();
     this.lastCc = { ch, cc, value: v };
+    if (this.trigger('cc', cc, v >= 64)) return;
     if (this._learning) {
       const id = this._learning;
       this._learning = null;
@@ -575,7 +689,7 @@ export class MidiService implements MidiAPI {
     try {
       this.env.storage?.setItem(
         STORE_KEY,
-        JSON.stringify({ enabled: s.enabled, deviceId: s.deviceId, deviceName: s.deviceName, clockDeviceId: s.clockDeviceId, clockDeviceName: s.clockDeviceName, autoElektron: s.autoElektron, channels: s.channels, intClock: s.intClock, midiClock: s.midiClock, offsetMs: s.offsetMs, map: Object.fromEntries(s.map) }),
+        JSON.stringify({ enabled: s.enabled, deviceId: s.deviceId, deviceName: s.deviceName, clockDeviceId: s.clockDeviceId, clockDeviceName: s.clockDeviceName, autoElektron: s.autoElektron, channels: s.channels, intClock: s.intClock, midiClock: s.midiClock, offsetMs: s.offsetMs, map: Object.fromEntries(s.map), triggers: Object.fromEntries(s.triggers) }),
       );
     } catch {
       /* not persisted */

@@ -54,7 +54,7 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
   OUTPUT.
 - **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
   ist; PLAY/LOAD und CONFIG haben keine.
-- **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK (rechts in der Statuszeile). GENERAL: Source mit dem
+- **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK · FOOT (rechts in der Statuszeile). GENERAL: Source mit dem
   Audio-Eingang unter LOAD FILE, Clock (nur Anzeige) mit Spread darunter, Resonance mit Display darunter, Help.
   Der Audio-Zustand steht im Kopf.
 - **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder Clock-Mod und jeder LFO wählt
@@ -137,7 +137,8 @@ CONFIG → GENERAL → Spread wählt, was er tut (Parameter `reso.spread`, im Pr
 ### Hardware-Modi
 
 Stand 16.10.2026, Entscheidungen in `docs/hardware-modi-und-pools-2026-10-16.md`
-(`1A 2A 3A 4A 5A 6C 7A 8A 9A 10A 11A 12A`). Teil 1, die Modi, ist gebaut; Teil 2, die Pools, folgt.
+(`1A 2A 3A 4A 5A 6C 7A 8A 9A 10A 11A 12A`). Teil 1 sind die Modi (dieser Abschnitt), Teil 2 die Pools
+(nächster Abschnitt).
 
 - Jeder Modus ist eine Ebene mit eigenem ON. Er rechnet seinen Pegel in dB auf den Fader jedes Bands
   (Fader + Band-Filter + Scanner + DYN), die Fader selbst bewegen sich nicht. Mehrere Modi laufen gleichzeitig.
@@ -173,6 +174,55 @@ Stand 16.10.2026, Entscheidungen in `docs/hardware-modi-und-pools-2026-10-16.md`
 - Code: `src/dsp/modules/bandFilter.ts`, `src/dsp/modules/scan.ts`, Ebenen und DYN-Quellen in
   `src/dsp/resonator.worklet.ts`, Bilder in `src/ui/tabs/filter/viz.ts` und `src/ui/tabs/clk/scanViz.ts`,
   Schlösser in `src/ui/components/lockRow.ts`. Tests: `scripts/test-modes.mjs`.
+
+### Pools, Morph und Fußschalter
+
+Teil 2 der Hardware-Modi, Stand 16.10.2026.
+
+- **Pools** (PLAY/LOAD, rechte Spalte): benannte, geordnete Listen von Presets. Ein Preset darf in mehreren Pools
+  und mehrfach in einem stehen.
+  - Kopf: POOL wählt den Pool, dazu NEW, REN (umbenennen) und DEL (der letzte Pool wird nur geleert).
+  - Liste: Klick spielt einen Eintrag, Ziehen ordnet um (auch Alt + ↑ ↓), × entfernt. Hinzufügen mit
+    „+ Add loaded preset“ oder durch Ziehen einer Zeile aus der Bibliothek. Gelöschte Presets stehen als
+    `missing` da und werden übersprungen.
+  - Pools liegen im Browser (`localStorage` `resonator.pools`). Mittlere Spalte, Zeile POOLS: EXPORT und
+    IMPORT (Datei `resonator-pools-<datum>.json`). Beim Import werden Presets über ihre ID gefunden, sonst
+    über den Namen (eigene Presets haben auf einem anderen Rechner andere IDs).
+- **Abspielen:** START lädt den aktuellen Eintrag (anfangs den ersten) und lässt den Pool laufen, STOP hält
+  an. STEP springt zum nächsten Eintrag, STEP+MORPH morpht dorthin, RESET geht zum ersten zurück. Die
+  Statuszeile zeigt Pool, Zustand und Position.
+  - **DIR:** Up, Down, Ping-Pong oder Random (nie zweimal derselbe).
+  - **ADVANCE:** HAND (nur STEP und Fußschalter), CLOCK (während der Pool läuft, alle 1, 2, 4, 8 oder 16
+    Takte von INT oder MIDI; ist der Takt aus, springt der andere ein) oder MIDI (eine gelernte Note oder ein
+    CC, LEARN in der Zeile darunter oder in CONFIG → FOOT).
+  - Ein Preset bringt sein Tempo mit. Läuft ein Pool im internen Takt, gilt nach jedem Wechsel das Tempo
+    des neuen Presets.
+  - **Program Change n** springt, solange ein Pool läuft, auf seinen Eintrag n. Sonst lädt er wie bisher
+    Preset n der Bibliothek.
+- **Morph** (MORPH in ms oder BEATS des Pool-Takts, 0 = Sprung): Alle stetigen Werte gleiten in ihrem
+  Regelweg (eine Frequenz in Oktaven, ein Fader auf seiner Skala). Schalter und Auswahlen springen am Anfang.
+  - Eine Route, die beide Presets haben, gleitet in der Tiefe. Eine Route nur im alten Preset blendet auf 0
+    aus, eine nur im neuen kommt mit Tiefe 0 dazu und blendet ein.
+  - Routen auf eine Routentiefe, Trigger-Routen und Makronamen kommen am Ende. Am Ende wird das Preset genau
+    geladen.
+  - **AUTO MORPH:** Weiterschalten per Takt, MIDI und Program Change morpht ebenfalls. Ein Laden oder STEP
+    während eines Morphs übernimmt ab dem erreichten Klang. Die Linie unter MORPH zeigt den Fortschritt.
+- **Fußschalter** (CONFIG → FOOT): eine Aktion für kurz drücken (SHORT, Standard Pool STEP) und eine für
+  halten länger als 0,5 s (HOLD, Standard Bypass).
+  - Mögliche Aktionen: Nothing, Bypass, Panic, nächstes oder voriges Preset, Pool START/STOP, STEP,
+    STEP+MORPH, TAP tempo.
+  - Ist HOLD auf Nothing, feuert SHORT schon beim Drücken. So liegen TAP und STEP auf dem Schlag.
+  - Gedrückt wird er mit FOOT (CONFIG → FOOT und PLAY/LOAD), einer Taste und einer gelernten MIDI-Note oder
+    einem CC.
+  - **Taste:** Standard ist die Leertaste. SET wählt eine andere, OFF schaltet sie ab. In Textfeldern bleibt
+    sie eine normale Taste. Auf einem fokussierten Knopf ist sie der Fußschalter; Enter klickt den Knopf weiter.
+  - Gespeichert im Browser (`localStorage` `resonator.foot`), für alle Presets.
+- **MIDI-Trigger:** Note an/aus oder CC ab 64 / unter 64 drücken und lösen. Ein CC gehört entweder zu einem
+  Regler oder zu einem Trigger; wer ihn zuletzt lernt, bekommt ihn. Gespeichert mit der CC-Belegung
+  (`resonator.midi`).
+- Code: `src/presets/pools.ts` (Pools, Datei), `src/presets/player.ts` (Abspielen), `src/presets/morph.ts`
+  und `PresetSession.morphTo`, `src/presets/foot.ts`, die Trigger in `src/core/midi.ts`, `src/ui/pool.ts`
+  (Verdrahtung), `src/ui/tabs/play/pools.ts`, `src/ui/tabs/configFoot.ts`. Tests: `scripts/test-pools.mjs`.
 
 ### ANALOG
 
@@ -224,7 +274,8 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
 - Die Belegung gilt für alle Presets und liegt im Browser (`localStorage` `resonator.midi`), mit DEFAULT,
   EXPORT und IMPORT (Datei `resonator-midi-map.json`, Belegung und Kanäle).
 - **Program Change n** lädt Preset n: erst die 12 Werks-Presets, dann die eigenen in der Reihenfolge des
-  Speicherns. Die Nummer (ab 1) steht in der Preset-Liste vor dem Namen.
+  Speicherns. Die Nummer (ab 1) steht in der Preset-Liste vor dem Namen. Läuft ein Pool, springt er auf
+  dessen Eintrag n (siehe „Pools, Morph und Fußschalter“).
 - **Clock:** Einstellungen in CONFIG → CLOCK; INT · MIDI wählt jeder LFO und Clock-Mod in CLK MOD und LFO MOD.
   - **SOURCE:** Die MIDI-Clock (Clock, Start, Stop, Continue) kommt vom MIDI-Gerät oder von einem eigenen Gerät,
     z. B. Takt von einer Drum Machine, CCs von einem Synth. Mit eigenem Gerät gilt nur dessen Clock, und CCs und
@@ -237,7 +288,7 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
     Browser), damit man sieht, ob sie ankommt.
   - **OFFSET** (−50 … +50 ms) verschiebt den Takt gegen das Audio (+ = später, z. B. um die Latenz des
     Audio-Eingangs). Das Tempo im Preset bleibt unangetastet.
-- Keine Noten, keine SysEx, kein MIDI-Ausgang.
+- Noten nur als Trigger (Pool, Fußschalter), keine SysEx, kein MIDI-Ausgang.
 - Code: `src/core/midi.ts` (Geräte, Kanäle, Learn, Speicher), `src/core/midiMap.ts` (Belegung, Datei),
   `src/dsp/extClock.ts` (Takt aus der Clock, im Worklet), `src/presets/programs.ts`, `src/ui/tabs/configMidi.ts`,
   `src/ui/tabs/configClock.ts`, `src/ui/clock.ts`,

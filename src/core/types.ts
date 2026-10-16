@@ -104,6 +104,13 @@ export interface InputAPI {
 /** unsupported: no Web MIDI (Safari) · blocked: this page may not use it · off · asking: the browser asks · on · denied */
 export type MidiStatus = 'unsupported' | 'blocked' | 'off' | 'asking' | 'on' | 'denied';
 
+/** a learned note or CC that presses a trigger (pool advance, footswitch) */
+export interface MidiTrigger {
+  kind: 'note' | 'cc';
+  /** note or CC number 0–127 */
+  num: number;
+}
+
 export interface MidiInputInfo {
   id: string;
   name: string;
@@ -178,6 +185,17 @@ export interface MidiAPI {
   /** Program Change n (0–127) on a listened channel */
   onProgram(cb: (n: number) => void): Unsubscribe;
   onLearn(cb: (id: string, cc: number) => void): Unsubscribe;
+  /**
+   * Triggers: a learned note or CC presses a named trigger ('pool': the running pool advances,
+   * 'foot': the footswitch). Note on / off or CC ≥ 64 / < 64 press and release. A CC belongs to a
+   * control or to a trigger, not both. Remembered in the browser with the CC map.
+   */
+  readonly triggerLearning: string | null;
+  triggerOf(name: string): MidiTrigger | undefined;
+  setTrigger(name: string, t: MidiTrigger | null): void;
+  learnTrigger(name: string | null): void;
+  onTrigger(cb: (name: string, down: boolean) => void): Unsubscribe;
+  onTriggerLearn(cb: (name: string, t: MidiTrigger) => void): Unsubscribe;
 }
 
 export interface EngineAPI {

@@ -1,5 +1,5 @@
 /**
- * CONFIG tab: three pages, switched in the status line.
+ * CONFIG tab: four pages, switched in the status line.
  * GENERAL: the source (select, play, level, file) with the audio input under it (channels,
  * Elektron AUTO; the device is chosen in the source list), the clocks as information (INT and
  * MIDI with tempo and beats, the MIDI source), the resonance setup (feedback route, what the
@@ -8,6 +8,7 @@
  * this page.
  * MIDI: device, channels and CC map (configMidi.ts).
  * CLOCK: the settings of the internal and the MIDI clock (configClock.ts).
+ * FOOT: the footswitch and the MIDI note / CC that advances a pool (configFoot.ts).
  */
 import '../../styles/tabs/config.css';
 import type { EngineState, InputChannels, ParamStoreAPI } from '../../core/types';
@@ -19,7 +20,9 @@ import { DESIGN_H, DESIGN_W, onScaleChange, uiScale } from '../shell/stage';
 import { registerTab } from '../shell/tabs';
 import { getTheme, type ThemePref } from '../theme';
 import { buildClockPage } from './configClock';
+import { buildFootPage } from './configFoot';
 import { buildMidiPage, runWhileVisible } from './configMidi';
+import { playKit } from '../pool';
 
 const HELP: [string, string][] = [
   ['Drag', 'Change a value (up / down)'],
@@ -30,6 +33,7 @@ const HELP: [string, string][] = [
   ['ASSIGN', 'Arm a source, then drag a control'],
   ['← →', 'Next tab (on the tab row)'],
   ['Esc', 'Panic: all feedback off, ringing cleared'],
+  ['Space', 'Footswitch (FOOT page)'],
   ['Drop a file', 'Load audio anywhere in the window'],
 ];
 
@@ -56,7 +60,7 @@ function paramButtons(p: ParamStoreAPI, id: string, items: [string, string][], a
   return h('span', { class: 'inst', role: 'group', 'aria-label': ariaLabel }, ...btns);
 }
 
-type Page = 'general' | 'midi' | 'clock';
+type Page = 'general' | 'midi' | 'clock' | 'foot';
 
 /** set while mounted: show the page of `id` (and flash the source card for 'config.source') */
 let revealHere: ((id: string) => void) | null = null;
@@ -77,7 +81,8 @@ registerTab({
     const general = h('div', { class: 'cfg' });
     const midiPage = buildMidiPage(engine, tab.notify);
     const clockPage = buildClockPage(engine);
-    body.append(general, midiPage.el, clockPage.el);
+    const footPage = buildFootPage(engine, tab.notify);
+    body.append(general, midiPage.el, clockPage.el, footPage.el);
 
     /* ---------- source, with the audio input under LOAD FILE ---------- */
     const fileBtn = h('button', { type: 'button', class: 'btn cfg-file' }, 'LOAD FILE…');
@@ -286,8 +291,9 @@ registerTab({
       general: 'Source, input, clocks, resonance, display',
       midi: 'MIDI device, channels and CC map',
       clock: 'Internal clock and MIDI clock',
+      foot: 'Footswitch: actions, key, MIDI; MIDI advance of a pool',
     };
-    const pageBtns = (['general', 'midi', 'clock'] as const).map((pg) => {
+    const pageBtns = (['general', 'midi', 'clock', 'foot'] as const).map((pg) => {
       const b = h('button', { type: 'button', class: 'inst-btn', title: PAGE_TITLES[pg] }, pg.toUpperCase());
       b.addEventListener('click', () => showPage(pg));
       return { pg, b };
@@ -297,6 +303,7 @@ registerTab({
       general.hidden = pg !== 'general';
       midiPage.el.hidden = pg !== 'midi';
       clockPage.el.hidden = pg !== 'clock';
+      footPage.el.hidden = pg !== 'foot';
       for (const { pg: x, b } of pageBtns) {
         toggleClass(b, 'is-selected', x === pg);
         b.setAttribute('aria-pressed', String(x === pg));
@@ -315,10 +322,11 @@ registerTab({
       if (status.textContent !== t) status.textContent = t;
     });
     engine.midi.onChange(() => sync());
+    playKit(engine).foot.onChange(() => sync());
     const sync = (st: EngineState = engine.state) => {
       const txt = audioStateText(st);
       status.textContent =
-        page === 'midi' ? midiPage.status() : page === 'clock' ? clockPage.status() : ['Settings', txt.label + (st === 'running' ? ` · ${formatSampleRate(engine.sampleRate)}` : ''), `Source ${t.sourceLabel}`].join(' · ');
+        page === 'midi' ? midiPage.status() : page === 'clock' ? clockPage.status() : page === 'foot' ? footPage.status() : ['Settings', txt.label + (st === 'running' ? ` · ${formatSampleRate(engine.sampleRate)}` : ''), `Source ${t.sourceLabel}`].join(' · ');
     };
     showPage('general');
     engine.onStateChange(sync);

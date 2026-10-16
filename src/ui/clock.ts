@@ -352,21 +352,14 @@ export function clockStatus(engine: EngineAPI, module: string, name: string, wit
 }
 
 /** TEMPO, RUN, TAP and RESET of the internal clock (CONFIG → CLOCK) */
-export function intClockControls(engine: EngineAPI): { tempo: HTMLElement; run: HTMLElement; tap: HTMLElement; reset: HTMLElement } {
+/**
+ * Tap tempo of the internal clock: returns the tap function (t = time of the tap in ms); from the
+ * second tap on TEMPO is the average gap of the last taps. Also used by the footswitch (TAP).
+ */
+export function tapTempo(engine: EngineAPI): (t: number) => void {
   const p = engine.params;
-  const tempo = new ParamField(p, 'clock.bpm', { label: 'TEMPO', ariaLabel: 'Tempo', format: (v) => `${v.toFixed(1)} BPM` });
-  const run = new ParamToggle(p, 'clock.run', { label: 'RUN', ariaLabel: 'Clock run' });
-  run.el.title = 'Run or stop the internal clock';
-
-  const setBpm = (v: number) => {
-    p.beginGesture('clock.bpm');
-    p.set('clock.bpm', Math.min(BPM_MAX, Math.max(BPM_MIN, v)));
-    p.endGesture('clock.bpm');
-  };
-  /* tap tempo: average interval of the last taps */
-  const tap = h('button', { type: 'button', class: 'clk-btn', title: 'Tap tempo' }, 'TAP');
   const taps: number[] = [];
-  const onTap = (t: number) => {
+  return (t: number) => {
     const last = taps[taps.length - 1];
     if (last !== undefined) {
       const gap = t - last;
@@ -379,11 +372,27 @@ export function intClockControls(engine: EngineAPI): { tempo: HTMLElement; run: 
     }
     taps.push(t);
     if (taps.length > TAP_MAX) taps.shift();
-    flash(tap);
     if (taps.length >= 2) {
       const avg = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
-      setBpm(Math.round((60000 / avg) * 10) / 10);
+      p.beginGesture('clock.bpm');
+      p.set('clock.bpm', Math.min(BPM_MAX, Math.max(BPM_MIN, Math.round((60000 / avg) * 10) / 10)));
+      p.endGesture('clock.bpm');
     }
+  };
+}
+
+export function intClockControls(engine: EngineAPI): { tempo: HTMLElement; run: HTMLElement; tap: HTMLElement; reset: HTMLElement } {
+  const p = engine.params;
+  const tempo = new ParamField(p, 'clock.bpm', { label: 'TEMPO', ariaLabel: 'Tempo', format: (v) => `${v.toFixed(1)} BPM` });
+  const run = new ParamToggle(p, 'clock.run', { label: 'RUN', ariaLabel: 'Clock run' });
+  run.el.title = 'Run or stop the internal clock';
+
+  /* tap tempo: average interval of the last taps */
+  const tap = h('button', { type: 'button', class: 'clk-btn', title: 'Tap tempo' }, 'TAP');
+  const tapper = tapTempo(engine);
+  const onTap = (t: number) => {
+    flash(tap);
+    tapper(t);
   };
   // pointerdown, not click: the press is the beat
   tap.addEventListener('pointerdown', (e) => {

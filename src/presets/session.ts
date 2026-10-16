@@ -1,19 +1,32 @@
 /**
  * Preset session: which preset is loaded, whether the sound changed since,
- * A/B compare slots, stepping through the library. Talks to the engine only
- * through getState / setState and change events, so it runs offline too.
+ * A/B compare slots, stepping through the library, morphing to a preset. Talks to the engine only
+ * through getState / setState, params, routes and change events, so it runs offline too.
  */
+import { migrateSnapshot } from '../core/state';
 import type { EngineSnapshot, Unsubscribe } from '../core/types';
 import { INIT_PRESET_ID } from './factory';
 import { DEFAULT_CATEGORY, cloneSnapshot, fileSlug, serializePresets, snapshotKey, type Preset } from './io';
+import { Morph, type MorphEngine } from './morph';
 import { PresetStore, openBestBackend } from './store';
 
 /** the part of EngineAPI the session needs */
-export interface PresetEngine {
-  readonly params: { subscribeAll(cb: (id: string, plain: number) => void): Unsubscribe };
-  readonly mod: { onChange(cb: () => void): Unsubscribe };
+export interface PresetEngine extends MorphEngine {
+  readonly params: MorphEngine['params'] & { subscribeAll(cb: (id: string, plain: number) => void): Unsubscribe };
+  readonly mod: MorphEngine['mod'] & { onChange(cb: () => void): Unsubscribe };
   getState(): EngineSnapshot;
   setState(s: EngineSnapshot): void;
+}
+
+/** frame interval of a morph while nothing else drives it (ms) */
+const MORPH_FRAME_MS = 15;
+
+interface Morphing {
+  morph: Morph;
+  preset: Preset;
+  t0: number;
+  ms: number;
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 export type AbSlot = 'A' | 'B';
@@ -48,11 +61,14 @@ export class PresetSession {
   private pending = false;
   private listeners = new Set<() => void>();
   private unsubs: Unsubscribe[] = [];
+  private morphing: Morphing | null = null;
 
   constructor(
     readonly engine: PresetEngine,
     readonly store: PresetStore,
     initial: Preset | undefined = store.get(INIT_PRESET_ID) ?? store.factory[0],
+    /** time base of morphs (ms) */
+    private now: () => number = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
   ) {
     this.presetId = initial?.id ?? null;
     this.name = initial?.name ?? 'Init';
@@ -69,6 +85,7 @@ export class PresetSession {
   }
 
   dispose(): void {
+    this.stopMorph();
     this.unsubs.forEach((u) => u());
     this.listeners.clear();
   }
@@ -152,8 +169,80 @@ export class PresetSession {
   /* ---- library ---- */
 
   load(p: Preset): void {
+    this.stopMorph();
     this.apply(p.snapshot);
     this.setCurrent(p, snapshotKey(this.engine.getState()));
+    this.emit();
+  }
+
+  /* ---- morph ---- */
+
+  /**
+   * Glide from the live sound to preset `p` over `ms` (presets/morph.ts); at the end the preset is
+   * loaded exactly. 0 ms loads at once. A load, step or new morph meanwhile takes over from where it is.
+   */
+  morphTo(p: Preset, ms: number): void {
+    this.stopMorph();
+    if (!(ms > 0)) return this.load(p);
+    let morph: Morph;
+    this.applying = true;
+    try {
+      morph = new Morph(this.engine, migrateSnapshot(cloneSnapshot(p.snapshot)));
+    } finally {
+      this.applying = false;
+    }
+    this.morphing = { morph, preset: p, t0: this.now(), ms, timer: null };
+    // the name changes at once; the stored version is the reference from the end on
+    this.setCurrent(p, null);
+    this.dirty = false;
+    this.emit();
+    this.morphTick();
+  }
+
+  /** progress of a running morph (0..1), or -1 */
+  get morphProgress(): number {
+    const m = this.morphing;
+    return m ? Math.min(1, (this.now() - m.t0) / m.ms) : -1;
+  }
+
+  /** the preset a running morph goes to */
+  get morphTarget(): Preset | null {
+    return this.morphing?.preset ?? null;
+  }
+
+  /**
+   * Move a running morph to now. Its own timer calls this; the app also calls it at every modulation
+   * readout, so a morph keeps going in a background tab where timers slow down.
+   */
+  morphTick(): void {
+    const m = this.morphing;
+    if (!m) return;
+    if (m.timer !== null) clearTimeout(m.timer);
+    m.timer = null;
+    const k = (this.now() - m.t0) / m.ms;
+    if (k >= 1) {
+      this.morphing = null;
+      this.load(m.preset);
+      return;
+    }
+    this.applying = true;
+    try {
+      m.morph.at(k);
+    } finally {
+      this.applying = false;
+    }
+    m.timer = setTimeout(() => this.morphTick(), MORPH_FRAME_MS);
+  }
+
+  /** stop a running morph where it is (the sound stays) */
+  stopMorph(): void {
+    const m = this.morphing;
+    if (!m) return;
+    if (m.timer !== null) clearTimeout(m.timer);
+    this.morphing = null;
+    // what was reached is not the stored preset
+    this.ref = null;
+    this.dirty = true;
     this.emit();
   }
 
@@ -194,6 +283,7 @@ export class PresetSession {
   /** switch to slot A or B (default: the other one). B starts as a copy of A. */
   switchAb(slot: AbSlot = this.ab === 'A' ? 'B' : 'A'): void {
     if (slot === this.ab) return;
+    this.stopMorph();
     const live = this.capture();
     const next = this.other ?? live;
     this.other = live;

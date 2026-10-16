@@ -3,8 +3,7 @@ import './tabs/index';
 import type { EngineAPI } from '../core/types';
 import { h, icon, toggleClass } from './dom';
 import { buildHeader } from './header';
-import { programList } from '../presets/programs';
-import { presetSession } from '../presets/session';
+import { triggerText } from '../core/midi';
 import { setMidiApi } from './midi/hook';
 import { buildAssignBanner } from './mod/banner';
 import { targetLabel } from './mod/labels';
@@ -14,7 +13,7 @@ import { buildFaders } from './shell/faders';
 import { buildGlobalColumn } from './shell/globalColumn';
 import { buildTabs } from './shell/panelHost';
 import { mountStage } from './shell/stage';
-import { loadSafely } from './tabs/play/browser';
+import { mountPlay } from './pool';
 import { getTheme } from './theme';
 
 export { registerTab, nav } from './shell/tabs';
@@ -68,16 +67,11 @@ export function mountApp(root: HTMLElement, engine: EngineAPI): void {
   root.replaceChildren(app);
   mountStage(frame, stage);
 
-  /* ---------- MIDI: notices, learn, Program Change n loads preset n ---------- */
+  /* ---------- MIDI: notices, learn; pools, footswitch, Program Change (ui/pool.ts) ---------- */
   engine.midi.onNotice(notify);
   engine.midi.onLearn((id, cc) => notify(`MIDI CC ${cc} → ${targetLabel(id)}`));
-  engine.midi.onProgram((n) => {
-    const session = presetSession(engine);
-    const p = programList(session.store)[n];
-    if (!p) return notify(`Program change ${n + 1}: there is no preset ${n + 1}.`, 'error');
-    loadSafely(() => session.load(p), notify);
-    notify(`Program change ${n + 1}: ${p.name}`);
-  });
+  engine.midi.onTriggerLearn((name, t) => notify(`MIDI ${triggerText(t)} → ${name === 'pool' ? 'pool advance' : 'footswitch'}`));
+  mountPlay(engine, notify);
 
   /* ---------- bypass styling ---------- */
   const syncBypass = (v: number) => toggleClass(app, 'is-bypassed', v >= 0.5);
