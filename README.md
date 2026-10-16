@@ -133,6 +133,17 @@ CONFIG → GENERAL → Spread wählt, was er tut (Parameter `reso.spread`, im Pr
 - Preset-Format 5: Alte Werte (0 bis 100 %) liegen jetzt rechts der Mitte und klingen gleich. Routen auf SPREAD
   haben halbe Tiefe, damit sie gleich weit ausschlagen. Ein LFO, der früher an der 0 stehen blieb, schwingt jetzt
   in die Gegenrichtung weiter (Werks-Presets Breathing Bands und Singing Drone).
+
+### ANALOG
+
+Stand 16.10.2026: Bis zur Mitte (0.5, Standard) klingt ANALOG wie bisher: leichte Sättigung, Bauteiltoleranz,
+Drift und Rauschen. Darüber treibt er eine Verzerrerstufe vor den Bändern:
+
+- Vorverstärkung bis +30 dB, der Clipper wird von weich zu hart und zunehmend schief (gerade Obertöne).
+- Gemessen mit einem Sinus (220 Hz, Spitze 0.3): Klirrfaktor 0.5 % bei 0.5, 10 % bei 0.7, 25 % bei 0.8,
+  43 % bei 1.0. Der Pegel steigt dabei um bis zu 5 dB; laute Eingänge landen bei etwa −8 dBFS RMS.
+- Gegen Aliasing rechnet die Stufe mit Stammfunktion (ADAA erster Ordnung).
+- Die Werks-Presets stehen auf 0.5 und klingen wie vorher.
 - Band-Dynamik und Envelope Follower messen weiter beide Kanäle gemeinsam.
 
 ### Audio-Eingang (Synths, Elektron)

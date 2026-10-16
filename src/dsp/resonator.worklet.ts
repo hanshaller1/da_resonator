@@ -76,6 +76,11 @@
  *  Mix         : equal-power: dry·cos(mix·π/2) + wet·sin(mix·π/2). Dry = raw input (before input gain).
  *  Output      : outputGain dB, then a safety soft clip: linear up to 0.8, tanh knee to a ceiling of 1.0.
  *  Analog      : 0..1 scales input-saturator asymmetry/knee (rail level 2.5 → 1.5, bias 0.15), the damping above, fixed component tolerance
+ *                Upper half (analog 0.5 → 1, d = 0 → 1): a drive stage after the saturator. Pre-gain up to
+ *                DRIVE_MAX_DB, a clipper that goes from soft (u/√(1+u²)) to hard (clamp ±1) with d and leans
+ *                off-centre by DRIVE_ASYM·d (even harmonics), then a makeup that keeps a peak of DRIVE_REF at
+ *                its level, so the distortion grows while the level stays about the same. First-order antiderivative anti-aliasing (ADAA);
+ *                faded in over d = 0 … DRIVE_FADE, so analog ≤ 0.5 sounds as before.
  *                (centre detune ±0.5…1.5 %, Q ±5 %, per band and per channel, deterministic seed), slow
  *                drift (≤ 0.15 %), and a noise floor of −96 dBFS (a −180 dBFS floor is always present so
  *                self-oscillation can start from silence even at analog = 0).
@@ -161,6 +166,10 @@ const BAND_CLIP_L = 1.0; // per-band loop limiter level (bounds the fed-back sig
 const BAND_CLIP_INV = 1 / BAND_CLIP_L;
 const HOT_LOOP_GAIN = 0.5 / 0.87; // loop gain above which a limiting loop lights HOT
 const NL_DAMP = 0.03; // amplitude-dependent extra damping (Δk at |y| = 1, analog = 1)
+const DRIVE_MAX_DB = 30; // ANALOG drive: pre-gain at analog = 1 (none up to 0.5)
+const DRIVE_ASYM = 0.3; // ANALOG drive: clipper offset at analog = 1 (even harmonics)
+const DRIVE_FADE = 0.2; // ANALOG drive: fade-in over the first part of the upper half
+const DRIVE_REF = 0.4; // ANALOG drive: peak level that keeps its level at every drive setting
 const FBALL_MAX = FB_ALL_LOOP_MAX; // Feedback-All loop gain at amount = 1 (self-oscillation from amount ≈ 0.75 with faders at 0 dB)
 const FBALL_CLIP_L = 0.7; // Feedback-All return limit
 const FBALL_CLIP_INV = 1 / FBALL_CLIP_L;
@@ -185,6 +194,17 @@ function fastTanh(x: number): number {
   if (x < -3) return -1;
   const x2 = x * x;
   return (x * (27 + x2)) / (27 + 9 * x2);
+}
+
+/** ANALOG drive clipper: soft (u/√(1+u²)) blended with hard (clamp ±1) by h */
+function driveClip(u: number, h: number): number {
+  const hard = u > 1 ? 1 : u < -1 ? -1 : u;
+  return (1 - h) * (u / Math.sqrt(1 + u * u)) + h * hard;
+}
+/** antiderivative of driveClip (for ADAA) */
+function driveClipF(u: number, h: number): number {
+  const a = u < 0 ? -u : u;
+  return (1 - h) * Math.sqrt(1 + u * u) + h * (a <= 1 ? 0.5 * u * u : a - 0.5);
 }
 
 /** deterministic xorshift32 → [0,1) */
@@ -299,6 +319,15 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private driftTimer = new Float64Array(NS);
   private rng = makeRng(0x5eed1234);
   private noiseState = 0x9e3779b9 >>> 0;
+  // ANALOG drive (upper half of the knob): values for the current analog, previous clipper input per channel
+  private drvAn = -1;
+  private drvGain = 1;
+  private drvMakeup = 1;
+  private drvHard = 0;
+  private drvBias = 0;
+  private drvBiasOut = 0;
+  private drvMix = 0;
+  private drvU = new Float64Array(2);
 
   // feedback-all loop state per channel
   private faLp = new Float64Array(2);
@@ -717,6 +746,35 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.faLpA = 1 - Math.exp((-2 * Math.PI * fc) / fs);
   }
 
+  /** ANALOG drive settings for analog an (> 0.5) */
+  private setDrive(an: number): void {
+    this.drvAn = an;
+    const d = Math.min(1, (an - 0.5) * 2);
+    this.drvGain = Math.pow(10, (DRIVE_MAX_DB * d) / 20);
+    this.drvHard = d;
+    this.drvBias = DRIVE_ASYM * d;
+    this.drvBiasOut = driveClip(this.drvBias, d);
+    // level match: a peak of DRIVE_REF comes out as large as it went in (mean of both half-waves)
+    const u = this.drvGain * DRIVE_REF;
+    this.drvMakeup = (2 * DRIVE_REF) / (driveClip(u + this.drvBias, d) - driveClip(this.drvBias - u, d));
+    const t = Math.min(1, d / DRIVE_FADE);
+    this.drvMix = t * t * (3 - 2 * t);
+  }
+
+  /** ANALOG drive on one channel: gain, off-centre clipper with ADAA, makeup */
+  private drive(x: number, ch: number): number {
+    const u = x * this.drvGain;
+    const up = this.drvU[ch];
+    this.drvU[ch] = u;
+    const h = this.drvHard, b = this.drvBias, bo = this.drvBiasOut;
+    const du = u - up;
+    const y =
+      du > 1e-5 || du < -1e-5
+        ? (driveClipF(u + b, h) - driveClipF(up + b, h)) / du - bo
+        : driveClip(0.5 * (u + up) + b, h) - bo;
+    return y * this.drvMakeup;
+  }
+
   private noise(): number {
     let s = this.noiseState;
     s ^= s << 13;
@@ -845,8 +903,20 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       const tb = fastTanh(bias);
       const satNorm = satL / (1 - tb * tb);
       const noiseAmp = NOISE_FLOOR + NOISE_ANALOG * an;
-      const xL = (fastTanh(dryL * inGain * satInv + bias) - tb) * satNorm + this.noise() * noiseAmp + faRet[0];
-      const xR = (fastTanh(dryR * inGain * satInv + bias) - tb) * satNorm + this.noise() * noiseAmp + faRet[1];
+      let sL = (fastTanh(dryL * inGain * satInv + bias) - tb) * satNorm;
+      let sR = (fastTanh(dryR * inGain * satInv + bias) - tb) * satNorm;
+      // ANALOG drive: upper half of the knob
+      if (an > 0.5) {
+        if (an !== this.drvAn) this.setDrive(an);
+        const w = this.drvMix;
+        sL += (this.drive(sL, 0) - sL) * w;
+        sR += (this.drive(sR, 1) - sR) * w;
+      } else {
+        this.drvU[0] = sL;
+        this.drvU[1] = sR;
+      }
+      const xL = sL + this.noise() * noiseAmp + faRet[0];
+      const xR = sR + this.noise() * noiseAmp + faRet[1];
 
       /* --- spread gains (ODD/EVEN: right of centre odd bands → L, even → R; left of centre mirrored) --- */
       const spr = gCur[S_SPREAD];
