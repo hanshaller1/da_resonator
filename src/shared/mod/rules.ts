@@ -7,13 +7,34 @@ import { NUM_CMODS, NUM_LFOS } from '../paramdefs/modules';
 import { PARAMS, type ParamSpec } from '../params';
 import { SOURCES, TRIGGER_INS, TRIGGER_OUTS, type ModSourceSpec } from './sources';
 
+/**
+ * Channel of a route onto a param with an R twin (L/R per band): both alike, only L, only R, or
+ * INV (R moves against L). Routes onto other params always use CH_LR.
+ */
+export const ROUTE_CHANNELS = ['LR', 'L', 'R', 'INV'] as const;
+export type RouteChannel = (typeof ROUTE_CHANNELS)[number];
+export const CH_LR = 0;
+export const CH_L = 1;
+export const CH_R = 2;
+export const CH_INV = 3;
+
 /** value route: source → param, depth lives in param `route{slot}.depth` */
 export interface RouteConfig {
   slot: number;
   /** index into SOURCES */
   src: number;
-  /** index into PARAMS */
+  /** index into PARAMS (the L param of a pair) */
   dst: number;
+  /** index into ROUTE_CHANNELS; missing = CH_LR */
+  ch?: number;
+}
+
+/** does a route with channel `ch` move the L param / the R twin of its target? */
+export function routeHitsL(ch: number | undefined): boolean {
+  return ch !== CH_R;
+}
+export function routeHitsR(ch: number | undefined): boolean {
+  return ch !== CH_L;
 }
 /** trigger route: trigger output → trigger input */
 export interface TriggerRouteConfig {

@@ -12,6 +12,7 @@
  * constructors don't need the engine.
  */
 import type { ModAPI, ParamStoreAPI, RouteInfo, Unsubscribe } from '../../core/types';
+import { newRouteChannel } from '../channel';
 import { assign } from './assign';
 import { announce, hideBubble, showBubble } from './feedback';
 import { formatDepth, sourceBipolar, sourceLabel, targetLabel } from './labels';
@@ -144,7 +145,7 @@ if (typeof document !== 'undefined') {
       e.preventDefault();
       e.stopPropagation();
       if (v.state === 'target') {
-        const r = api.addRoute(src, v.id, 0.5);
+        const r = api.addRoute(src, v.id, 0.5, newRouteChannel(v.id));
         if ('ok' in r) showBubble(el, r.ok ? '' : r.reason, 'warn', 1600);
         else {
           showBubble(el, `${sourceLabel(src)} → ${formatDepth(0.5)}`, 'mod', 1200);
@@ -279,7 +280,7 @@ export class AssignBinding {
     }
 
     if (!this.route) {
-      const r = api.addRoute(src, this.host.id, 0);
+      const r = api.addRoute(src, this.host.id, 0, newRouteChannel(this.host.id));
       if ('ok' in r) {
         showBubble(el, r.ok ? 'Could not add route' : r.reason, 'warn', 1800);
         return true;
@@ -387,7 +388,7 @@ export class AssignBinding {
         announce(this.host.el.title);
         showBubble(this.host.el, this.host.el.title, 'warn', 1800);
       } else if (!this.route) {
-        const r = api.addRoute(src, this.host.id, 0.5);
+        const r = api.addRoute(src, this.host.id, 0.5, newRouteChannel(this.host.id));
         if ('ok' in r) announce(r.ok ? '' : r.reason);
         else {
           announce(`${name} now modulates ${target} at 50 percent. Arrow keys change the depth, Delete removes it.`);

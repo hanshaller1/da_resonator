@@ -11,7 +11,7 @@
  */
 import { NUM_CMODS, NUM_EFS, NUM_LFOS, NUM_TAPS } from '../shared/paramdefs/modules';
 import { NUM_PARAMS, PARAMS, defaultValues, fromNorm, paramIndex, toNorm } from '../shared/params';
-import { evaluationOrder, type ModConfig } from '../shared/mod/rules';
+import { CH_INV, evaluationOrder, routeHitsL, routeHitsR, type ModConfig } from '../shared/mod/rules';
 import { NUM_SOURCES, NUM_TRIGGER_INS, NUM_TRIGGER_OUTS, SOURCE_BY_ID, TRIGGER_OUT_BY_ID } from '../shared/mod/sources';
 import { ClockModDsp } from './modules/cmod';
 import { EnvFollowerDsp } from './modules/ef';
@@ -118,8 +118,14 @@ export class ModEngine {
     this.modulated.fill(0);
     this.routeDsts = [];
     for (const r of cfg.routes) {
-      this.modulated[r.dst] = 1;
-      if (!this.routeDsts.includes(r.dst)) this.routeDsts.push(r.dst);
+      // a route onto an L/R pair moves the L param, its R twin or both (channel, shared/mod/rules.ts)
+      const tw = PARAMS[r.dst]?.twin;
+      const dsts = tw === undefined ? [r.dst] : [routeHitsL(r.ch) ? r.dst : -1, routeHitsR(r.ch) ? tw : -1];
+      for (const d of dsts) {
+        if (d < 0) continue;
+        this.modulated[d] = 1;
+        if (!this.routeDsts.includes(d)) this.routeDsts.push(d);
+      }
     }
     for (let i = 0; i < NUM_PARAMS; i++) if (!this.modulated[i]) this.eff[i] = this.base[i];
     for (const l of this.trigTargets) l.length = 0;
@@ -178,10 +184,16 @@ export class ModEngine {
         const r = routeBySlot.get(slot);
         if (!r) continue;
         const di = paramIndex(`route${slot}.depth`);
-        const dst = r.dst, src = r.src;
+        const src = r.src;
+        const tw = PARAMS[r.dst].twin;
+        const dL = tw === undefined || routeHitsL(r.ch) ? r.dst : -1;
+        const dR = tw !== undefined && routeHitsR(r.ch) ? tw : -1;
+        const sR = r.ch === CH_INV ? -1 : 1;
         steps.push(() => {
           resolve?.();
-          this.offset[dst] += this.srcVals[src] * this.eff[di];
+          const v = this.srcVals[src] * this.eff[di];
+          if (dL >= 0) this.offset[dL] += v;
+          if (dR >= 0) this.offset[dR] += sR * v;
         });
       } else if (resolve) {
         // audio modules (resonator, dyn, filters) and anything else with modulated params

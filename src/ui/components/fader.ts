@@ -35,6 +35,9 @@ export class Fader extends ParamControl {
   private modMarker: HTMLDivElement;
   private modBar: HTMLDivElement;
   private depthBar: HTMLDivElement;
+  /** L/R pairs: marks of the channel(s) the cap does not show */
+  private pairMarks: HTMLDivElement[] = [];
+  private pairNorms: { ch: 'L' | 'R'; norm: number }[] = [];
   private travel = 200;
   private thumbH = 40;
   private ro: ResizeObserver;
@@ -51,11 +54,13 @@ export class Fader extends ParamControl {
     this.depthBar = h('div', { class: 'fader-depth', hidden: true });
     this.modMarker = h('div', { class: 'fader-mod' });
     this.thumb = h('div', { class: 'fader-thumb' }, h('span', { class: 'fader-thumb-line' }));
+    if (this.pairId) this.pairMarks = [h('div', { class: 'fader-pair', hidden: true }), h('div', { class: 'fader-pair', hidden: true })];
     this.track = h(
       'div',
       { class: 'fader-track' },
       h('div', { class: 'fader-groove' }, this.fill, this.modBar),
       this.depthBar,
+      ...this.pairMarks,
       this.modMarker,
       this.thumb,
     );
@@ -77,6 +82,7 @@ export class Fader extends ParamControl {
     this.travel = Math.max(1, H - this.thumbH);
     this.render(this.norm);
     this.paintDepth();
+    this.paintPair();
   }
 
   protected override dragRange(): number {
@@ -112,6 +118,22 @@ export class Fader extends ParamControl {
     const hgt = Math.max(2, (range[1] - range[0]) * this.travel);
     this.depthBar.style.transform = `translate3d(0, ${(top - (hgt === 2 ? 1 : 0)).toFixed(2)}px, 0)`;
     this.depthBar.style.height = `${hgt.toFixed(2)}px`;
+  }
+
+  protected override renderPair(marks: { ch: 'L' | 'R'; norm: number }[]): void {
+    this.pairNorms = marks;
+    this.paintPair();
+  }
+
+  private paintPair(): void {
+    this.pairMarks.forEach((el, k) => {
+      const m = this.pairNorms[k];
+      el.hidden = !m;
+      if (!m) return;
+      el.dataset.ch = m.ch;
+      const y = (1 - m.norm) * this.travel + this.thumbH / 2;
+      el.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0)`;
+    });
   }
 
   protected renderMod(eff: number | null): void {

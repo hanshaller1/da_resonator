@@ -1,10 +1,12 @@
 /**
  * Fader block: the 10 band level faders, always visible under every tab (they never change
  * role). Each column: scale, fader, LED meter (with the band dynamics' gain change while it is
- * on), the dB readout and the band frequency.
+ * on), the dB readout and the band frequency. The faders follow the L/R channel switch
+ * (ui/channel.ts); the readout shows "L|R" while the channels differ.
  */
 import type { EngineAPI } from '../../core/types';
-import { BAND_FREQS, NUM_BANDS, bandParamId, faderDbToNorm, formatValue } from '../../shared/params';
+import { BAND_FREQS, NUM_BANDS, bandParamId, bandParamIdR, faderDbToNorm, formatValue } from '../../shared/params';
+import { channelSel } from '../channel';
 import { Fader, faderScale } from '../components/fader';
 import { LevelMeter } from '../components/meter';
 import { h, toggleClass } from '../dom';
@@ -23,17 +25,25 @@ interface Column {
 function buildColumn(engine: EngineAPI, i: number): Column {
   const p = engine.params;
   const id = bandParamId(i, 'gain');
+  const idR = bandParamIdR(i, 'gain');
   const f = freqText(BAND_FREQS[i]);
   const name = `Band ${i + 1} (${f.value} ${f.unit})`;
   const fader = new Fader(p, id, { ariaLabel: `${name} level` });
   const meter = new LevelMeter({ law: faderDbToNorm });
   const readout = h('output', { class: 'fcol-readout', for: id });
-  const sync = (v: number) => {
-    readout.textContent = formatValue(p.spec(id), v).replace(' dB', '');
-    toggleClass(readout, 'is-off', v <= p.spec(id).min);
+  const spec = p.spec(id);
+  const text = (v: number) => formatValue(spec, v).replace(' dB', '');
+  const sync = () => {
+    const l = p.get(id), r = p.get(idR);
+    const v = channelSel.get() === 'R' ? r : l;
+    readout.textContent = l === r ? text(v) : `${text(l)}|${text(r)}`;
+    toggleClass(readout, 'is-split', l !== r);
+    toggleClass(readout, 'is-off', Math.max(l, r) <= spec.min);
   };
-  sync(p.get(id));
+  sync();
   p.subscribe(id, sync);
+  p.subscribe(idR, sync);
+  channelSel.onChange(sync);
   const el = h(
     'div',
     { class: 'fcol', role: 'group', 'aria-label': name, style: `--band:${i}` },
@@ -60,14 +70,14 @@ export function buildFaders(engine: EngineAPI): HTMLElement {
   frameLoop.add((_t, dt) => {
     const f = engine.meters.latest();
     const running = engine.state === 'running';
-    const fbAll = p.get('fbAllOn') >= 0.5;
+    const fbAll = p.get('fbAllOn') >= 0.5 || p.get('fbAllOnR') >= 0.5;
     const dyn = p.get('dyn.on') >= 0.5;
     for (let i = 0; i < NUM_BANDS; i++) {
       const c = cols[i];
       c.meter.push(f && running ? f.bands[i] ?? 0 : 0);
       c.meter.setGainChange(dyn ? (f && running ? f.dynGR?.[i] ?? 0 : 0) : null);
       c.meter.tick(dt);
-      const hot = !!(f?.hot && running && (fbAll || p.get(bandParamId(i, 'fb')) > 0.02));
+      const hot = !!(f?.hot && running && (fbAll || p.get(bandParamId(i, 'fb')) > 0.02 || p.get(bandParamIdR(i, 'fb')) > 0.02));
       if (hot !== c.hot) {
         c.hot = hot;
         toggleClass(c.el, 'is-hot', hot);

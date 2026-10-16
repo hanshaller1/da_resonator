@@ -4,11 +4,11 @@
  */
 import type { ParamSpec } from '../shared/params';
 import type { MeterFrame } from '../shared/messages';
-import type { RouteCheck } from '../shared/mod/rules';
+import type { RouteChannel, RouteCheck } from '../shared/mod/rules';
 import type { RouteInfo, TriggerRouteInfo } from '../shared/mod/routing';
 import type { ModSourceSpec, TriggerPortSpec } from '../shared/mod/sources';
 
-export type { RouteCheck, RouteInfo, TriggerRouteInfo, ModSourceSpec, TriggerPortSpec };
+export type { RouteChannel, RouteCheck, RouteInfo, TriggerRouteInfo, ModSourceSpec, TriggerPortSpec };
 
 export type Unsubscribe = () => void;
 
@@ -151,9 +151,14 @@ export interface ModAPI {
   routesFrom(source: string): RouteInfo[];
   /** may `source` modulate param `target` right now (rules + loop check)? */
   canRoute(source: string, target: string): RouteCheck;
-  /** creates the route with the given depth (-1..1, default 0.5); returns the reason if refused */
-  addRoute(source: string, target: string, depth?: number): RouteInfo | RouteCheck;
+  /**
+   * creates the route with the given depth (-1..1, default 0.5) and, on an L/R pair, channel
+   * (default L+R); returns the reason if refused
+   */
+  addRoute(source: string, target: string, depth?: number, ch?: RouteChannel): RouteInfo | RouteCheck;
   removeRoute(slot: number): void;
+  /** channel of a route onto an L/R pair (L+R, L, R, INV); ignored on other targets */
+  setRouteChannel(slot: number, ch: RouteChannel): void;
   triggerRoutes(): TriggerRouteInfo[];
   canTriggerRoute(source: string, target: string): RouteCheck;
   addTriggerRoute(source: string, target: string): RouteCheck;
@@ -178,11 +183,12 @@ export interface StateProvider {
 
 export interface EngineSnapshot {
   format: 'da-resonator';
-  /** 3 since 2026-10-16 (older ones are migrated on load, core/state.ts) */
+  /** 4 since 2026-10-16, L/R per band (older ones are migrated on load, core/state.ts) */
   version: number;
   /** base value of every param, by id */
   params: Record<string, number>;
-  routes: { slot: number; source: string; target: string }[];
+  /** ch: channel of a route onto an L/R pair, missing = L+R */
+  routes: { slot: number; source: string; target: string; ch?: RouteChannel }[];
   triggers: TriggerRouteInfo[];
   /** state of registered providers (macro names …) */
   modules: Record<string, unknown>;

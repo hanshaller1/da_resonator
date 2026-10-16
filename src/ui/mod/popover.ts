@@ -6,8 +6,10 @@
  */
 import type { ModAPI, ParamStoreAPI, RouteInfo, Unsubscribe } from '../../core/types';
 import { SOURCES } from '../../shared/mod/sources';
+import { newRouteChannel } from '../channel';
 import { h } from '../dom';
 import { formatDepth, onSourceNames, SOURCE_GROUPS, sourceLabel, sourcesOf, targetLabel } from './labels';
+import { routeChannelButton } from './routeChannel';
 import { setRoutesOpener } from './targets';
 
 interface Open {
@@ -75,7 +77,9 @@ function openPopover(anchor: HTMLElement, spec: PopoverSpec, mod: ModAPI, params
       range.addEventListener('dblclick', () => params.set(r.depthParam, 0));
       const rm = h('button', { type: 'button', class: 'mod-pop-remove', 'aria-label': `Remove ${label}`, title: 'Remove' }, '✕');
       rm.addEventListener('click', () => mod.removeRoute(r.slot));
-      list.append(h('li', { class: 'mod-pop-row' }, h('span', { class: 'mod-pop-src', title: label }, label), range, out, rm));
+      const ch = routeChannelButton(mod, r);
+      if (ch) subs.push(ch.dispose);
+      list.append(h('li', { class: ch ? 'mod-pop-row has-ch' : 'mod-pop-row' }, h('span', { class: 'mod-pop-src', title: label }, label), ch?.el ?? null, range, out, rm));
     }
     foot.replaceChildren();
     const f = spec.footer?.();
@@ -166,7 +170,7 @@ export function openParamRoutes(anchor: HTMLElement, id: string, mod: ModAPI, pa
         }
         if (!any) sel.disabled = true;
         sel.addEventListener('change', () => {
-          if (sel.value) mod.addRoute(sel.value, id, 0.5);
+          if (sel.value) mod.addRoute(sel.value, id, 0.5, newRouteChannel(id));
         });
         return sel;
       },

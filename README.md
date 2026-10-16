@@ -49,7 +49,7 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - Feste Fläche 1200 × 700, gleichmäßig auf das Fenster skaliert (nichts verschiebt sich je nach Fenstergröße).
 - Oben die Kopfzeile, darunter 10 Register, je eines über einer Fader-Spalte. Jedes Register füllt dasselbe
   Panel (1044 × 336): Statuszeile, Visualisierung, Reglerreihe mit 10 festen Plätzen (Platz k über Fader k).
-- Darunter immer die 10 Band-Fader (Pegel), rechts die Global-Spalte (Input, Resonance, Spread, FB All, Dry/Wet, Output).
+- Darunter immer die 10 Band-Fader (Pegel), rechts die Global-Spalte (Input, Resonance, Spread, Kanalwahl, FB All, Dry/Wet, Output).
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
 - Die Modulationsmatrix ist pro Quelle verteilt: jedes Quellen-Register (CLK, ENV, LFO, MACRO) zeigt die Ziele
   seiner Quelle mit Tiefe; Rechtsklick auf jeden Regler öffnet weiterhin dessen Modulation.
@@ -74,6 +74,28 @@ Stand nach dem DSP-Durchgang vom 16.10.2026, siehe `docs/dsp-durchgang-2026-10-1
 - **FB ALL:** Eigenschwingung ab AMT ≈ 0,75 mit Fadern auf 0 dB, bei breiten wie schmalen Bändern.
   Ältere Presets werden beim Laden umgerechnet und klingen gleich.
 - Die vier Einstellungen werden im Preset gespeichert und nicht moduliert.
+
+### L/R pro Band
+
+Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
+
+- Pegel, RES und FB jedes Bands gibt es je Kanal, ebenso FB ALL (Schalter und AMT). TONE bleibt gemeinsam.
+- Der Umschalter **L · L+R · R** unter SPREAD legt fest, welchen Kanal Fader, RES- und FB-Knöpfe und FB ALL
+  bearbeiten. Er ist eine Bedienhilfe, wird nicht im Preset gespeichert und steht beim Start auf L+R.
+  - In L+R bewegen sich beide Kanäle um denselben Weg, ein Versatz bleibt. Ein Kanal am Anschlag bleibt stehen.
+  - Der Fader-Griff zeigt den gewählten Kanal, in L+R die Mitte. Weicht ein Kanal ab, zeigt eine dünne Marke
+    mit Buchstabe seine Stellung; die Anzeige darunter zeigt beide Werte (`−6.0|+3.0`). Die Knöpfe zeigen den
+    anderen Kanal als dünnen zweiten Zeiger. FB ALL leuchtet halb, wenn nur ein Kanal an ist.
+  - **R = L** setzt alle R-Werte auf die von L. **RESET** setzt alle 10 Fader in L und R auf 0 dB.
+- FB-Register: Die Kurve folgt dem Umschalter (L, R oder Mittel), weichen die Kanäle ab, zeigen gestrichelte
+  Linien die anderen. Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R. Rechts in der
+  Statuszeile setzen **RES RESET** und **FB RESET** RES bzw. FB aller Bänder in L und R zurück.
+- Jede Route auf einen Bandwert oder FB ALL AMT hat eine Kanalwahl (Knopf in Routenliste, Popup und
+  Makro-Karte): L+R, L, R oder INV (R gegenläufig, ein LFO lässt das Band zwischen links und rechts wandern).
+  Neue Routen übernehmen die Stellung des Umschalters.
+- PANIC setzt FB beider Kanäle auf 0 und schaltet FB ALL in beiden Kanälen aus.
+- Preset-Format 4. Fehlt ein R-Wert, gilt der von L: ältere Presets und die Werks-Presets klingen gleich.
+- Band-Dynamik und Envelope Follower messen weiter beide Kanäle gemeinsam.
 
 ### Audio-Eingang (Synths, Elektron)
 

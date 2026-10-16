@@ -20,8 +20,14 @@ const workletCode = () =>
   buildSync({ entryPoints: [path.join(root, 'src/dsp/resonator.worklet.ts')], bundle: true, write: false, format: 'iife', platform: 'neutral', target: 'es2020' }).outputFiles[0].text;
 
 let cached = null;
-/** fresh processor instance; proc.port.sent collects posted messages */
-export function loadProcessor() {
+let twins = null;
+/**
+ * fresh processor instance; proc.port.sent collects posted messages.
+ * Most tests set the historic param ids only, which are the left channel since L/R per band
+ * (2026-10-16). With linkR (default) every 'params' message copies them onto their R twins, like an
+ * older preset is loaded; tests of separate L/R values pass { linkR: false }.
+ */
+export function loadProcessor({ linkR = true } = {}) {
   cached ??= workletCode();
   const registry = {};
   const ctx = { sampleRate: FS, currentTime: 0, console, registerProcessor: (name, cls) => (registry[name] = cls) };
@@ -32,7 +38,21 @@ export function loadProcessor() {
     ctx,
   );
   const names = Object.keys(registry);
-  return new registry[names[0]]({ numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  const proc = new registry[names[0]]({ numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  if (linkR) {
+    twins ??= importTs('src/shared/params.ts').PARAMS.filter((p) => p.twinOf !== undefined).map((p) => [p.twinOf, p.index]);
+    const handle = proc.port.onmessage;
+    proc.port.onmessage = (e) => {
+      const d = e?.data;
+      if (d && d.type === 'params' && d.values && d.values.length > twins[twins.length - 1][1]) {
+        const v = Float32Array.from(d.values);
+        for (const [l, r] of twins) v[r] = v[l];
+        return handle({ data: { ...d, values: v } });
+      }
+      return handle(e);
+    };
+  }
+  return proc;
 }
 
 /** run `blocks` blocks; input(n) -> sample (mono, both channels) or 0 */

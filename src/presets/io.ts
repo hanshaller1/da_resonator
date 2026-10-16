@@ -5,6 +5,7 @@
 import { isSnapshot, migrateSnapshot } from '../core/state';
 import type { EngineSnapshot, TriggerRouteInfo } from '../core/types';
 import { ModRouting, routeDepthId } from '../shared/mod/routing';
+import { ROUTE_CHANNELS, type RouteChannel } from '../shared/mod/rules';
 import { NUM_ROUTES } from '../shared/paramdefs/modules';
 import { PARAM_BY_ID, type ParamSpec } from '../shared/params';
 
@@ -64,7 +65,7 @@ export function clampParam(spec: ParamSpec, v: number): number {
  * Give every route a unique slot (its depth lives in param `route{slot}.depth`).
  * Routes without a usable slot move to a free one and take their depth along.
  */
-function assignSlots(list: { slot?: unknown; source: string; target: string }[], params: Record<string, number>, report: SanitizeReport) {
+function assignSlots(list: { slot?: unknown; source: string; target: string; ch?: unknown }[], params: Record<string, number>, report: SanitizeReport) {
   const valid = (s: unknown): s is number => typeof s === 'number' && Number.isInteger(s) && s >= 0 && s < NUM_ROUTES;
   const taken = new Set<number>();
   const slots: (number | null)[] = list.map((r) => {
@@ -74,7 +75,7 @@ function assignSlots(list: { slot?: unknown; source: string; target: string }[],
     }
     return null;
   });
-  const out: { slot: number; source: string; target: string }[] = [];
+  const out: { slot: number; source: string; target: string; ch?: RouteChannel }[] = [];
   list.forEach((r, i) => {
     let slot = slots[i];
     if (slot === null) {
@@ -88,7 +89,8 @@ function assignSlots(list: { slot?: unknown; source: string; target: string }[],
       const from = valid(r.slot) ? params[routeDepthId(r.slot)] : undefined;
       params[routeDepthId(slot)] = from ?? 0.5;
     }
-    out.push({ slot, source: r.source, target: r.target });
+    const ch = ROUTE_CHANNELS.find((c) => c === r.ch);
+    out.push(ch ? { slot, source: r.source, target: r.target, ch } : { slot, source: r.source, target: r.target });
   });
   return out;
 }
@@ -123,7 +125,7 @@ export function sanitizeSnapshot(input: unknown, report: SanitizeReport = newRep
   }
   if (!structured && known === 0) throw new PresetImportError('no resonator parameters found');
 
-  const shapeOk = (r: unknown): r is { slot?: unknown; source: string; target: string } =>
+  const shapeOk = (r: unknown): r is { slot?: unknown; source: string; target: string; ch?: unknown } =>
     isObj(r) && typeof r.source === 'string' && typeof r.target === 'string';
   const rawRoutes = structured && Array.isArray(input.routes) ? input.routes : [];
   const rawTrig = structured && Array.isArray(input.triggers) ? input.triggers : [];
@@ -150,7 +152,7 @@ export function sanitizeSnapshot(input: unknown, report: SanitizeReport = newRep
     // the version of the input decides how missing params and old scales are read (flat v1 = 1)
     version: structured ? (typeof input.version === 'number' && Number.isFinite(input.version) ? input.version : 2) : 1,
     params,
-    routes: routing.routes().map((r) => ({ slot: r.slot, source: r.source, target: r.target })),
+    routes: routing.routes().map((r) => (r.ch === 'LR' ? { slot: r.slot, source: r.source, target: r.target } : { slot: r.slot, source: r.source, target: r.target, ch: r.ch })),
     triggers: routing.triggerRoutes(),
     modules,
   });

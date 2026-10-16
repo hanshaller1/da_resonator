@@ -183,6 +183,24 @@
   box-shadow: 0 0 8px var(--c-fb-glow);
 }
 
+/* L/R pair with only one channel on (L+R shown): half-lit LED */
+.toggle.is-mixed {
+  color: var(--c-text);
+}
+
+.toggle.is-mixed .led {
+  --led-on: var(--c-accent);
+  background: linear-gradient(90deg, var(--led-on) 50%, var(--c-text-4) 50%);
+}
+
+.toggle.is-mixed[data-on='R'] .led {
+  background: linear-gradient(90deg, var(--c-text-4) 50%, var(--led-on) 50%);
+}
+
+.toggle--fb.is-mixed .led {
+  --led-on: var(--c-fb);
+}
+
 .g-group .toggle {
   height: 24px;
   padding: 0 var(--sp-4);
@@ -403,6 +421,14 @@
   opacity: 1;
 }
 
+/* L/R pairs: the other channel's value as a thin pointer */
+.knob-pair line {
+  stroke: var(--c-text-2);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
 .knob:hover .knob-cap,
 .knob.is-active .knob-cap {
   stroke: var(--c-text-3);
@@ -531,6 +557,38 @@
 .fader.is-modulated .fader-mod,
 .fader.is-modulated .fader-mod-bar {
   opacity: 1;
+}
+
+/* L/R pairs: a thin line per channel the cap does not show, over the cap, its letter left of the fader */
+.fader-pair {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: -2px;
+  right: -2px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: var(--r-pill);
+  background: var(--c-text-2);
+  box-shadow: 0 0 0 1px var(--c-panel);
+  pointer-events: none;
+}
+
+.fader-pair[hidden] {
+  display: none;
+}
+
+.fader-pair::after {
+  content: attr(data-ch);
+  position: absolute;
+  right: calc(100% + 1px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--c-panel);
+  color: var(--c-text);
+  font: var(--fw-bold) 8px / 9px var(--font-mono);
 }
 
 .fader-thumb {
@@ -854,6 +912,39 @@ body.is-assigning .knob.is-assign-target:hover .knob-cap {
 
 .mod-pop-row:hover {
   background: var(--c-panel-2);
+}
+
+.mod-pop-row.has-ch {
+  grid-template-columns: minmax(0, 1fr) auto auto 50px auto;
+}
+
+/* channel of a route onto a band value (ui/mod/routeChannel.ts): L+R, L, R, INV */
+.route-ch {
+  min-width: 30px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--c-text-3);
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  letter-spacing: var(--ls-label);
+  cursor: pointer;
+}
+
+.route-ch:hover {
+  color: var(--c-text);
+  border-color: var(--c-mod);
+}
+
+.route-ch.is-split {
+  color: var(--c-mod);
+  border-color: var(--c-mod);
+}
+
+.route-ch:focus-visible {
+  outline: 2px solid var(--c-mod);
+  outline-offset: 1px;
 }
 
 .mod-pop-range {

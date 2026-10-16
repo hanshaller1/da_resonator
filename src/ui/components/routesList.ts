@@ -8,11 +8,13 @@ import '../../styles/components/routes.css';
 import type { EngineAPI, RouteInfo, Unsubscribe } from '../../core/types';
 import { TRIGGER_IN_BY_ID, TRIGGER_INS, TRIGGER_OUT_BY_ID, TRIGGER_OUTS } from '../../shared/mod/sources';
 import { PARAM_BY_ID } from '../../shared/params';
+import { newRouteChannel } from '../channel';
 import { h } from '../dom';
 import { formatDepth, onSourceNames, sourceLabel, targetGroup, targetGroups, targetLabel } from '../mod/labels';
 import { nav } from '../shell/tabs';
 import { Knob } from './knob';
 import { showBubble } from '../mod/feedback';
+import { routeChannelButton } from '../mod/routeChannel';
 
 export interface RoutesListOptions {
   /** sources whose routes are listed (re-read on refresh()) */
@@ -56,7 +58,7 @@ export class RoutesList {
       const tgt = this.addSel.value;
       this.addSel.value = '';
       if (!src || !tgt) return;
-      const r = engine.mod.addRoute(src, tgt, 0.5);
+      const r = engine.mod.addRoute(src, tgt, 0.5, newRouteChannel(tgt));
       if ('ok' in r && !r.ok) showBubble(this.addSel, r.reason, 'warn', 2200);
     });
     this.el = h(
@@ -140,13 +142,15 @@ export class RoutesList {
     });
     const rm = h('button', { type: 'button', class: 'rl-remove', 'aria-label': `Remove ${sourceLabel(r.source)} → ${full}`, title: 'Remove' }, '✕');
     rm.addEventListener('click', () => mod.removeRoute(r.slot));
-    const el = h('li', { class: 'rl-row' }, target, depth.el, out, rm);
+    const ch = routeChannelButton(mod, r);
+    const el = h('li', { class: ch ? 'rl-row has-ch' : 'rl-row' }, target, ch?.el ?? null, depth.el, out, rm);
     return {
       key: `${r.source}>${r.target}`,
       el,
       dispose: () => {
         depth.destroy();
         sub();
+        ch?.dispose();
       },
     };
   }

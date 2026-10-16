@@ -1,5 +1,6 @@
 import type { ParamStoreAPI, Unsubscribe } from '../../core/types';
-import { formatValue, type ParamSpec } from '../../shared/params';
+import { formatValue, fromNorm, twinId, type ParamSpec } from '../../shared/params';
+import { channelSel, moveLinked } from '../channel';
 import { clamp01, toggleClass } from '../dom';
 import { depthRange } from '../mod/labels';
 import { AssignBinding, type AssignHost } from '../mod/targets';
@@ -38,6 +39,17 @@ function unwatchMod(c: ParamControl): void {
   }
 }
 
+/** a value without its unit ("−6.0 dB" → "−6.0") */
+function bare(spec: ParamSpec, v: number): string {
+  const t = formatValue(spec, v);
+  return spec.unit && t.endsWith(` ${spec.unit}`) ? t.slice(0, -spec.unit.length - 1) : t;
+}
+
+/** "L|R" text of a pair whose channels differ, e.g. "−6.0|+3.0 dB" */
+export function pairText(spec: ParamSpec, l: number, r: number): string {
+  return `${bare(spec, l)}|${bare(spec, r)}${spec.unit ? ` ${spec.unit}` : ''}`;
+}
+
 /**
  * Base class for continuous controls bound to one parameter.
  * Handles pointer drag (relative, or absolute-ish via `jumpNormAt`), Shift
@@ -45,11 +57,16 @@ function unwatchMod(c: ParamControl): void {
  * ARIA, param subscriptions and the modulation indicator poll.
  * In modulation assign mode (a source chip is armed) the same gestures edit the
  * route depth instead (see mod/targets.ts); right-click / long-press lists the routes.
+ * A param with an R twin (L/R per band) follows the channel switch (ui/channel.ts): L edits the
+ * param, R its twin, L+R both by the same travel. The control then shows the edited channel (L+R:
+ * the middle of both) and the other channel(s) through `renderPair`.
  * Subclasses build their DOM, then call `this.init()`.
  */
 export abstract class ParamControl implements AssignHost {
   readonly id: string;
   readonly spec: ParamSpec;
+  /** id of the R twin, null when the param has none */
+  readonly pairId: string | null;
   protected readonly params: ParamStoreAPI;
   protected readonly opts: ParamControlOptions;
   protected norm = 0;
@@ -65,6 +82,8 @@ export abstract class ParamControl implements AssignHost {
   private lastEff = -1;
   private assignB: AssignBinding | null = null;
   private depth: { d: number; bipolar: boolean } | null = null;
+  /** L+R drag: both channels and their middle when the gesture started */
+  private linkStart: [number, number, number] | null = null;
 
   abstract readonly el: HTMLElement;
 
@@ -72,6 +91,7 @@ export abstract class ParamControl implements AssignHost {
     this.params = params;
     this.id = id;
     this.spec = params.spec(id);
+    this.pairId = twinId(id) ?? null;
     this.opts = opts;
   }
 
@@ -81,6 +101,11 @@ export abstract class ParamControl implements AssignHost {
   protected abstract renderMod(effNorm: number | null): void;
   /** Paint the depth range [lo, hi] (normalized) of the armed source's route; null = none. */
   protected renderDepth(_range: [number, number] | null): void {}
+  /**
+   * L/R pairs: the channels not shown by the main value, as normalized marks (L+R: both, L or R: the
+   * other one); empty while both channels are equal.
+   */
+  protected renderPair(_marks: { ch: 'L' | 'R'; norm: number }[]): void {}
   /** Element receiving pointer events (default: el). */
   protected hitTarget(): HTMLElement {
     return this.el;
@@ -107,7 +132,34 @@ export abstract class ParamControl implements AssignHost {
   }
 
   get valueText(): string {
+    const pr = this.pairId;
+    if (pr) {
+      const l = this.params.get(this.id), r = this.params.get(pr);
+      if (Math.abs(this.params.getNorm(this.id) - this.params.getNorm(pr)) > 1e-4) return pairText(this.spec, l, r);
+      return formatValue(this.spec, channelSel.get() === 'R' ? r : l);
+    }
     return formatValue(this.spec, this.params.get(this.id));
+  }
+
+  /** the params an edit touches: the param, its twin, or both (channel switch) */
+  private editIds(): string[] {
+    const pr = this.pairId;
+    if (!pr) return [this.id];
+    const c = channelSel.get();
+    return c === 'L' ? [this.id] : c === 'R' ? [pr] : [this.id, pr];
+  }
+  private begin(): void {
+    for (const id of this.editIds()) this.params.beginGesture(id);
+  }
+  private end(): void {
+    for (const id of this.editIds()) this.params.endGesture(id);
+  }
+  /** which param the modulation indicator follows */
+  private modId(): string {
+    const pr = this.pairId;
+    if (!pr) return this.id;
+    const c = channelSel.get();
+    return c === 'R' || (c === 'LR' && !this.params.isModulated(this.id)) ? pr : this.id;
   }
 
   protected init(): void {
@@ -120,8 +172,19 @@ export abstract class ParamControl implements AssignHost {
     el.setAttribute('aria-orientation', 'vertical');
     el.dataset.param = this.id;
 
-    this.sync(this.params.get(this.id));
-    this.unsubs.push(this.params.subscribe(this.id, (v) => this.sync(v)));
+    this.sync();
+    this.unsubs.push(this.params.subscribe(this.id, () => this.sync()));
+    if (this.pairId) {
+      this.unsubs.push(
+        this.params.subscribe(this.pairId, () => this.sync()),
+        channelSel.onChange(() => {
+          this.lastEff = -1;
+          this.modOn = false;
+          this.sync();
+          this.pollModulation();
+        }),
+      );
+    }
 
     const hit = this.hitTarget();
     hit.style.touchAction = 'none';
@@ -135,7 +198,7 @@ export abstract class ParamControl implements AssignHost {
     el.addEventListener('keydown', this.onKey);
     el.addEventListener('blur', () => this.setActive(false));
 
-    if (this.spec.modulatable) watchMod(this);
+    if (this.spec.modulatable || this.pairId) watchMod(this);
     this.assignB = new AssignBinding(this, this.params);
   }
 
@@ -159,7 +222,8 @@ export abstract class ParamControl implements AssignHost {
 
   /** Called from the shared rAF loop. */
   pollModulation(): void {
-    const on = this.params.isModulated(this.id);
+    const mid = this.modId();
+    const on = this.params.isModulated(mid);
     if (!on) {
       if (this.modOn) {
         this.modOn = false;
@@ -169,7 +233,7 @@ export abstract class ParamControl implements AssignHost {
       }
       return;
     }
-    const eff = this.params.getEffectiveNorm(this.id);
+    const eff = this.params.getEffectiveNorm(mid);
     if (!this.modOn) {
       this.modOn = true;
       toggleClass(this.el, 'is-modulated', true);
@@ -180,10 +244,27 @@ export abstract class ParamControl implements AssignHost {
     }
   }
 
-  private sync(plain: number): void {
-    this.norm = this.params.getNorm(this.id);
+  private sync(): void {
+    const pr = this.pairId;
+    let plain: number;
+    if (pr) {
+      const nl = this.params.getNorm(this.id), nr = this.params.getNorm(pr);
+      const c = channelSel.get();
+      this.norm = c === 'L' ? nl : c === 'R' ? nr : 0.5 * (nl + nr);
+      plain = c === 'L' ? this.params.get(this.id) : c === 'R' ? this.params.get(pr) : fromNorm(this.spec, this.norm);
+      const differs = Math.abs(nl - nr) > 1e-4;
+      const marks: { ch: 'L' | 'R'; norm: number }[] = [];
+      if (differs) {
+        if (c !== 'L') marks.push({ ch: 'L', norm: nl });
+        if (c !== 'R') marks.push({ ch: 'R', norm: nr });
+      }
+      this.renderPair(marks);
+    } else {
+      this.norm = this.params.getNorm(this.id);
+      plain = this.params.get(this.id);
+    }
     this.el.setAttribute('aria-valuenow', String(+plain.toFixed(4)));
-    this.el.setAttribute('aria-valuetext', formatValue(this.spec, plain));
+    this.el.setAttribute('aria-valuetext', this.valueText);
     this.render(this.norm, plain);
     if (this.depth) this.paintDepth();
   }
@@ -194,7 +275,18 @@ export abstract class ParamControl implements AssignHost {
   }
 
   private setNorm(n: number): void {
-    this.params.setNorm(this.id, clamp01(n));
+    const pr = this.pairId;
+    const c = channelSel.get();
+    if (!pr || c === 'L') this.params.setNorm(this.id, clamp01(n));
+    else if (c === 'R') this.params.setNorm(pr, clamp01(n));
+    else {
+      // L+R: both by the same travel from the start of the gesture (wheel and keys: from now)
+      const nl = this.params.getNorm(this.id), nr = this.params.getNorm(pr);
+      const [l0, r0, m0] = this.linkStart ?? [nl, nr, 0.5 * (nl + nr)];
+      const [l, r] = moveLinked(l0, r0, clamp01(n) - m0);
+      this.params.setNorm(this.id, l);
+      this.params.setNorm(pr, r);
+    }
   }
 
   /* ---------- pointer ---------- */
@@ -221,9 +313,13 @@ export abstract class ParamControl implements AssignHost {
     } catch {
       /* synthetic events */
     }
-    this.params.beginGesture(this.id);
+    this.begin();
     this.setActive(true);
     toggleClass(this.el, 'is-dragging', true);
+    if (this.pairId) {
+      const nl = this.params.getNorm(this.id), nr = this.params.getNorm(this.pairId);
+      this.linkStart = [nl, nr, 0.5 * (nl + nr)];
+    }
     const jump = this.jumpNormAt(e);
     if (jump !== null) this.setNorm(this.adjust(jump, e.shiftKey));
     this.dragAcc = jump ?? this.norm;
@@ -250,7 +346,8 @@ export abstract class ParamControl implements AssignHost {
     } catch {
       /* already released */
     }
-    this.params.endGesture(this.id);
+    this.end();
+    this.linkStart = null;
     toggleClass(this.el, 'is-dragging', false);
     this.setActive(false);
   };
@@ -261,9 +358,9 @@ export abstract class ParamControl implements AssignHost {
   };
 
   private onReset = (): void => {
-    this.params.beginGesture(this.id);
-    this.params.reset(this.id);
-    this.params.endGesture(this.id);
+    this.begin();
+    for (const id of this.editIds()) this.params.reset(id);
+    this.end();
   };
 
   /* ---------- wheel ---------- */
@@ -275,7 +372,7 @@ export abstract class ParamControl implements AssignHost {
     if (e.deltaMode === 1) d *= 16;
     else if (e.deltaMode === 2) d *= 400;
     if (!this.wheelTimer) {
-      this.params.beginGesture(this.id);
+      this.begin();
       this.setActive(true);
     } else {
       clearTimeout(this.wheelTimer);
@@ -285,7 +382,7 @@ export abstract class ParamControl implements AssignHost {
     this.setNorm(this.adjust(this.norm - Math.max(-0.08, Math.min(0.08, d * 0.0002 * factor * 1)), e.shiftKey));
     this.wheelTimer = window.setTimeout(() => {
       this.wheelTimer = 0;
-      this.params.endGesture(this.id);
+      this.end();
       this.setActive(false);
     }, 450);
   };
@@ -326,9 +423,9 @@ export abstract class ParamControl implements AssignHost {
         return;
     }
     e.preventDefault();
-    this.params.beginGesture(this.id);
+    this.begin();
     this.setActive(true);
     this.setNorm(n);
-    this.params.endGesture(this.id);
+    this.end();
   };
 }

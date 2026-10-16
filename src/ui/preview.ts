@@ -22,9 +22,11 @@ if (q.get('demo') === '1') {
   const gains = [-6, 2, 4, -3, 0, 6, -12, 3, -2, -60];
   const res = [0.2, 0.45, 0.7, 0.35, 0.55, 0.85, 0.3, 0.6, 0.4, 0.25];
   const fb = [0, 0, 0.15, 0, 0, 0.92, 0, 0.3, 0, 0];
-  gains.forEach((g, i) => engine.params.set(`band${i}.gain`, g));
-  res.forEach((r, i) => engine.params.set(`band${i}.res`, r));
-  fb.forEach((f, i) => engine.params.set(`band${i}.fb`, f));
+  // both channels alike (L/R per band)
+  const both = (id: string, v: number) => (engine.params.set(id, v), engine.params.set(`${id}R`, v));
+  gains.forEach((g, i) => both(`band${i}.gain`, g));
+  res.forEach((r, i) => both(`band${i}.res`, r));
+  fb.forEach((f, i) => both(`band${i}.fb`, f));
   engine.params.set('inputGain', 6);
   engine.params.set('resOffset', 0.15);
   engine.params.set('fbAllTone', 4200);

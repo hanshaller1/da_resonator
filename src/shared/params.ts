@@ -59,6 +59,10 @@ export interface ParamSpec {
   modClass: ModClass;
   /** option labels for curve 'discrete' */
   options?: readonly string[];
+  /** L/R pairs: on a left-channel param, the index of its R twin */
+  twin?: number;
+  /** on an R twin, the index of its left-channel param */
+  twinOf?: number;
 }
 
 type Def = Omit<ParamDef, 'id'> & { id: string };
@@ -115,6 +119,20 @@ addModule('clock', 'clock', clockParams());
 for (let r = 0; r < NUM_ROUTES; r++) addModule(`route${r}`, 'route', routeParams(r));
 addModule('reso', 'resonator', resoParams());
 
+/* ---------- R channel (L/R per band, docs/lr-pro-band-2026-10-16.md) ----------
+ * The historic ids (band0.gain …, fbAllOn, fbAll) are the left channel. Each gets an R twin with
+ * the same range, appended here so every older index stays. Twins are never route targets of their
+ * own: a route onto the L id carries a channel choice (L+R, L, R, INV) instead (shared/mod/rules.ts). */
+/** first index of the R twins (they run to the end of PARAMS) */
+export const R_FIRST = PARAMS.length;
+const STEREO_IDS = ['fbAllOn', 'fbAll'];
+for (let b = 0; b < NUM_BANDS; b++) for (const k of ['gain', 'res', 'fb']) STEREO_IDS.push(`band${b}.${k}`);
+for (const id of STEREO_IDS) {
+  const l = PARAMS.find((p) => p.id === id)!;
+  l.twin = PARAMS.length;
+  PARAMS.push({ ...l, id: `${id}R`, label: `${l.label} R`, index: PARAMS.length, modulatable: false, twin: undefined, twinOf: l.index });
+}
+
 export const NUM_PARAMS = PARAMS.length;
 
 /** Global param indices (stable, use in the worklet). */
@@ -129,8 +147,21 @@ export function bandParamId(band: number, key: BandParamKey): string {
 export function bandParamIndex(band: number, key: BandParamKey): number {
   return NUM_GLOBAL + band * PARAMS_PER_BAND + BAND_PARAM_KEYS.indexOf(key);
 }
+/** R twin of a band param (the plain id is L) */
+export function bandParamIdR(band: number, key: BandParamKey): string {
+  return `${bandParamId(band, key)}R`;
+}
+export function bandParamIndexR(band: number, key: BandParamKey): number {
+  return PARAMS[bandParamIndex(band, key)].twin!;
+}
 
 export const PARAM_BY_ID: Record<string, ParamSpec> = Object.fromEntries(PARAMS.map((p) => [p.id, p]));
+
+/** id of the R twin of an L param, undefined if it has none */
+export function twinId(id: string): string | undefined {
+  const t = PARAM_BY_ID[id]?.twin;
+  return t === undefined ? undefined : PARAMS[t].id;
+}
 
 /** index of a param id (throws on unknown ids: use at module load to cache indices) */
 export function paramIndex(id: string): number {

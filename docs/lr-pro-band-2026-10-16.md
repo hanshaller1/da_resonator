@@ -2,6 +2,19 @@
 
 Stand: 16.10.2026. Grundlage ist der Vorschlag in [antworten-2026-10-10.md](antworten-2026-10-10.md), Abschnitt 1, angepasst an den Stand nach dem DSP-Durchgang ([dsp-durchgang-2026-10-16.md](dsp-durchgang-2026-10-16.md)).
 
+## Entscheidung und Umsetzung
+
+**Gewählt: `1C 2A 3A 4A 5B`**, dazu R = L, RESET, RES RESET und FB RESET wie in Abschnitt 3 beschrieben. So ist es gebaut:
+
+- **Parameter:** Die bisherigen Ids sind L. Je Band kommen `bandN.gainR`, `bandN.resR`, `bandN.fbR` dazu, außerdem `fbAllOnR` und `fbAllR`. Sie hängen hinten an der Parameterliste, die alten Indizes bleiben. R-Werte sind keine eigenen Modulationsziele, die Kanalwahl sitzt auf der Route.
+- **Presets:** Format 4. Ein fehlender R-Wert übernimmt den L-Wert (auch nach der Umrechnung älterer Formate). Routen speichern `ch` nur, wenn es nicht L+R ist. Alle 12 Werks-Presets klingen gleich wie vorher (gerendert und verglichen, Abweichung höchstens 3·10⁻⁷).
+- **DSP:** Jeder Filter liest Pegel, RES und FB seines Kanals. Pegelausgleich, Feedback-Abgriff, COMMON und der FEEDBACK-Knopf rechnen je Kanal, FB ALL hat Schalter und AMT je Kanal. Damit die Rechenlast gleich bleibt, laufen die Gleitwege nur, solange sich ein Wert bewegt.
+- **Umschalter:** rechte Spalte unter SPREAD, mit R = L und RESET darunter.
+- **Anzeige:** Griff plus dünne Marke mit Buchstabe, Anzeige `−6.0|+3.0`, zweiter dünner Zeiger an den Knöpfen, halb leuchtende LED bei FB ALL, wenn nur ein Kanal an ist.
+- **FB-Register:** Kurve nach Umschalter, gestrichelte Linien für die anderen Kanäle, geteilter Ring je Bandknoten (links L, rechts R), RES RESET und FB RESET rechts in der Statuszeile.
+- **Routen:** Knopf L+R → L → R → INV in Routenliste, Modulations-Popup und Makro-Karte, nur bei Zielen mit L/R. Neue Routen übernehmen die Stellung des Umschalters.
+- **Tests:** `scripts/test-lr.mjs` (Pegel, RES, FB in BAND und COMMON, FB ALL, Routen L/R/INV, Umschalter-Hilfen); `scripts/test-presets.mjs` 2c (alte Presets ergeben R = L, eigene R-Werte und INV-Routen überstehen Speichern und Import).
+
 ## Vorweg
 
 **Hardware:**

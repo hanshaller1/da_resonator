@@ -95,7 +95,7 @@ const warnSpy = () => {
   check('2 v1 migration (flat param map)', ok, `name "${p.name}", warnings: ${parsed.warnings.join('; ')}`);
 }
 
-/* ---------- 2b. v2 → v3: Feedback All keeps its loop gain, routes onto it too; v3 stays as it is ---------- */
+/* ---------- 2b. v2 → v3: Feedback All keeps its loop gain, routes onto it too; the result stays as it is ---------- */
 {
   const P = importTs('src/shared/params.ts');
   const v2 = {
@@ -114,11 +114,38 @@ const warnSpy = () => {
   for (let b = 0; b < 10; b++) tap += P.feedbackTapGain(P.resToQ(b === 3 ? 0.03 : 0.45)) / 10;
   const k = 1 / (P.FB_ALL_LOOP_MAX * tap);
   const near = (a, b) => Math.abs(a - b) < 1e-5;
-  const conv = near(st.params.fbAll, 0.65 * k) && near(st.params['route0.depth'], 0.5 * k) && st.params['band4.res'] === Math.fround(0.45) && st.version === 3;
+  const conv = near(st.params.fbAll, 0.65 * k) && near(st.params['route0.depth'], 0.5 * k) && st.params['band4.res'] === Math.fround(0.45) && st.version === 4 && st.params.fbAllR === st.params.fbAll;
   const again = makeEngine();
   again.setState(st);
   const stable = J(again.getState()) === J(st);
-  check('2b v2 → v3 Feedback All scale, v3 untouched', conv && stable, `fbAll 0.65 → ${st.params.fbAll.toFixed(4)} (k ${k.toFixed(4)}), depth → ${st.params['route0.depth'].toFixed(4)}, reload stable ${stable}`);
+  check('2b v2 → v3 Feedback All scale (both channels), result untouched', conv && stable, `fbAll 0.65 → ${st.params.fbAll.toFixed(4)} (k ${k.toFixed(4)}), depth → ${st.params['route0.depth'].toFixed(4)}, reload stable ${stable}`);
+}
+
+/* ---------- 2c. v3 → v4 (L/R per band): R takes L; R values and route channels survive save and import ---------- */
+{
+  const v3 = {
+    format: 'da-resonator',
+    version: 3,
+    params: { 'band5.gain': -6, 'band5.res': 0.5, 'band5.fb': 0.4, fbAllOn: 1, fbAll: 0.6 },
+    routes: [{ slot: 0, source: 'lfo1', target: 'band5.gain' }],
+    triggers: [],
+    modules: {},
+  };
+  const e = makeEngine();
+  e.setState(v3);
+  const st = e.getState();
+  const linked = st.params['band5.gainR'] === st.params['band5.gain'] && st.params['band5.resR'] === st.params['band5.res'] && st.params['band5.fbR'] === st.params['band5.fb'] && st.params.fbAllOnR === 1 && st.params.fbAllR === st.params.fbAll && st.routes[0].ch === undefined;
+  // a v4 sound with its own R values and an INV route
+  const v4 = { ...st, params: { ...st.params, 'band5.gainR': 3, 'band5.fbR': 0 }, routes: [{ slot: 0, source: 'lfo1', target: 'band5.gain', ch: 'INV' }] };
+  const e2 = makeEngine();
+  e2.setState(v4);
+  const st2 = e2.getState();
+  const own = st2.params['band5.gainR'] === 3 && st2.params['band5.fbR'] === 0 && st2.params['band5.gain'] === -6 && st2.routes[0].ch === 'INV' && e2.mod.routes()[0].ch === 'INV';
+  // a preset file with a partial v4 sound (R missing) and a bogus channel
+  const imp = IO.sanitizeSnapshot({ format: 'da-resonator', version: 4, params: { 'band2.gain': -12, 'band3.gainR': 6 }, routes: [{ slot: 1, source: 'lfo2', target: 'band2.res', ch: 'R' }, { slot: 2, source: 'lfo3', target: 'mix', ch: 'L' }, { slot: 3, source: 'lfo4', target: 'band4.fb', ch: 'XX' }] });
+  const chOf = (slot) => imp.routes.find((r) => r.slot === slot)?.ch;
+  const imported = imp.params['band2.gainR'] === -12 && imp.params['band3.gainR'] === 6 && imp.params['band3.gain'] === 0 && chOf(1) === 'R' && chOf(2) === undefined && chOf(3) === undefined;
+  check('2c v3 → v4: R = L; own R values and route channels kept', linked && own && imported, `linked ${linked}, own R + INV route ${own}, import ${imported}`);
 }
 
 /* ---------- 3. import validation: broken input never throws, only reports ---------- */

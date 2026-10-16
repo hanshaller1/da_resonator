@@ -85,6 +85,12 @@
 .mc-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--sp-2)); padding: 0 var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--c-raised) transparent; }
 .mc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .mc-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); }
+.mc-row.has-ch { grid-template-columns: minmax(0, 1fr) auto auto; }
+/* channel of a route onto a band value: narrow card, so L+R (the default) shows only on hover / focus */
+.mc-row .route-ch { min-width: 0; height: 15px; padding: 0 2px; letter-spacing: 0; }
+.mc-row .route-ch:not(.is-split) { display: none; }
+.mc-row:hover .route-ch,
+.mc-row:focus-within .route-ch { display: inline-block; }
 .mc-target {
   min-width: 0;
   padding: 1px 0;

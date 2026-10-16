@@ -170,12 +170,12 @@ export function buildTabs(engine: EngineAPI, notify: Notify): { tabRow: HTMLElem
     led('dyn', anyOn(['dyn.on']));
     led('env', anyOn(['ef1.on', 'ef2.on', 'ef3.on', 'ef4.on']));
     led('lfo', anyOn(['lfo1.on', 'lfo2.on', 'lfo3.on', 'lfo4.on']));
-    led('fb', anyOn(['fbAllOn']) || Array.from({ length: 10 }, (_, b) => p.get(`band${b}.fb`) > 0.02).some(Boolean));
+    led('fb', anyOn(['fbAllOn', 'fbAllOnR']) || Array.from({ length: 10 }, (_, b) => Math.max(p.get(`band${b}.fb`), p.get(`band${b}.fbR`)) > 0.02).some(Boolean));
     led('macro', engine.mod.routes().some((r) => r.source.startsWith('macro')));
   };
   syncLeds();
   p.subscribeAll((id) => {
-    if (/\.on$|^fbAllOn$|^band\d\.fb$/.test(id)) syncLeds();
+    if (/\.on$|^fbAllOnR?$|^band\d\.fbR?$/.test(id)) syncLeds();
   });
   engine.mod.onChange(syncLeds);
 

@@ -17,6 +17,12 @@ const bi = (b, k) => NG + b * 3 + ['gain', 'res', 'fb'].indexOf(k);
 const NUM_PARAMS = NG + NB * 3;
 
 /* ---------- bundle + load ---------- */
+const FULL = (() => {
+  const c = buildSync({ entryPoints: [path.join(root, 'src/shared/params.ts')], bundle: true, write: false, format: 'cjs', platform: 'neutral', target: 'es2020' }).outputFiles[0].text;
+  const module = { exports: {} };
+  new Function('module', 'exports', c)(module, module.exports);
+  return module.exports;
+})();
 const code = buildSync({
   entryPoints: [path.join(root, 'src/dsp/resonator.worklet.ts')],
   bundle: true, write: false, format: 'iife', platform: 'neutral', target: 'es2020',
@@ -45,6 +51,19 @@ function loadProcessor() {
   const names = Object.keys(registry);
   if (names.length !== 1) throw new Error('expected one registered processor, got ' + names);
   const proc = new registry[names[0]]({ numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  // the values here are the resonator's historic layout (left channel since L/R per band): fill the
+  // rest with defaults and copy every L value onto its R twin, like an older preset is loaded
+  const handle = proc.port.onmessage;
+  proc.port.onmessage = (e) => {
+    const d = e?.data;
+    if (d && d.type === 'params' && d.values) {
+      const v = FULL.defaultValues();
+      v.set(d.values.subarray(0, Math.min(d.values.length, v.length)));
+      for (const p of FULL.PARAMS) if (p.twinOf !== undefined) v[p.index] = v[p.twinOf];
+      return handle({ data: { ...d, values: v } });
+    }
+    return handle(e);
+  };
   return { proc, name: names[0] };
 }
 

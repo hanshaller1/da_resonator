@@ -15,6 +15,7 @@
 .rl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .rl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px 20px; align-items: center; gap: var(--sp-3); padding: 2px var(--sp-2) 2px 0; border-radius: var(--r-sm); }
 .rl-row:hover { background: var(--c-panel-2); }
+.rl-row.has-ch { grid-template-columns: minmax(0, 1fr) auto auto 44px 20px; }
 .rl-row .knob--sm { --knob-size: 26px; }
 .rl-target { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; padding: 2px var(--sp-2); border: 0; background: none; color: var(--c-text); text-align: left; cursor: pointer; border-radius: var(--r-xs); }
 .rl-target:hover .rl-label { text-decoration: underline; text-underline-offset: 2px; }

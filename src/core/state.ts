@@ -1,10 +1,11 @@
 /** Snapshot format (presets) and migration from older formats. */
 import { FB_ALL_LOOP_MAX, FB_ALL_LOOP_MAX_V2, NUM_BANDS, PARAMS, RES_DEFAULT_V2, bandParamId, dbToGain, feedbackTapGain, resToQ } from '../shared/params';
+import { ROUTE_CHANNELS } from '../shared/mod/rules';
 import type { ModController } from './ModController';
 import type { ParamStore } from './ParamStore';
 import type { EngineSnapshot, StateProvider, Unsubscribe } from './types';
 
-export const SNAPSHOT_VERSION = 3;
+export const SNAPSHOT_VERSION = 4;
 
 export function isSnapshot(s: unknown): s is EngineSnapshot {
   return !!s && typeof s === 'object' && (s as EngineSnapshot).format === 'da-resonator';
@@ -14,7 +15,9 @@ export function isSnapshot(s: unknown): s is EngineSnapshot {
  * Bring any supported input to the current format.
  * v1: flat { paramId: value } (resonator params only, no routes).
  * v2: before the DSP walkthrough of 2026-10-16 (narrow default bands, old Feedback All scale).
- * Params missing from the input fall back to the defaults of its version.
+ * v3: before L/R per band (2026-10-16): no R values.
+ * Params missing from the input fall back to the defaults of its version; a missing R value takes
+ * the value of its L param (any version, so sparse presets stay linked).
  */
 export function migrateSnapshot(input: unknown): EngineSnapshot {
   let src: Partial<EngineSnapshot>;
@@ -28,13 +31,23 @@ export function migrateSnapshot(input: unknown): EngineSnapshot {
   } else throw new Error('not a resonator snapshot');
   const params: Record<string, number> = {};
   const old = version < 3;
+  const given = (id: string) => {
+    const v = src.params?.[id];
+    return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  };
   for (const p of PARAMS) {
-    const v = src.params?.[p.id];
+    if (p.twinOf !== undefined) continue;
     const def = old && p.group === 'band' && p.id.endsWith('.res') ? RES_DEFAULT_V2 : p.def;
-    params[p.id] = typeof v === 'number' && Number.isFinite(v) ? v : def;
+    params[p.id] = given(p.id) ?? def;
   }
-  const routes = Array.isArray(src.routes) ? src.routes.filter((r) => r && typeof r.source === 'string' && typeof r.target === 'string') : [];
+  const routes = Array.isArray(src.routes)
+    ? src.routes
+        .filter((r) => r && typeof r.source === 'string' && typeof r.target === 'string')
+        .map((r) => (r.ch === undefined || ROUTE_CHANNELS.includes(r.ch) ? r : { slot: r.slot, source: r.source, target: r.target }))
+    : [];
   if (old) migrateFbAllV2(params, routes);
+  // after the L migrations, so an unlinked older preset converts both channels alike
+  for (const p of PARAMS) if (p.twinOf !== undefined) params[p.id] = given(p.id) ?? params[PARAMS[p.twinOf].id];
   return {
     format: 'da-resonator',
     version: SNAPSHOT_VERSION,
@@ -93,7 +106,7 @@ export class StateHub {
       format: 'da-resonator',
       version: SNAPSHOT_VERSION,
       params: this.params.getState(),
-      routes: this.mod.routes().map((r) => ({ slot: r.slot, source: r.source, target: r.target })),
+      routes: this.mod.routes().map((r) => (r.ch === 'LR' ? { slot: r.slot, source: r.source, target: r.target } : { slot: r.slot, source: r.source, target: r.target, ch: r.ch })),
       triggers: this.mod.triggerRoutes(),
       modules,
     };

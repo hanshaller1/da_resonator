@@ -8,11 +8,13 @@ import '../../styles/tabs/macro.css';
 import type { EngineAPI, RouteInfo } from '../../core/types';
 import { NUM_MACROS } from '../../shared/paramdefs/modules';
 import { PARAM_BY_ID, formatValue } from '../../shared/params';
+import { newRouteChannel } from '../channel';
 import { Knob } from '../components/knob';
 import { ParamField } from '../components/paramField';
 import { SourceChip } from '../components/sourceChip';
 import { h } from '../dom';
 import { showBubble } from '../mod/feedback';
+import { routeChannelButton } from '../mod/routeChannel';
 import { MACRO_NAME_MAX, defaultMacroName, formatDepth, parseMacroNames, setSourceName, targetGroups, targetLabel } from '../mod/labels';
 import { colLeft } from '../shell/bandAxis';
 import { nav, registerTab } from '../shell/tabs';
@@ -35,6 +37,7 @@ class TargetList {
   readonly el = h('ul', { class: 'mc-list' });
   private add = h('select', { class: 'mc-add', 'aria-label': 'Add target' });
   private fields: ParamField[] = [];
+  private offs: (() => void)[] = [];
 
   constructor(
     private engine: EngineAPI,
@@ -45,7 +48,7 @@ class TargetList {
       const tgt = this.add.value;
       this.add.value = '';
       if (!tgt) return;
-      const r = engine.mod.addRoute(source, tgt, 0.5);
+      const r = engine.mod.addRoute(source, tgt, 0.5, newRouteChannel(tgt));
       if ('ok' in r && !r.ok) showBubble(this.add, r.reason, 'warn', 2200);
     });
   }
@@ -58,6 +61,7 @@ class TargetList {
     const { mod, params } = this.engine;
     for (const f of this.fields) f.destroy();
     this.fields = [];
+    this.offs.splice(0).forEach((u) => u());
     const all = mod.routes();
     const routes = all.filter((r) => r.source === this.source);
     this.el.replaceChildren(...routes.map((r) => this.row(r, all)));
@@ -83,7 +87,9 @@ class TargetList {
     });
     const rm = h('button', { type: 'button', class: 'mc-remove', 'aria-label': `Remove ${this.name()} → ${full}`, title: 'Remove' }, '✕');
     rm.addEventListener('click', () => mod.removeRoute(r.slot));
-    return h('li', { class: 'mc-row' }, target, depth.el, rm);
+    const ch = routeChannelButton(mod, r);
+    if (ch) this.offs.push(ch.dispose);
+    return h('li', { class: ch ? 'mc-row has-ch' : 'mc-row' }, target, ch?.el ?? null, depth.el, rm);
   }
 }
 

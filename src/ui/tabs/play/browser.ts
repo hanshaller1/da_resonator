@@ -33,7 +33,7 @@ function soundSummary(engine: EngineAPI): { label: string; on: boolean }[] {
   const anyOn = (ids: string[]) => ids.some((x) => p.get(x) >= 0.5);
   const n = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => `${prefix}${i + 1}.on`);
   return [
-    { label: 'FB', on: p.get('fbAllOn') >= 0.5 || Array.from({ length: 10 }, (_, b) => p.get(`band${b}.fb`) > 0.02).some(Boolean) },
+    { label: 'FB', on: anyOn(['fbAllOn', 'fbAllOnR']) || Array.from({ length: 10 }, (_, b) => Math.max(p.get(`band${b}.fb`), p.get(`band${b}.fbR`)) > 0.02).some(Boolean) },
     { label: 'FILTER', on: anyOn(['filterPre.on', 'filterPost.on']) },
     { label: 'CLK MOD', on: anyOn(n('cmod', 2)) },
     { label: 'DYN EQ', on: anyOn(['dyn.on']) },

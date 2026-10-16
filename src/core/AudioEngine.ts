@@ -1,6 +1,6 @@
 import workletCode from '../dsp/resonator.worklet.ts?worklet';
 import { WORKLET_NAME, type FromWorklet, type MeterFrame, type ToWorklet } from '../shared/messages';
-import { NUM_BANDS, bandParamId } from '../shared/params';
+import { NUM_BANDS, bandParamId, bandParamIdR } from '../shared/params';
 import { Emitter } from './Emitter';
 import { InputDevices, cleanLabel, inputAllowedHere, pageStorage } from './inputs';
 import { InsertChain } from './InsertChain';
@@ -443,9 +443,13 @@ export class AudioEngine implements EngineAPI {
   }
 
   panic(): void {
-    // every band's feedback to 0 and Feedback All off (its amount is kept)
-    for (let b = 0; b < NUM_BANDS; b++) this.params.set(bandParamId(b, 'fb'), 0);
+    // every band's feedback to 0 and Feedback All off (its amount is kept), in both channels
+    for (let b = 0; b < NUM_BANDS; b++) {
+      this.params.set(bandParamId(b, 'fb'), 0);
+      this.params.set(bandParamIdR(b, 'fb'), 0);
+    }
     this.params.set('fbAllOn', 0);
+    this.params.set('fbAllOnR', 0);
     // the new values reach the worklet before the reset, so the loops restart without feedback
     this.flushParams(false);
     this.post({ type: 'reset' });

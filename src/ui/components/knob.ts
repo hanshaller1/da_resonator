@@ -1,4 +1,5 @@
 import type { ParamStoreAPI } from '../../core/types';
+import { twinId } from '../../shared/params';
 import { h, s } from '../dom';
 import { ParamControl, type ParamControlOptions } from './paramControl';
 
@@ -50,6 +51,8 @@ export class Knob extends ParamControl {
   private modDot: SVGCircleElement;
   private depthArc: SVGPathElement;
   private pointer: SVGGElement;
+  /** L/R pairs: thin pointers of the channel(s) the main pointer does not show */
+  private pairPointers: SVGGElement[] = [];
   private valueEl: HTMLSpanElement;
   private nameEl: HTMLSpanElement | null = null;
 
@@ -63,6 +66,7 @@ export class Knob extends ParamControl {
     this.depthArc = s('path', { class: 'knob-depth' });
     this.modDot = s('circle', { class: 'knob-mod-dot', r: 1.8, cx: C, cy: C });
     this.pointer = s('g', { class: 'knob-pointer' }, s('line', { x1: C, y1: C - 6.5, x2: C, y2: C - 13 }));
+    if (twinId(id)) this.pairPointers = [0, 1].map(() => s('g', { class: 'knob-pair', visibility: 'hidden' }, s('line', { x1: C, y1: C - 4, x2: C, y2: C - R_TRACK - 2 })));
 
     const ticks = s('g', { class: 'knob-ticks' });
     const tickAt = this.bipolar ? [0, 0.5, 1] : [0, 1];
@@ -83,6 +87,7 @@ export class Knob extends ParamControl {
       s('circle', { class: 'knob-cap-shadow', cx: C, cy: C + 0.8, r: 14.6 }),
       s('circle', { class: 'knob-cap', cx: C, cy: C, r: 14 }),
       s('circle', { class: 'knob-cap-sheen', cx: C, cy: C, r: 13.2 }),
+      ...this.pairPointers,
       this.pointer,
       this.modDot,
     );
@@ -116,6 +121,14 @@ export class Knob extends ParamControl {
     this.valueArc.setAttribute('d', arc(R_TRACK, from, deg));
     this.pointer.setAttribute('transform', `rotate(${deg.toFixed(2)} ${C} ${C})`);
     this.valueEl.textContent = this.valueText;
+  }
+
+  protected override renderPair(marks: { ch: 'L' | 'R'; norm: number }[]): void {
+    this.pairPointers.forEach((g, k) => {
+      const m = marks[k];
+      g.setAttribute('visibility', m ? 'visible' : 'hidden');
+      if (m) g.setAttribute('transform', `rotate(${normToDeg(m.norm).toFixed(2)} ${C} ${C})`);
+    });
   }
 
   protected override renderDepth(range: [number, number] | null): void {

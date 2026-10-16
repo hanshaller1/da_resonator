@@ -14,6 +14,14 @@
  *      ─► (back to the band inputs, 1-sample delay)
  *   out = safetyClip( (dry·cos(mix·π/2) + wet·sin(mix·π/2)) · outputGain ), crossfaded with dry by bypass.
  *
+ * ─── L/R per band (docs/lr-pro-band-2026-10-16.md) ────────────────────────────
+ *   Every filter reads its own level, RES and FB: slot i = band·2 + channel (L = the historic ids,
+ *   R = their twins band<n>.gainR / .resR / .fbR, appended after R_FIRST). Feedback All has its own
+ *   switch and amount per channel (fbAllOn / fbAll, fbAllOnR / fbAllR); TONE is shared. Makeup, tap
+ *   level, the COMMON route and the FEEDBACK knob work per slot. Band dynamics stay linked per band.
+ *   A route carries a channel (L+R, L, R, INV = R gets the negative offset); ModEngine writes it onto
+ *   the L param and/or its twin.
+ *
  * ─── Mappings ─────────────────────────────────────────────────────────────────
  *  Band filter : Zavalishin TPT state-variable filter, output = k·BP (k = 1/Q), i.e. unity gain at the
  *                centre for every Q (constant-peak form). 2nd-order skirts (≈ hardware's ~17 dB/dec).
@@ -96,10 +104,13 @@ import {
   BAND_FREQS,
   FB_ALL_LOOP_MAX,
   NUM_BANDS,
+  NUM_PARAMS,
   NUM_RESONATOR_PARAMS,
   G,
+  R_FIRST,
   RES_KNOB_FEEDBACK,
   bandParamIndex,
+  bandParamIndexR,
   dbToGain,
   fbKnobFactor,
   feedbackTapGain,
@@ -128,6 +139,9 @@ declare const sampleRate: number;
 /* ---------- constants ---------- */
 const NB = NUM_BANDS;
 const NS = NB * 2; // band × channel filter slots, index = b*2 + ch
+const SETTLE_EPS = 1e-7; // a per-slot glide this close to its target has arrived (bandsSettled)
+const I_FBALL_R = paramIndex('fbAllR'); // Feedback All of the right channel (L/R per band)
+const I_FBALLON_R = paramIndex('fbAllOnR');
 const SUB = 32; // coefficient / slow-param update interval (samples)
 const Q_MIN = 0.6;
 const Q_RANGE_LN = Math.log(200); // Q = 0.6 * 200^r
@@ -177,8 +191,8 @@ function makeRng(seed: number) {
 }
 
 /* global param slots inside the smoothed arrays */
-const S_IN = 0, S_ANALOG = 1, S_RESOFF = 2, S_FBALL = 3, S_TONE = 4, S_SPREAD = 5, S_DRY = 6, S_WET = 7, S_OUT = 8;
-const NUM_GS = 9;
+const S_IN = 0, S_ANALOG = 1, S_RESOFF = 2, S_FBALL = 3, S_TONE = 4, S_SPREAD = 5, S_DRY = 6, S_WET = 7, S_OUT = 8, S_FBALLR = 9;
+const NUM_GS = 10;
 
 /** smoothing time constants: unmodulated / modulated params */
 const TAU_SLOW = 0.02;
@@ -191,27 +205,31 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private appliedVersion = -1;
   // per-slot smoothing coefficients (fast for modulated params)
   private gA = new Float64Array(NUM_GS);
-  private bGainA = new Float64Array(NB);
-  private bFbA = new Float64Array(NB);
-  private bResA = new Float64Array(NB);
+  private bGainA = new Float64Array(NS);
+  private bFbA = new Float64Array(NS);
+  private bResA = new Float64Array(NS);
+  // param index of every slot's level, res and fb (slot b·2 = L: the historic band ids, b·2+1 = R: their twins)
+  private iGain = new Int32Array(NS);
+  private iRes = new Int32Array(NS);
+  private iFb = new Int32Array(NS);
   private preL = new Float32Array(MAX_BLOCK);
   private preR = new Float32Array(MAX_BLOCK);
 
   // smoothed globals (current / target)
   private gCur = new Float64Array(NUM_GS);
   private gTgt = new Float64Array(NUM_GS);
-  // smoothed per-band: linear fader gain, fb amount, res
-  private bGainCur = new Float64Array(NB);
-  private bGainTgt = new Float64Array(NB);
-  private bFbCur = new Float64Array(NB);
-  private bFbTgt = new Float64Array(NB);
-  private bResCur = new Float64Array(NB);
-  private bResTgt = new Float64Array(NB);
-  private bFbExcess = new Float64Array(NB); // loop gain - 1 at fb = 1 (depends on Q)
-  private bMakeup = new Float64Array(NB).fill(1); // target resonance peak gain (post loop)
-  private bMakeupCur = new Float64Array(NB).fill(1); // per-sample smoothed
-  private bTap = new Float64Array(NB).fill(1); // target level in the feedback taps (cut part of the makeup)
-  private bTapCur = new Float64Array(NB).fill(1); // per-sample smoothed
+  // smoothed per slot (band × channel): linear fader gain, fb amount, res
+  private bGainCur = new Float64Array(NS);
+  private bGainTgt = new Float64Array(NS);
+  private bFbCur = new Float64Array(NS);
+  private bFbTgt = new Float64Array(NS);
+  private bResCur = new Float64Array(NS);
+  private bResTgt = new Float64Array(NS);
+  private bFbExcess = new Float64Array(NS); // loop gain - 1 at fb = 1 (depends on Q)
+  private bMakeup = new Float64Array(NS).fill(1); // target resonance peak gain (post loop)
+  private bMakeupCur = new Float64Array(NS).fill(1); // per-sample smoothed
+  private bTap = new Float64Array(NS).fill(1); // target level in the feedback taps (cut part of the makeup)
+  private bTapCur = new Float64Array(NS).fill(1); // per-sample smoothed
   private bFbFactor = new Float64Array(NB).fill(1); // FEEDBACK knob: factor on the band's feedback
   private fbAllFactor = 1; // FEEDBACK knob: factor on Feedback All
   // resonance setup (CONFIG): feedback route, knob mode, curve, band weights
@@ -224,10 +242,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private knobCurve = 0;
   private knobWeight = -1;
   private kW = new Float64Array(NB).fill(1);
-  // per-sample band values shared by the filter solve and the output mix
-  private fbgA = new Float64Array(NB); // loop gain (signed)
-  private fgA = new Float64Array(NB); // post-fader gain (fader × dynamics)
-  private tapA = new Float64Array(NB); // smoothed tap level
+  // per-sample slot values shared by the filter solve and the output mix
+  private fbgA = new Float64Array(NS); // loop gain (signed)
+  private fgA = new Float64Array(NS); // post-fader gain (fader × dynamics)
+  private tapA = new Float64Array(NS); // smoothed tap level
   private yBuf = new Float64Array(NS); // band outputs of this sample
   // common route scratch (one channel at a time) and the envelope of its unlimited return per channel
   private tP = new Float64Array(NB);
@@ -237,9 +255,9 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private tA3 = new Float64Array(NB);
   private tW = new Float64Array(NB);
   private envF = new Float64Array(2);
-  // toggles (ramped 0..1)
-  private fbOnCur = 0;
-  private fbOnTgt = 0;
+  // toggles (ramped 0..1); Feedback All per channel
+  private fbOnCur = new Float64Array(2);
+  private fbOnTgt = new Float64Array(2);
   private bypCur = 0;
   private bypTgt = 0;
 
@@ -329,6 +347,14 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const fs = this.fs;
     this.mod = new ModEngine(fs, (m) => this.port.postMessage(m));
     for (let b = 0; b < NB; b++) this.iDynAmt.push(paramIndex(`band${b}.dyn`));
+    for (let b = 0; b < NB; b++) {
+      this.iGain[b * 2] = bandParamIndex(b, 'gain');
+      this.iGain[b * 2 + 1] = bandParamIndexR(b, 'gain');
+      this.iRes[b * 2] = bandParamIndex(b, 'res');
+      this.iRes[b * 2 + 1] = bandParamIndexR(b, 'res');
+      this.iFb[b * 2] = bandParamIndex(b, 'fb');
+      this.iFb[b * 2 + 1] = bandParamIndexR(b, 'fb');
+    }
     this.updateSmoothing();
     this.toggleStep = 1 / (0.01 * fs);
     this.dcR = 1 - (2 * Math.PI * 8) / fs;
@@ -396,12 +422,12 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const slowSub = 1 - Math.exp(-SUB / (TAU_SLOW * fs));
     const fastSub = 1 - Math.exp(-SUB / (TAU_FAST * fs));
     const m = this.mod.modulated;
-    const slotParam = [G.inputGain, G.analog, G.resOffset, G.fbAll, G.fbAllTone, G.spread, G.mix, G.mix, G.outputGain];
+    const slotParam = [G.inputGain, G.analog, G.resOffset, G.fbAll, G.fbAllTone, G.spread, G.mix, G.mix, G.outputGain, I_FBALL_R];
     for (let j = 0; j < NUM_GS; j++) this.gA[j] = m[slotParam[j]] ? fast : slow;
-    for (let b = 0; b < NB; b++) {
-      this.bGainA[b] = m[bandParamIndex(b, 'gain')] ? fast : slow;
-      this.bFbA[b] = m[bandParamIndex(b, 'fb')] ? fast : slow;
-      this.bResA[b] = m[bandParamIndex(b, 'res')] ? fastSub : slowSub;
+    for (let i = 0; i < NS; i++) {
+      this.bGainA[i] = m[this.iGain[i]] ? fast : slow;
+      this.bFbA[i] = m[this.iFb[i]] ? fast : slow;
+      this.bResA[i] = m[this.iRes[i]] ? fastSub : slowSub;
     }
     const slowDyn = 1 - Math.exp(-DYN_SUB / (TAU_SLOW * fs));
     const fastDyn = 1 - Math.exp(-DYN_SUB / (TAU_FAST * fs));
@@ -531,13 +557,15 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     t[S_ANALOG] = clamp(p[G.analog], 0, 1);
     t[S_RESOFF] = clamp(p[G.resOffset], -1, 1);
     t[S_FBALL] = clamp(p[G.fbAll], 0, 1) * FBALL_MAX;
+    t[S_FBALLR] = clamp(p[I_FBALL_R], 0, 1) * FBALL_MAX;
     t[S_TONE] = Math.log(clamp(p[G.fbAllTone], 200, 20000));
     t[S_SPREAD] = clamp(p[G.spread], 0, 1);
     const mix = clamp(p[G.mix], 0, 1);
     t[S_DRY] = Math.cos(mix * HALF_PI);
     t[S_WET] = Math.sin(mix * HALF_PI);
     t[S_OUT] = dbToGain(clamp(p[G.outputGain], -24, 12));
-    this.fbOnTgt = p[G.fbAllOn] >= 0.5 ? 1 : 0;
+    this.fbOnTgt[0] = p[G.fbAllOn] >= 0.5 ? 1 : 0;
+    this.fbOnTgt[1] = p[I_FBALLON_R] >= 0.5 ? 1 : 0;
     this.bypTgt = p[G.bypass] >= 0.5 ? 1 : 0;
     this.fbRoute = p[this.iRoute] >= 0.5 ? 1 : 0;
     this.knobMode = p[this.iKnob] >= 0.5 ? RES_KNOB_FEEDBACK : 0;
@@ -547,19 +575,48 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.knobWeight = w;
       for (let b = 0; b < NB; b++) this.kW[b] = resKnobWeight(b, w);
     }
-    for (let b = 0; b < NB; b++) {
-      this.bGainTgt[b] = dbToGain(p[bandParamIndex(b, 'gain')]);
-      this.bResTgt[b] = clamp(p[bandParamIndex(b, 'res')], 0, 1);
-      this.bFbTgt[b] = clamp(p[bandParamIndex(b, 'fb')], 0, 1);
+    for (let i = 0; i < NS; i++) {
+      this.bGainTgt[i] = dbToGain(p[this.iGain[i]]);
+      this.bResTgt[i] = clamp(p[this.iRes[i]], 0, 1);
+      this.bFbTgt[i] = clamp(p[this.iFb[i]], 0, 1);
     }
     if (snap) {
       this.gCur.set(t);
       this.bGainCur.set(this.bGainTgt);
       this.bResCur.set(this.bResTgt);
       this.bFbCur.set(this.bFbTgt);
-      this.fbOnCur = this.fbOnTgt;
+      this.fbOnCur.set(this.fbOnTgt);
       this.bypCur = this.bypTgt;
     }
+  }
+
+  /**
+   * true when every per-slot glide (level, fb, makeup, tap) has arrived: values within 1e-7 of their
+   * target are set onto it (−140 dB, inaudible), so the per-sample glides can stop.
+   */
+  private bandsSettled(): boolean {
+    const gc = this.bGainCur, gt = this.bGainTgt, fc = this.bFbCur, ft = this.bFbTgt;
+    const mc = this.bMakeupCur, mt = this.bMakeup, tc = this.bTapCur, tt = this.bTap;
+    let settled = true;
+    for (let i = 0; i < NS; i++) {
+      if (gc[i] !== gt[i]) {
+        if (Math.abs(gt[i] - gc[i]) < SETTLE_EPS) gc[i] = gt[i];
+        else settled = false;
+      }
+      if (fc[i] !== ft[i]) {
+        if (Math.abs(ft[i] - fc[i]) < SETTLE_EPS) fc[i] = ft[i];
+        else settled = false;
+      }
+      if (mc[i] !== mt[i]) {
+        if (Math.abs(mt[i] - mc[i]) < SETTLE_EPS) mc[i] = mt[i];
+        else settled = false;
+      }
+      if (tc[i] !== tt[i]) {
+        if (Math.abs(tt[i] - tc[i]) < SETTLE_EPS) tc[i] = tt[i];
+        else settled = false;
+      }
+    }
+    return settled;
   }
 
   private resetState() {
@@ -597,15 +654,16 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const driftSlew = 1 - Math.exp(-dt / 1.5);
     for (let b = 0; b < NB; b++) {
       const kb = knob * this.kW[b];
-      let r = this.bResCur[b] + (resMode ? kb : 0);
-      r = r < 0 ? 0 : r > 1 ? 1 : r;
-      const qNom = Q_MIN * Math.exp(r * Q_RANGE_LN);
-      this.bFbExcess[b] = 0.15 + 0.03 * qNom;
-      this.bMakeup[b] = resonanceMakeup(qNom);
-      this.bTap[b] = feedbackTapGain(qNom);
       this.bFbFactor[b] = resMode ? 1 : fbKnobFactor(kb);
       for (let ch = 0; ch < 2; ch++) {
         const i = b * 2 + ch;
+        // RES per channel (L/R per band): Q, loop excess, makeup and tap level per slot
+        let r = this.bResCur[i] + (resMode ? kb : 0);
+        r = r < 0 ? 0 : r > 1 ? 1 : r;
+        const qNom = Q_MIN * Math.exp(r * Q_RANGE_LN);
+        this.bFbExcess[i] = 0.15 + 0.03 * qNom;
+        this.bMakeup[i] = resonanceMakeup(qNom);
+        this.bTap[i] = feedbackTapGain(qNom);
         // flush denormal-range state
         if (Math.abs(this.ic1[i]) < 1e-25) this.ic1[i] = 0;
         if (Math.abs(this.ic2[i]) < 1e-25) this.ic2[i] = 0;
@@ -663,7 +721,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     /* --- modulation graph: effective values for this block --- */
     const mod = this.mod;
     mod.beginBlock(n);
-    if (mod.baseVersion !== this.appliedVersion || mod.anyModulated(0, NUM_RESONATOR_PARAMS)) {
+    if (mod.baseVersion !== this.appliedVersion || mod.anyModulated(0, NUM_RESONATOR_PARAMS) || mod.anyModulated(R_FIRST, NUM_PARAMS)) {
       this.appliedVersion = mod.baseVersion;
       this.applyParams(mod.eff, false);
     }
@@ -694,8 +752,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const mBandSq = this.mBandSq;
     const dcR = this.dcR;
     // hot scalars live in locals for the loop (written back at the end / before meter posts)
-    const fbOnTgt = this.fbOnTgt, bypTgt = this.bypTgt;
-    let fbOn = this.fbOnCur, byp = this.bypCur, sub = this.subCount, mc = this.meterCount;
+    const fbOnTgt0 = this.fbOnTgt[0], fbOnTgt1 = this.fbOnTgt[1], bypTgt = this.bypTgt;
+    let fbOn0 = this.fbOnCur[0], fbOn1 = this.fbOnCur[1], byp = this.bypCur, sub = this.subCount, mc = this.meterCount;
     const mInPk = this.mInPk, mOutPk = this.mOutPk;
     let inPk0 = mInPk[0], inPk1 = mInPk[1], outPk0 = mOutPk[0], outPk1 = mOutPk[1];
     let mHot = this.mHot;
@@ -707,16 +765,26 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     let dynOn = this.dynOnCur, dSub = this.dSub;
     const dGain = this.dG, dGStep = this.dGStep;
 
+    // the per-slot glides (level, fb, makeup, tap) run per sample only while one of them still moves;
+    // settled, the per-slot values are computed once per coefficient update (see bandsSettled)
+    let glide = !this.bandsSettled();
+    let needPre = true;
     for (let s = 0; s < n; s++) {
       /* --- parameter smoothing (per sample) --- */
       for (let j = 0; j < NUM_GS; j++) gCur[j] += (gTgt[j] - gCur[j]) * gA[j];
-      for (let b = 0; b < NB; b++) {
-        bGainCur[b] += (bGainTgt[b] - bGainCur[b]) * bGainA[b];
-        bFbCur[b] += (bFbTgt[b] - bFbCur[b]) * bFbA[b];
+      if (glide) {
+        for (let i = 0; i < NS; i++) {
+          bGainCur[i] += (bGainTgt[i] - bGainCur[i]) * bGainA[i];
+          bFbCur[i] += (bFbTgt[i] - bFbCur[i]) * bFbA[i];
+        }
       }
-      if (fbOn !== fbOnTgt) {
-        fbOn += fbOn < fbOnTgt ? tStep : -tStep;
-        if (Math.abs(fbOn - fbOnTgt) < tStep) fbOn = fbOnTgt;
+      if (fbOn0 !== fbOnTgt0) {
+        fbOn0 += fbOn0 < fbOnTgt0 ? tStep : -tStep;
+        if (Math.abs(fbOn0 - fbOnTgt0) < tStep) fbOn0 = fbOnTgt0;
+      }
+      if (fbOn1 !== fbOnTgt1) {
+        fbOn1 += fbOn1 < fbOnTgt1 ? tStep : -tStep;
+        if (Math.abs(fbOn1 - fbOnTgt1) < tStep) fbOn1 = fbOnTgt1;
       }
       if (byp !== bypTgt) {
         byp += byp < bypTgt ? tStep : -tStep;
@@ -725,9 +793,11 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       if (++sub >= SUB) {
         sub = 0;
         // resonance only feeds the coefficients, so it is smoothed at the coefficient rate (same τ)
-        for (let b = 0; b < NB; b++) bResCur[b] += (bResTgt[b] - bResCur[b]) * bResA[b];
+        for (let i = 0; i < NS; i++) bResCur[i] += (bResTgt[i] - bResCur[i]) * bResA[i];
         this.updateCoefs();
         faLpA = this.faLpA;
+        glide = !this.bandsSettled();
+        needPre = true;
       }
       if (dynAct) {
         if (dynOn !== dynOnTgt) {
@@ -770,33 +840,47 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       let faInL = 0, faInR = 0; // feedback tap: band sum after the faders, at tap level (no resonance lift)
       let hot = false;
 
-      /* --- per band: loop gain (FEEDBACK knob applied, left = inverted), post-fader gain, tap level --- */
+      /* --- per slot (band × channel): loop gain (FEEDBACK knob applied, left = inverted), post-fader gain, tap level --- */
       const fbgA = this.fbgA, fgA = this.fgA, tapA = this.tapA, yBuf = this.yBuf;
-      for (let b = 0; b < NB; b++) {
-        let fbRaw = bFbCur[b] * bFbFactor[b];
-        if (fbRaw > 1) fbRaw = 1;
-        else if (fbRaw < -1) fbRaw = -1;
-        const fa = fbRaw < 0 ? -fbRaw : fbRaw;
-        const gl = fa <= BAND_FB_EDGE ? fa * BAND_FB_SLOPE : 1 + ((fa - BAND_FB_EDGE) / (1 - BAND_FB_EDGE)) * this.bFbExcess[b];
-        fbgA[b] = fbRaw < 0 ? -gl : gl;
-        let fg = bGainCur[b];
-        if (dynAct) {
-          // band dynamics: after the band's own loop, before makeup and the taps (folded into the fader gain)
-          const g = dGain[b];
-          dGain[b] = g + dGStep[b];
-          fg *= g;
+      if (dynAct && !glide && !needPre) {
+        // settled, dynamics running: only the gain changes (loop gain and tap level are as computed last)
+        for (let b = 0; b < NB; b++) {
+          const dg = dGain[b];
+          dGain[b] = dg + dGStep[b];
+          fgA[b * 2] = bGainCur[b * 2] * dg;
+          fgA[b * 2 + 1] = bGainCur[b * 2 + 1] * dg;
         }
-        fgA[b] = fg;
-        tapA[b] = bTapCur[b] += (bTap[b] - bTapCur[b]) * 0.002;
+      } else if (glide || dynAct || needPre) {
+        needPre = false;
+        const bFbExcess = this.bFbExcess;
+        for (let b = 0; b < NB; b++) {
+          // band dynamics are stereo-linked: one gain per band, after the band's own loop, before makeup
+          // and the taps (folded into the fader gain)
+          let dg = 1;
+          if (dynAct) {
+            dg = dGain[b];
+            dGain[b] = dg + dGStep[b];
+          }
+          for (let i = b * 2; i < b * 2 + 2; i++) {
+            let fbRaw = bFbCur[i] * bFbFactor[b];
+            if (fbRaw > 1) fbRaw = 1;
+            else if (fbRaw < -1) fbRaw = -1;
+            const fa = fbRaw < 0 ? -fbRaw : fbRaw;
+            const gl = fa <= BAND_FB_EDGE ? fa * BAND_FB_SLOPE : 1 + ((fa - BAND_FB_EDGE) / (1 - BAND_FB_EDGE)) * bFbExcess[i];
+            fbgA[i] = fbRaw < 0 ? -gl : gl;
+            fgA[i] = dynAct ? bGainCur[i] * dg : bGainCur[i];
+            tapA[i] = glide ? (bTapCur[i] += (bTap[i] - bTapCur[i]) * 0.002) : bTapCur[i];
+          }
+        }
       }
 
       if (fbRoute === 0) {
         /* --- BAND route: every band feeds back into itself, before its fader --- */
         for (let b = 0; b < NB; b++) {
-          const fbg = fbgA[b];
-          const fbMag = fbg < 0 ? -fbg : fbg;
           for (let ch = 0; ch < 2; ch++) {
             const i = b * 2 + ch;
+            const fbg = fbgA[i];
+            const fbMag = fbg < 0 ? -fbg : fbg;
             const x = ch === 0 ? xL : xR;
             const k = cK[i];
             let a1 = cA1[i], a2 = cA2[i], a3 = cA3[i];
@@ -872,7 +956,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
             }
             const P = k * (a1 * c1 - a2 * c2);
             const B = k * a2;
-            const w = fbgA[b] * fgA[b] * tapA[b];
+            const w = fbgA[i] * fgA[i] * tapA[i];
             tP[b] = P;
             tB[b] = B;
             tA1[b] = a1;
@@ -925,17 +1009,20 @@ class ResonatorProcessor extends AudioWorkletProcessor {
 
       /* --- output: fader, taps, resonance makeup, spread --- */
       for (let b = 0; b < NB; b++) {
-        const fg = fgA[b];
-        let yL = yBuf[b * 2] * fg;
-        let yR = yBuf[b * 2 + 1] * fg;
-        const tp = tapA[b];
-        faInL += yL * tp;
-        faInR += yR * tp;
+        const iL = b * 2, iR = iL + 1;
+        let yL = yBuf[iL] * fgA[iL];
+        let yR = yBuf[iR] * fgA[iR];
+        faInL += yL * tapA[iL];
+        faInR += yR * tapA[iR];
         // resonance makeup (after the band's own loop, outside the feedback loops so their
         // self-oscillation edge does not move with resonance)
-        const mk = (bMakeupCur[b] += (bMakeup[b] - bMakeupCur[b]) * 0.002);
-        yL *= mk;
-        yR *= mk;
+        if (glide) {
+          yL *= bMakeupCur[iL] += (bMakeup[iL] - bMakeupCur[iL]) * 0.002;
+          yR *= bMakeupCur[iR] += (bMakeup[iR] - bMakeupCur[iR]) * 0.002;
+        } else {
+          yL *= bMakeupCur[iL];
+          yR *= bMakeupCur[iR];
+        }
         mBandSq[b] += 0.5 * (yL * yL + yR * yR);
         taps[TAP_BAND0 + b][s] = 0.5 * (yL + yR);
         // spread: mid panned, side faded
@@ -958,7 +1045,9 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       }
 
       /* --- Feedback All loop (one-sample delay) --- */
-      const faG = gCur[S_FBALL] * fbOn * this.fbAllFactor;
+      // per channel (L/R per band): its own switch and amount
+      const faG0 = gCur[S_FBALL] * fbOn0 * this.fbAllFactor;
+      const faG1 = gCur[S_FBALLR] * fbOn1 * this.fbAllFactor;
       const lpA = faLpA;
       {
         faLp[0] += (faInL - faLp[0]) * lpA;
@@ -970,17 +1059,19 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         faDcX[1] = faLp[1];
         faDcY[0] = h0;
         faDcY[1] = h1;
-        if (faG > 1e-6 || faG < -1e-6) {
-          // soft clip after the gain: the return never exceeds FBALL_CLIP_L
-          const r0 = faG * h0, r1 = faG * h1;
-          const u0 = r0 * FBALL_CLIP_INV, u1 = r1 * FBALL_CLIP_INV;
+        // soft clip after the gain: the return never exceeds FBALL_CLIP_L
+        if (faG0 > 1e-6 || faG0 < -1e-6) {
+          const r0 = faG0 * h0;
+          const u0 = r0 * FBALL_CLIP_INV;
           faRet[0] = r0 / Math.sqrt(1 + u0 * u0);
+          if (u0 * u0 > 0.5) hot = true;
+        } else faRet[0] = 0;
+        if (faG1 > 1e-6 || faG1 < -1e-6) {
+          const r1 = faG1 * h1;
+          const u1 = r1 * FBALL_CLIP_INV;
           faRet[1] = r1 / Math.sqrt(1 + u1 * u1);
-          if (u0 * u0 > 0.5 || u1 * u1 > 0.5) hot = true;
-        } else {
-          faRet[0] = 0;
-          faRet[1] = 0;
-        }
+          if (u1 * u1 > 0.5) hot = true;
+        } else faRet[1] = 0;
         if (!Number.isFinite(faLp[0] + faLp[1] + h0 + h1)) {
           faLp.fill(0); faDcX.fill(0); faDcY.fill(0); faRet.fill(0);
         }
@@ -1029,7 +1120,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.postMeters(mc, mHot);
       mc = 0; inPk0 = inPk1 = outPk0 = outPk1 = 0; mHot = false;
     }
-    this.fbOnCur = fbOn; this.bypCur = byp; this.subCount = sub; this.meterCount = mc;
+    this.fbOnCur[0] = fbOn0; this.fbOnCur[1] = fbOn1; this.bypCur = byp; this.subCount = sub; this.meterCount = mc;
     mInPk[0] = inPk0; mInPk[1] = inPk1; mOutPk[0] = outPk0; mOutPk[1] = outPk1;
     this.mHot = mHot;
     // extra output channels (if any) mirror the left

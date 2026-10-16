@@ -11,7 +11,7 @@ import type { EngineAPI, EngineState, MeterBusAPI, SourceInfo, SourceKind, Unsub
 import type { MeterFrame } from '../shared/messages';
 import type { ModConfig } from '../shared/mod/rules';
 import { MAX_BLOCK, ModEngine } from '../dsp/ModEngine';
-import { NUM_BANDS, bandParamId, dbToGain } from '../shared/params';
+import { NUM_BANDS, bandParamId, bandParamIdR, dbToGain } from '../shared/params';
 import { bandResFb } from './response';
 
 export interface MockEngineOptions {
@@ -239,8 +239,12 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
     },
     input,
     panic() {
-      for (let b = 0; b < NUM_BANDS; b++) params.set(bandParamId(b, 'fb'), 0);
+      for (let b = 0; b < NUM_BANDS; b++) {
+        params.set(bandParamId(b, 'fb'), 0);
+        params.set(bandParamIdR(b, 'fb'), 0);
+      }
       params.set('fbAllOn', 0);
+      params.set('fbAllOnR', 0);
       env.fill(0);
       smooth.fill(0);
     },

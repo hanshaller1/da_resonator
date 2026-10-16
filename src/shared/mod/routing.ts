@@ -4,7 +4,7 @@
  */
 import { NUM_ROUTES } from '../paramdefs/modules';
 import { PARAMS, PARAM_BY_ID, paramIndex } from '../params';
-import { checkRoute, checkTriggerRoute, type ModConfig, type RouteCheck, type RouteConfig, type TriggerRouteConfig } from './rules';
+import { ROUTE_CHANNELS, checkRoute, checkTriggerRoute, type ModConfig, type RouteChannel, type RouteCheck, type RouteConfig, type TriggerRouteConfig } from './rules';
 import { MAX_TRIGGER_ROUTES, SOURCES, SOURCE_BY_ID, TRIGGER_INS, TRIGGER_IN_BY_ID, TRIGGER_OUTS, TRIGGER_OUT_BY_ID } from './sources';
 
 export interface RouteInfo {
@@ -15,6 +15,8 @@ export interface RouteInfo {
   target: string;
   /** param id holding the depth (-1..1) */
   depthParam: string;
+  /** channel on a target with an R twin (L/R per band); always 'LR' on other targets */
+  ch: RouteChannel;
 }
 export interface TriggerRouteInfo {
   /** trigger output id ('cmod1.step') */
@@ -24,6 +26,12 @@ export interface TriggerRouteInfo {
 }
 
 export const routeDepthId = (slot: number) => `route${slot}.depth`;
+
+/** channel index for a target: anything but L+R only on params with an R twin */
+function channelIndex(dst: number, ch: RouteChannel | undefined): number {
+  const i = ch ? ROUTE_CHANNELS.indexOf(ch) : 0;
+  return PARAMS[dst]?.twin === undefined || i < 0 ? 0 : i;
+}
 
 export class ModRouting {
   private slots: (RouteConfig | null)[] = new Array(NUM_ROUTES).fill(null);
@@ -46,7 +54,7 @@ export class ModRouting {
   routes(): RouteInfo[] {
     const out: RouteInfo[] = [];
     this.slots.forEach((r, slot) => {
-      if (r) out.push({ slot, source: SOURCES[r.src].id, target: PARAMS[r.dst].id, depthParam: routeDepthId(slot) });
+      if (r) out.push({ slot, source: SOURCES[r.src].id, target: PARAMS[r.dst].id, depthParam: routeDepthId(slot), ch: ROUTE_CHANNELS[r.ch ?? 0] });
     });
     return out;
   }
@@ -63,13 +71,25 @@ export class ModRouting {
   }
 
   /** returns the new route, or the reason it was refused */
-  addRoute(source: string, target: string): RouteInfo | RouteCheck {
+  addRoute(source: string, target: string, ch: RouteChannel = 'LR'): RouteInfo | RouteCheck {
     const c = this.canRoute(source, target);
     if (!c.ok) return c;
     const slot = this.slots.indexOf(null);
-    this.slots[slot] = { slot, src: SOURCE_BY_ID[source].index, dst: paramIndex(target) };
+    const dst = paramIndex(target);
+    const ci = channelIndex(dst, ch);
+    this.slots[slot] = { slot, src: SOURCE_BY_ID[source].index, dst, ch: ci };
     this.emit();
-    return { slot, source, target, depthParam: routeDepthId(slot) };
+    return { slot, source, target, depthParam: routeDepthId(slot), ch: ROUTE_CHANNELS[ci] };
+  }
+
+  /** which channel(s) a route onto an L/R pair moves */
+  setRouteChannel(slot: number, ch: RouteChannel): void {
+    const r = this.slots[slot];
+    if (!r) return;
+    const ci = channelIndex(r.dst, ch);
+    if ((r.ch ?? 0) === ci) return;
+    this.slots[slot] = { ...r, ch: ci };
+    this.emit();
   }
 
   removeRoute(slot: number): void {
@@ -101,7 +121,7 @@ export class ModRouting {
   }
 
   /** replace everything (presets). Invalid / looping entries are dropped and returned. */
-  load(routes: { slot?: number; source: string; target: string }[], triggers: TriggerRouteInfo[] = []): string[] {
+  load(routes: { slot?: number; source: string; target: string; ch?: RouteChannel }[], triggers: TriggerRouteInfo[] = []): string[] {
     const dropped: string[] = [];
     this.slots = new Array(NUM_ROUTES).fill(null);
     this.trig = [];
@@ -113,7 +133,7 @@ export class ModRouting {
         dropped.push(`${r.source} → ${r.target}`);
         continue;
       }
-      this.slots[slot] = { slot, src: s.index, dst: p.index };
+      this.slots[slot] = { slot, src: s.index, dst: p.index, ch: channelIndex(p.index, r.ch) };
     }
     for (const t of triggers) {
       const o = TRIGGER_OUT_BY_ID[t.source];

@@ -1,8 +1,8 @@
 import type { ModFrame } from '../shared/messages';
 import { ModRouting, routeDepthId } from '../shared/mod/routing';
-import type { ModConfig, RouteCheck } from '../shared/mod/rules';
+import { routeHitsL, routeHitsR, type ModConfig, type RouteChannel, type RouteCheck } from '../shared/mod/rules';
 import { NUM_SOURCES, SOURCES, SOURCE_BY_ID, TRIGGER_INS, TRIGGER_OUTS } from '../shared/mod/sources';
-import { NUM_PARAMS } from '../shared/params';
+import { NUM_PARAMS, PARAMS } from '../shared/params';
 import { Emitter } from './Emitter';
 import type { ParamStore } from './ParamStore';
 import type { ModAPI, RouteInfo, Unsubscribe } from './types';
@@ -31,7 +31,11 @@ export class ModController implements ModAPI {
     this.routing.onChange(() => {
       const cfg = this.routing.config();
       const mask = new Uint8Array(NUM_PARAMS);
-      for (const r of cfg.routes) mask[r.dst] = 1;
+      for (const r of cfg.routes) {
+        const tw = PARAMS[r.dst].twin;
+        if (tw === undefined || routeHitsL(r.ch)) mask[r.dst] = 1;
+        if (tw !== undefined && routeHitsR(r.ch)) mask[tw] = 1;
+      }
       this.params.setModulated(mask);
       this.send(cfg);
       this.changed.emit();
@@ -50,12 +54,15 @@ export class ModController implements ModAPI {
   canRoute(source: string, target: string): RouteCheck {
     return this.routing.canRoute(source, target);
   }
-  addRoute(source: string, target: string, depth = 0.5) {
+  addRoute(source: string, target: string, depth = 0.5, ch: RouteChannel = 'LR') {
     const c = this.routing.canRoute(source, target);
     if (!c.ok) return c;
     // set the depth before the route goes live so it starts at the requested amount
     this.params.set(routeDepthId(this.nextFreeSlot()), Math.max(-1, Math.min(1, depth)));
-    return this.routing.addRoute(source, target);
+    return this.routing.addRoute(source, target, ch);
+  }
+  setRouteChannel(slot: number, ch: RouteChannel): void {
+    this.routing.setRouteChannel(slot, ch);
   }
   private nextFreeSlot(): number {
     const used = new Set(this.routing.routes().map((r) => r.slot));
