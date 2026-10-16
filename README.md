@@ -55,8 +55,8 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
   ist; PLAY/LOAD und CONFIG haben keine.
 - **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK (rechts in der Statuszeile). GENERAL: Source mit dem
-  Audio-Eingang unter LOAD FILE, Clock (nur Anzeige), Resonance mit Display darunter, Help. Der Audio-Zustand
-  steht im Kopf.
+  Audio-Eingang unter LOAD FILE, Clock (nur Anzeige) mit Spread darunter, Resonance mit Display darunter, Help.
+  Der Audio-Zustand steht im Kopf.
 - **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder Clock-Mod und jeder LFO wählt
   seinen Takt selbst (Clock-Mod INT · MIDI, LFO RATE · INT · MIDI; Parameter `cmodN.clk`, `lfoN.clk` und
   `lfoN.sync`, im Preset gespeichert).
@@ -112,12 +112,27 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
   - Unter der Überschrift RESET: **R = L** setzt alle R-Werte auf die von L. **FADER** setzt alle 10 Fader in L
     und R auf 0 dB. **RES/BAND** und **FB/BAND** darunter setzen RES bzw. FB aller Bänder in L und R zurück.
 - FB-Register: Die Kurve folgt dem Umschalter (L, R oder Mittel), weichen die Kanäle ab, zeigen gestrichelte
-  Linien die anderen. Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R.
+  Linien die anderen, und jeder Bandknoten nennt beide Werte (`L+2.9 R-8.6`). Das gilt auch für SPREAD.
+  Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R.
 - Jede Route auf einen Bandwert oder FB ALL AMT hat eine Kanalwahl (Knopf in Routenliste, Popup und
   Makro-Karte): L+R, L, R oder INV (R gegenläufig, ein LFO lässt das Band zwischen links und rechts wandern).
   Neue Routen übernehmen die Stellung des Umschalters.
 - PANIC setzt FB beider Kanäle auf 0 und schaltet FB ALL in beiden Kanälen aus.
 - Preset-Format 4. Fehlt ein R-Wert, gilt der von L: ältere Presets und die Werks-Presets klingen gleich.
+
+### SPREAD
+
+Stand 16.10.2026: SPREAD ist bipolar, die Mitte (12 Uhr, CC 64) lässt das Stereobild unverändert.
+CONFIG → GENERAL → Spread wählt, was er tut (Parameter `reso.spread`, im Preset gespeichert):
+
+- **ODD/EVEN** (Standard): Rechts der Mitte wandern die ungeraden Bänder nach links und die geraden nach rechts,
+  links der Mitte umgekehrt. Am Anschlag liegt jedes Band ganz auf einer Seite (+3 dB, gleiche Leistung).
+- **CLASSIC** (wie die Hardware im FB-Modus): Rechts der Mitte wird R lauter und L leiser, links umgekehrt,
+  am Anschlag ±6 dB. Der Wert ist eine Annahme, das Handbuch nennt keinen.
+- Der Wechsel zwischen beiden blendet weich über.
+- Preset-Format 5: Alte Werte (0 bis 100 %) liegen jetzt rechts der Mitte und klingen gleich. Routen auf SPREAD
+  haben halbe Tiefe, damit sie gleich weit ausschlagen. Ein LFO, der früher an der 0 stehen blieb, schwingt jetzt
+  in die Gegenrichtung weiter (Werks-Presets Breathing Bands und Singing Drone).
 - Band-Dynamik und Envelope Follower messen weiter beide Kanäle gemeinsam.
 
 ### Audio-Eingang (Synths, Elektron)

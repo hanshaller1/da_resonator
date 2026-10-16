@@ -5,7 +5,7 @@ import type { ModController } from './ModController';
 import type { ParamStore } from './ParamStore';
 import type { EngineSnapshot, StateProvider, Unsubscribe } from './types';
 
-export const SNAPSHOT_VERSION = 4;
+export const SNAPSHOT_VERSION = 5;
 
 export function isSnapshot(s: unknown): s is EngineSnapshot {
   return !!s && typeof s === 'object' && (s as EngineSnapshot).format === 'da-resonator';
@@ -16,6 +16,8 @@ export function isSnapshot(s: unknown): s is EngineSnapshot {
  * v1: flat { paramId: value } (resonator params only, no routes).
  * v2: before the DSP walkthrough of 2026-10-16 (narrow default bands, old Feedback All scale).
  * v3: before L/R per band (2026-10-16): no R values.
+ * v4: before SPREAD became bipolar (2026-10-16): spread ran 0..1, now −1..1 with the old values right
+ *     of centre. Its value stays; the depth of routes onto it is halved so they swing as far as before.
  * Params missing from the input fall back to the defaults of its version; a missing R value takes
  * the value of its L param (any version, so sparse presets stay linked).
  */
@@ -46,6 +48,13 @@ export function migrateSnapshot(input: unknown): EngineSnapshot {
         .map((r) => (r.ch === undefined || ROUTE_CHANNELS.includes(r.ch) ? r : { slot: r.slot, source: r.source, target: r.target }))
     : [];
   if (old) migrateFbAllV2(params, routes);
+  if (version < 5) {
+    // route depths are normalised: the doubled range of spread needs half the depth for the same swing
+    for (const r of routes) {
+      const id = `route${r.slot}.depth`;
+      if (r.target === 'spread' && typeof params[id] === 'number') params[id] *= 0.5;
+    }
+  }
   // after the L migrations, so an unlinked older preset converts both channels alike
   for (const p of PARAMS) if (p.twinOf !== undefined) params[p.id] = given(p.id) ?? params[PARAMS[p.twinOf].id];
   return {

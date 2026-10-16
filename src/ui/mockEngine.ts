@@ -72,7 +72,7 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
     mod.addRoute('lfo1', 'band5.res', 0.22);
     params.set('lfo2.on', 1);
     params.set('lfo2.rate', 0.11);
-    mod.addRoute('lfo2', 'spread', 0.25);
+    mod.addRoute('lfo2', 'spread', 0.125);
   }
 
   /* ---------- engine state ---------- */
@@ -182,7 +182,7 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
     const out = (bypass ? inSum : outSum * mix + inSum * (1 - mix)) * dbToGain(params.get('outputGain'));
     inS = inSum > inS ? inSum : inS * 0.8 + inSum * 0.2;
     outS = out > outS ? out : outS * 0.8 + out * 0.2;
-    const spread = params.get('spread');
+    const spread = Math.abs(params.get('spread'));
     // band dynamics: static curve on the simulated band levels (+ = reduction), 0 while off
     const dynGR = new Float32Array(NUM_BANDS);
     if (params.get('dyn.on') >= 0.5 && active) {

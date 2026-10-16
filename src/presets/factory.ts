@@ -1,8 +1,9 @@
 /**
  * Factory presets (read-only, shipped with the app).
  * Each entry lists only what differs from the defaults; everything else is the param default.
- * Written in the current snapshot format (v3): bands default to broad (RES 0.03), so presets made
- * for the narrow bands set RES 0.45 (NARROW); Feedback All self-oscillates from amount ≈ 0.75.
+ * Written in the current snapshot format (v5): bands default to broad (RES 0.03), so presets made
+ * for the narrow bands set RES 0.45 (NARROW); Feedback All self-oscillates from amount ≈ 0.75;
+ * SPREAD runs −1..1 (route depths onto it are half of what they were in v4).
  */
 import type { EngineSnapshot } from '../core/types';
 import { SNAPSHOT_VERSION } from '../core/state';
@@ -27,7 +28,7 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
     params: { analog: 0.7, 'lfo1.on': 1, 'lfo1.rate': 0.08, 'lfo2.on': 1, 'lfo2.shape': 1, 'lfo2.rate': 0.13, ...bands({ res: [0.5, 0.55, 0.6, 0.65, 0.6, 0.55, 0.5, 0.5, 0.45, 0.4] }) },
     mods: [
       ['lfo1', 'resOffset', 0.3],
-      ['lfo2', 'spread', 0.45],
+      ['lfo2', 'spread', 0.225],
       ['macro1', 'route0.depth', 0.35],
     ],
     macros: ['Breath'],
@@ -100,7 +101,7 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
     mods: [
       ['lfo1', 'band1.gain', 0.05],
       ['lfo2', 'band5.gain', 0.05],
-      ['lfo1', 'spread', 0.6],
+      ['lfo1', 'spread', 0.3],
     ],
   }),
   preset('Random Shimmer', 'Modulation', {
@@ -116,7 +117,7 @@ export const FACTORY_PRESETS: FactoryPresetDef[] = [
       ['lfo1', 'band7.res', 0.25],
       ['lfo2', 'band8.res', 0.25],
       ['lfo3', 'band9.gain', 0.4],
-      ['cmod1', 'spread', 0.4],
+      ['cmod1', 'spread', 0.2],
     ],
   }),
   preset('Macro Morph', 'Performance', {

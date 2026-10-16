@@ -74,7 +74,7 @@ const GLOBAL_DEFS: Def[] = [
   { id: 'fbAllOn',    label: 'Feedback All',   short: 'FB ALL',min: 0,   max: 1,     def: 0,    unit: '',   curve: 'toggle', modulatable: false },
   { id: 'fbAll',      label: 'FB All Amount',  short: 'FB',    min: 0,   max: 1,     def: 0.35, unit: '%',  curve: 'lin',    modulatable: true },
   { id: 'fbAllTone',  label: 'FB All Tone',    short: 'TONE',  min: 200, max: 20000, def: 6000, unit: 'Hz', curve: 'exp',    modulatable: true },
-  { id: 'spread',     label: 'Odd/Even Spread',short: 'SPRD',  min: 0,   max: 1,     def: 0,    unit: '%',  curve: 'lin',    modulatable: true },
+  { id: 'spread',     label: 'Spread',         short: 'SPRD',  min: -1,  max: 1,     def: 0,    unit: '%',  curve: 'lin',    modulatable: true },
   { id: 'mix',        label: 'Dry/Wet',        short: 'MIX',   min: 0,   max: 1,     def: 1,    unit: '%',  curve: 'lin',    modulatable: true },
   { id: 'outputGain', label: 'Output',         short: 'OUT',   min: -24, max: 12,    def: 0,    unit: 'dB', curve: 'lin',    modulatable: true },
   { id: 'bypass',     label: 'Bypass',         short: 'BYP',   min: 0,   max: 1,     def: 0,    unit: '',   curve: 'toggle', modulatable: false },
@@ -258,7 +258,7 @@ export function formatValue(p: ParamSpec, v: number): string {
   switch (p.unit) {
     case 'dB': return v <= FADER_MIN_DB && p.curve === 'fader' ? '-∞ dB' : `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
     case 'Hz': return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)} kHz` : v < 10 ? `${v.toFixed(2)} Hz` : `${Math.round(v)} Hz`;
-    case '%': return `${Math.round(v * 100)}%`;
+    case '%': return `${p.min < 0 && v >= 0.005 ? '+' : ''}${Math.round(v * 100)}%`;
     case 'ms': return v >= 1000 ? `${(v / 1000).toFixed(2)} s` : v < 10 ? `${v.toFixed(1)} ms` : `${Math.round(v)} ms`;
     case 'BPM': return `${v.toFixed(1)} BPM`;
     case ':1': return v < 1 ? `1:${(1 / v).toFixed(1)}` : `${v.toFixed(1)}:1`;

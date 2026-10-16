@@ -5,7 +5,7 @@
  *
  * ─── Signal flow (per channel; L and R have their own filters) ───────────────
  *   in ─► input gain (0..24 dB) ─► analog saturator ─► (+ noise floor) ─► (+ Feedback-All return)
- *      ─► 10 × [ TPT SVF bandpass with its feedback ─► band dynamics ] ─► fader ─► makeup ─► odd/even spread ─► Σ wet
+ *      ─► 10 × [ TPT SVF bandpass with its feedback ─► band dynamics ] ─► fader ─► makeup ─► spread ─► Σ wet
  *   Feedback route (CONFIG, param reso.route):
  *     BAND   : every band feeds back into its own input, before its fader.
  *     COMMON : the bands feed back after their faders (at tap level) into the shared input of all bands,
@@ -66,10 +66,13 @@
  *  Feedback All: loop gain = 1.3 × amount × (summed band taps, ≈ 1 at the band centres for any RES).
  *                With faders at 0 dB the loop reaches the edge of self-oscillation around amount ≈ 0.75.
  *                Bounded by a soft clipper after the gain, r/√(1+(r/0.7)²), so the return never exceeds 0.7.
- *  Spread      : per band, mid m = (L+R)/2, side d = (L−R)/2. Odd bands (1,3,5,7,9; index 0,2,…) pan m
- *                towards L, even bands towards R with centre-normalised equal-power gains
- *                gL = √2·cos θ, gR = √2·sin θ, θ = π/4 ∓ spread·π/4; the side part fades with (1−spread).
- *                spread 0 = untouched stereo, spread 1 = odd bands hard L, even hard R.
+ *  Spread      : −1..1, centre (0) = untouched stereo. CONFIG param reso.spread chooses the function:
+ *                ODD/EVEN: per band, mid m = (L+R)/2, side d = (L−R)/2. Right of centre odd bands (1,3,5,7,9;
+ *                index 0,2,…) pan m towards L and even bands towards R, left of centre the other way round,
+ *                with centre-normalised equal-power gains gNear = √2·cos θ, gFar = √2·sin θ,
+ *                θ = π/4 − |spread|·π/4; the side part fades with (1−|spread|). ±1 = bands hard L / hard R.
+ *                CLASSIC: the band sum of R × 10^(6·spread/20), of L × 10^(−6·spread/20) (±6 dB at the stops).
+ *                Switching the function crossfades the two (smoothed slot S_CLASSIC).
  *  Mix         : equal-power: dry·cos(mix·π/2) + wet·sin(mix·π/2). Dry = raw input (before input gain).
  *  Output      : outputGain dB, then a safety soft clip: linear up to 0.8, tanh knee to a ceiling of 1.0.
  *  Analog      : 0..1 scales input-saturator asymmetry/knee (rail level 2.5 → 1.5, bias 0.15), the damping above, fixed component tolerance
@@ -124,7 +127,7 @@ import {
   resKnobWeight,
   resonanceMakeup,
 } from '../shared/params';
-import { TAP_BAND0, TAP_IN, TAP_OUT, TAP_RES_OUT } from '../shared/paramdefs/modules';
+import { SPREAD_CLASSIC_DB, TAP_BAND0, TAP_IN, TAP_OUT, TAP_RES_OUT } from '../shared/paramdefs/modules';
 import type { ModConfig } from '../shared/mod/rules';
 import { SRC_DYN0 } from '../shared/mod/sources';
 import { MAX_BLOCK, ModEngine } from './ModEngine';
@@ -198,8 +201,10 @@ function makeRng(seed: number) {
 }
 
 /* global param slots inside the smoothed arrays */
-const S_IN = 0, S_ANALOG = 1, S_RESOFF = 2, S_FBALL = 3, S_TONE = 4, S_SPREAD = 5, S_DRY = 6, S_WET = 7, S_OUT = 8, S_FBALLR = 9;
-const NUM_GS = 10;
+const S_IN = 0, S_ANALOG = 1, S_RESOFF = 2, S_FBALL = 3, S_TONE = 4, S_SPREAD = 5, S_DRY = 6, S_WET = 7, S_OUT = 8, S_FBALLR = 9, S_CLASSIC = 10;
+const NUM_GS = 11;
+/** CLASSIC spread: ln-gain per unit spread (6 dB at the stops) */
+const CLASSIC_K = (SPREAD_CLASSIC_DB / 20) * Math.LN10;
 
 /** smoothing time constants: unmodulated / modulated params */
 const TAU_SLOW = 0.02;
@@ -244,6 +249,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private iKnob = paramIndex('reso.knob');
   private iCurve = paramIndex('reso.curve');
   private iWeight = paramIndex('reso.weight');
+  private iSpreadMode = paramIndex('reso.spread');
   private fbRoute = 0; // 0 = each band into itself before its fader, 1 = after the faders into the common input
   private knobMode = 0;
   private knobCurve = 0;
@@ -435,7 +441,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const slowSub = 1 - Math.exp(-SUB / (TAU_SLOW * fs));
     const fastSub = 1 - Math.exp(-SUB / (TAU_FAST * fs));
     const m = this.mod.modulated;
-    const slotParam = [G.inputGain, G.analog, G.resOffset, G.fbAll, G.fbAllTone, G.spread, G.mix, G.mix, G.outputGain, I_FBALL_R];
+    const slotParam = [G.inputGain, G.analog, G.resOffset, G.fbAll, G.fbAllTone, G.spread, G.mix, G.mix, G.outputGain, I_FBALL_R, this.iSpreadMode];
     for (let j = 0; j < NUM_GS; j++) this.gA[j] = m[slotParam[j]] ? fast : slow;
     for (let i = 0; i < NS; i++) {
       this.bGainA[i] = m[this.iGain[i]] ? fast : slow;
@@ -572,7 +578,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     t[S_FBALL] = clamp(p[G.fbAll], 0, 1) * FBALL_MAX;
     t[S_FBALLR] = clamp(p[I_FBALL_R], 0, 1) * FBALL_MAX;
     t[S_TONE] = Math.log(clamp(p[G.fbAllTone], 200, 20000));
-    t[S_SPREAD] = clamp(p[G.spread], 0, 1);
+    t[S_SPREAD] = clamp(p[G.spread], -1, 1);
+    t[S_CLASSIC] = p[this.iSpreadMode] >= 0.5 ? 1 : 0;
     const mix = clamp(p[G.mix], 0, 1);
     t[S_DRY] = Math.cos(mix * HALF_PI);
     t[S_WET] = Math.sin(mix * HALF_PI);
@@ -841,15 +848,19 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       const xL = (fastTanh(dryL * inGain * satInv + bias) - tb) * satNorm + this.noise() * noiseAmp + faRet[0];
       const xR = (fastTanh(dryR * inGain * satInv + bias) - tb) * satNorm + this.noise() * noiseAmp + faRet[1];
 
-      /* --- spread gains (odd bands → L, even → R) --- */
+      /* --- spread gains (ODD/EVEN: right of centre odd bands → L, even → R; left of centre mirrored) --- */
       const spr = gCur[S_SPREAD];
-      const th = spr * QUARTER_PI;
+      const sprA = spr < 0 ? -spr : spr;
+      const th = sprA * QUARTER_PI;
       const gNear = SQRT2 * Math.cos(QUARTER_PI - th); // gain on the side the band moves to
       const gFar = SQRT2 * Math.sin(QUARTER_PI - th);
-      const sideG = 1 - spr;
+      const gOddL = spr < 0 ? gFar : gNear; // odd bands (1-based); even bands get the mirror
+      const gOddR = spr < 0 ? gNear : gFar;
+      const sideG = 1 - sprA;
       const nlDamp = NL_DAMP * an;
 
       let wetL = 0, wetR = 0;
+      let sumL = 0, sumR = 0; // band sums without ODD/EVEN panning (for CLASSIC)
       let faInL = 0, faInR = 0; // feedback tap: band sum after the faders, at tap level (no resonance lift)
       let hot = false;
 
@@ -1038,17 +1049,26 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         }
         mBandSq[b] += 0.5 * (yL * yL + yR * yR);
         taps[TAP_BAND0 + b][s] = 0.5 * (yL + yR);
-        // spread: mid panned, side faded
+        sumL += yL;
+        sumR += yR;
+        // ODD/EVEN spread: mid panned, side faded
         const m = 0.5 * (yL + yR);
         const d = 0.5 * (yL - yR) * sideG;
         if ((b & 1) === 0) {
-          // odd band (1-based) → left
-          wetL += gNear * m + d;
-          wetR += gFar * m - d;
+          // odd band (1-based)
+          wetL += gOddL * m + d;
+          wetR += gOddR * m - d;
         } else {
-          wetL += gFar * m + d;
-          wetR += gNear * m - d;
+          wetL += gOddR * m + d;
+          wetR += gOddL * m - d;
         }
+      }
+      // CLASSIC spread: R up and L down right of centre (crossfaded while the function switches)
+      const cl = gCur[S_CLASSIC];
+      if (cl > 1e-6) {
+        const cg = Math.exp(spr * CLASSIC_K);
+        wetL += (sumL / cg - wetL) * cl;
+        wetR += (sumR * cg - wetR) * cl;
       }
 
       tapRes[s] = 0.5 * (wetL + wetR);

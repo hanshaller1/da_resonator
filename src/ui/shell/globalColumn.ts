@@ -76,7 +76,7 @@ export function buildGlobalColumn(engine: EngineAPI): HTMLElement {
   };
   syncResTitle();
   p.subscribe('reso.knob', syncResTitle);
-  const spread = new Knob(p, 'spread', { size: 'md', label: 'SPREAD', ariaLabel: 'Odd/even spread' });
+  const spread = new Knob(p, 'spread', { size: 'md', label: 'SPREAD', ariaLabel: 'Spread' });
   const fbOn = new ParamToggle(p, 'fbAllOn', { label: 'FB ALL', tone: 'fb', ariaLabel: 'Feedback all bands' });
   const fbAmt = new Knob(p, 'fbAll', { size: 'sm', tone: 'fb', label: 'AMT', ariaLabel: 'Feedback all amount' });
   const fbTone = new Knob(p, 'fbAllTone', { size: 'sm', tone: 'fb', label: 'TONE', ariaLabel: 'Feedback all tone' });

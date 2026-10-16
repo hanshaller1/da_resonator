@@ -44,7 +44,7 @@ function statusLine(engine: EngineAPI, el: HTMLElement): void {
   const allText = (on: string, amt: string) => (p.get(on) >= 0.5 ? `on ${val(amt)}` : 'off');
   const sync = () => {
     res.textContent = `${val('resOffset')}${p.get('reso.knob') >= 0.5 ? ' (feedback)' : ''}`;
-    spread.textContent = val('spread');
+    spread.textContent = `${val('spread')}${p.get('reso.spread') >= 0.5 ? ' (classic)' : ''}`;
     const l = allText('fbAllOn', 'fbAll');
     const r = allText('fbAllOnR', 'fbAllR');
     const anyOn = p.get('fbAllOn') >= 0.5 || p.get('fbAllOnR') >= 0.5;
@@ -90,6 +90,8 @@ registerTab({
     let resp = new Float32Array(0);
     // the channels the main line does not show, once L and R differ (thin, dashed)
     let others: { ch: 'L' | 'R'; resp: Float32Array }[] = [];
+    // the two channels (after SPREAD), for the per-band L and R values at the nodes
+    let models: [ResponseModel, ResponseModel] | null = null;
     const fbAmt = new Float32Array(NUM_BANDS * 2); // [b*2 + ch], signed feedback magnitude per channel
     const hot = new Uint8Array(NUM_BANDS);
     const viz = new VizCanvas(tab.viz, tab, frame, {
@@ -129,7 +131,9 @@ registerTab({
       model = main === 0 ? ml : main === 1 ? mr : readModel(p, undefined, 'both');
       for (let i = 0; i < resp.length; i++) resp[i] = respDbAt(spec.freqAt(i));
       others = [];
+      models = null;
       if (sameModel(ml, mr)) return;
+      models = [ml, mr];
       const add = (ch: 'L' | 'R', m: ResponseModel) => {
         const r = new Float32Array(resp.length);
         for (let i = 0; i < r.length; i++) r[i] = dbOf(m, spec.freqAt(i));
@@ -229,7 +233,11 @@ registerTab({
         g.fillStyle = pal.text3;
         g.textAlign = 'center';
         g.textBaseline = 'bottom';
-        g.fillText(`${db >= 0 ? '+' : ''}${db.toFixed(1)}`, x, y - 8);
+        const dbText = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
+        // L and R differ at this band (levels, RES, SPREAD …): both values
+        const dl = models ? dbOf(models[0], BAND_FREQS[b]) : db;
+        const dr = models ? dbOf(models[1], BAND_FREQS[b]) : db;
+        g.fillText(Math.abs(dl - dr) >= 0.05 ? `L${dbText(dl)} R${dbText(dr)}` : dbText(db), x, y - 8);
       }
       if (!running) cornerNote(g, pal, engine.state === 'error' ? 'AUDIO ERROR' : 'AUDIO OFF · RESPONSE ONLY');
     }

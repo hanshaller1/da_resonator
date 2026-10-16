@@ -1,4 +1,5 @@
 import type { ParamStoreAPI } from '../core/types';
+import { SPREAD_CLASSIC_DB } from '../shared/paramdefs/modules';
 import { BAND_FREQS, NUM_BANDS, bandParamId, bandParamIdR, dbToGain, fbKnobFactor, resKnobShape, resKnobWeight, resToQ, resonanceMakeup } from '../shared/params';
 
 /** which channel a picture shows (L/R per band): left, right, or both averaged */
@@ -53,16 +54,46 @@ function bandModel(p: ParamStoreAPI, i: number, ch: 0 | 1): [number, number] {
   return [dbToGain(p.get((ch === 0 ? bandParamId : bandParamIdR)(i, 'gain'))) * resonanceMakeup(resToQ(r)) * lift, bandQ(r, fb)];
 }
 
-/** the response of one channel, or of both averaged ('both': gains and Q of L and R averaged) */
+/**
+ * What SPREAD does to band i, as the DSP does it for an input that is the same in L and R:
+ * [gain in L, gain in R, power factor for the L+R average], from the band's L and R levels gl, gr.
+ * ODD/EVEN pans the band (equal power, so the average keeps its level); CLASSIC raises one channel
+ * and lowers the other.
+ */
+function spreadGains(p: ParamStoreAPI, i: number, gl: number, gr: number): [number, number, number] {
+  const s = Math.max(-1, Math.min(1, p.get('spread')));
+  if (p.get('reso.spread') >= 0.5) {
+    const c = Math.pow(10, (SPREAD_CLASSIC_DB * s) / 20);
+    return [gl / c, gr * c, Math.sqrt(0.5 * (c * c + 1 / (c * c)))];
+  }
+  const a = Math.abs(s);
+  const th = (Math.PI / 4) * (1 - a);
+  const near = Math.SQRT2 * Math.cos(th);
+  const far = Math.SQRT2 * Math.sin(th);
+  // odd bands (1-based: index 0, 2 …) go left right of centre, even bands right; mirrored left of centre
+  const toL = (i % 2 === 0) === s >= 0;
+  const mid = 0.5 * (gl + gr);
+  const side = 0.5 * (gl - gr) * (1 - a);
+  return [Math.max(0, (toL ? near : far) * mid + side), Math.max(0, (toL ? far : near) * mid - side), 1];
+}
+
+/**
+ * The response of one channel after SPREAD, or of both averaged ('both': levels and Q of L and R
+ * averaged, SPREAD only as its change in power).
+ */
 export function readModel(p: ParamStoreAPI, m?: ResponseModel, ch: ModelChannel = 'both'): ResponseModel {
   const model: ResponseModel = m ?? { gains: new Float64Array(NUM_BANDS), qs: new Float64Array(NUM_BANDS), mix: 1, out: 1, bypass: false };
   for (let i = 0; i < NUM_BANDS; i++) {
+    const [gl, ql] = bandModel(p, i, 0);
+    const [gr, qr] = bandModel(p, i, 1);
+    const [sl, sr, power] = spreadGains(p, i, gl, gr);
     if (ch === 'both') {
-      const [gl, ql] = bandModel(p, i, 0);
-      const [gr, qr] = bandModel(p, i, 1);
-      model.gains[i] = 0.5 * (gl + gr);
+      model.gains[i] = 0.5 * (gl + gr) * power;
       model.qs[i] = 0.5 * (ql + qr);
-    } else [model.gains[i], model.qs[i]] = bandModel(p, i, ch);
+    } else {
+      model.gains[i] = ch === 0 ? sl : sr;
+      model.qs[i] = ch === 0 ? ql : qr;
+    }
   }
   model.mix = p.get('mix');
   model.out = dbToGain(p.get('outputGain'));

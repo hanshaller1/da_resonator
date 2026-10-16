@@ -1,14 +1,15 @@
-/* CONFIG tab (ui/tabs/config.ts): source with the input under it | clock | resonance over display | help */
+/* CONFIG tab (ui/tabs/config.ts): source with the input under it | clock over spread | resonance over display | help */
 .cfg {
   display: grid;
   grid-template-columns: 1.45fr 1.15fr 1.15fr 1.25fr;
   grid-template-rows: auto 1fr;
-  grid-template-areas: 'src clock reso help' 'src clock display help';
+  grid-template-areas: 'src clock reso help' 'src spread display help';
   gap: var(--sp-4);
   padding: var(--sp-4);
 }
 .cfg-src { grid-area: src; }
 .cfg-clock { grid-area: clock; }
+.cfg-spread { grid-area: spread; }
 .cfg-reso { grid-area: reso; }
 .cfg-display { grid-area: display; }
 .cfg-help { grid-area: help; }
@@ -66,8 +67,8 @@
 .clk-info-from { padding-left: calc(7px + 30px + 2 * var(--sp-4)); margin-top: calc(-1 * var(--sp-2)); }
 .clk-info-src { color: var(--c-text-3); }
 
-/* resonance setup and display: compact, stacked in one column */
-.cfg-reso, .cfg-display { gap: var(--sp-3); }
+/* resonance setup, spread and display: compact */
+.cfg-reso, .cfg-display, .cfg-spread { gap: var(--sp-3); }
 
 /* help */
 .cfg-help-list { display: grid; grid-template-columns: auto 1fr; gap: 5px var(--sp-5); margin: 0; font-size: var(--fs-xs); }

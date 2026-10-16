@@ -220,6 +220,26 @@ registerTab({
       resoNote,
     );
 
+    /* ---------- spread: what the SPREAD knob does (centre = neutral) ---------- */
+    const spreadNote = h('p', { class: 'cfg-note' });
+    const syncSpread = () => {
+      spreadNote.textContent =
+        p.get('reso.spread') >= 0.5
+          ? 'Right of centre: R up, L down (6 dB at the stop). Left: the other way round. FB shows L and R per band.'
+          : 'Right of centre: odd bands to L, even to R. Left: the other way round. FB shows L and R per band.';
+    };
+    syncSpread();
+    p.subscribe('reso.spread', syncSpread);
+    const spreadCard = card(
+      'Spread',
+      'cfg-spread',
+      row('MODE', paramButtons(p, 'reso.spread', [
+        ['ODD/EVEN', 'Odd and even bands go to opposite sides'],
+        ['CLASSIC', 'One channel up, the other down (hardware)'],
+      ], 'What the SPREAD knob does')),
+      spreadNote,
+    );
+
     /* ---------- display ---------- */
     const themeBtns = (['auto', 'light', 'dark'] as ThemePref[]).map((pref) => {
       const b = h('button', { type: 'button', class: 'inst-btn' }, pref.toUpperCase());
@@ -257,7 +277,7 @@ registerTab({
       h('dl', { class: 'cfg-help-list' }, ...HELP.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
     );
 
-    general.append(source, clock, reso, display, help);
+    general.append(source, clock, spreadCard, reso, display, help);
 
     /* ---------- status line: state, page switch GENERAL · MIDI ---------- */
     const status = h('span', { class: 'cfg-status' });
