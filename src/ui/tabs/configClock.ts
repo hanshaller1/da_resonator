@@ -41,7 +41,7 @@ export function buildClockPage(engine: EngineAPI): { el: HTMLElement; status(): 
   };
   const usersRow = () => {
     const text = h('span', { class: 'cfg-instate clk-users' });
-    return { text, el: h('div', { class: 'cfg-row', title: 'LFOs on DIV and clock mods that are on and chose this clock (INT · MIDI in LFO MOD and CLK MOD)' }, h('span', { class: 'cfg-key' }, 'USED BY'), text) };
+    return { text, el: h('div', { class: 'cfg-row', title: 'LFOs and clock mods that are on and chose this clock (INT · MIDI in LFO MOD and CLK MOD). (RATE): the LFO runs free; choose a DIV to sync it' }, h('span', { class: 'cfg-key' }, 'USED BY'), text) };
   };
 
   /* ---------- internal clock ---------- */

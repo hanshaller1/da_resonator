@@ -1,8 +1,6 @@
 /* the clocks (ui/clock.ts): status line group of each LFO and clock mod, and the INT clock in CONFIG */
 .clk-clock { display: inline-flex; align-items: center; gap: var(--sp-3); padding-left: var(--sp-4); border-left: 1px solid var(--c-line); }
 .clk-clock[hidden] { display: none; }
-/* an LFO on RATE runs free: its clock does not matter */
-.clk-clock.is-free { opacity: 0.45; }
 /* the chosen clock is off: the module follows the other one (or stands still) */
 .clk-src .inst-btn.is-selected.is-standby { background: transparent; color: var(--c-text-3); box-shadow: inset 0 0 0 1px var(--c-line-strong); }
 .clk-btn {

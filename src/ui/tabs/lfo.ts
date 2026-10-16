@@ -117,8 +117,7 @@ registerTab({
         const sync = p.get(`${m}.sync`) >= 0.5;
         toggleClass(rate[i], 'is-dim', sync);
         toggleClass(div[i], 'is-dim', !sync);
-        toggleClass(clocks[i], 'is-free', !sync);
-        clocks[i].title = sync ? '' : `LFO ${i + 1} runs free on RATE: its clock counts on DIV`;
+        clocks[i].title = sync ? '' : `LFO ${i + 1} runs free on RATE; choose a DIV to sync it to its clock`;
         rate[i].title = sync ? 'Turn RATE to let the LFO run free' : '';
         div[i].title = sync ? '' : 'Choose a DIV to sync the LFO to the clock';
         const s = Math.max(0, Math.min(MORPH_NAMES.length - 1, Math.round(p.get(`${m}.shape`))));

@@ -272,11 +272,11 @@ export function clockState(engine: EngineAPI, which: ClockName): { text: string;
   return { text: `On · ${src} · ${run ? 'running' : 'stopped'}`, led: run ? 'on' : 'wait' };
 }
 
-/** the LFOs (on DIV) and clock mods that are on and chose this clock: "LFO1", "CM2" … */
+/** the LFOs and clock mods that are on and chose this clock: "LFO1", "CM2" …; an LFO on RATE runs free: "LFO3 (RATE)" */
 export function clockUsers(engine: EngineAPI, which: ClockName): string[] {
   const p = engine.params;
   const out: string[] = [];
-  for (let n = 1; n <= NUM_LFOS; n++) if (p.get(`lfo${n}.on`) >= 0.5 && p.get(`lfo${n}.sync`) >= 0.5 && chosenClock(engine, `lfo${n}`) === which) out.push(`LFO${n}`);
+  for (let n = 1; n <= NUM_LFOS; n++) if (p.get(`lfo${n}.on`) >= 0.5 && chosenClock(engine, `lfo${n}`) === which) out.push(p.get(`lfo${n}.sync`) >= 0.5 ? `LFO${n}` : `LFO${n} (RATE)`);
   for (let n = 1; n <= NUM_CMODS; n++) if (p.get(`cmod${n}.on`) >= 0.5 && chosenClock(engine, `cmod${n}`) === which) out.push(`CM${n}`);
   return out;
 }
