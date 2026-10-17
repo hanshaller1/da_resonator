@@ -228,10 +228,11 @@ export interface EngineAPI {
   panic(): void;
 
   /**
-   * FB function key of a band held (on) or let go: while held the band's level wobbles ±10 % of
-   * fader travel, one sine per beat of the master clock. ch 0 = L and R, 1 = L, 2 = R. Not saved.
+   * FB function key of a band held (on) or let go: while held the band's level wobbles ± depth of
+   * fader travel (0..0.5, default 0.1), one sine per beat of the master clock. ch 0 = L and R,
+   * 1 = L, 2 = R. Not saved.
    */
-  wobble(band: number, on: boolean, ch?: 0 | 1 | 2): void;
+  wobble(band: number, on: boolean, ch?: 0 | 1 | 2, depth?: number): void;
 
   /** post-resonator analyser for visualisation (null before start) */
   readonly analyserOut: AnalyserNode | null;

@@ -62,6 +62,8 @@ const ICONS: Record<string, string> = {
   volume: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" fill="currentColor" stroke="none"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   chevron: '<path d="m7 10 5 5 5-5"/>',
   drop: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M4 19.5h16"/>',
+  /* a sine and a half: WOB (FB function key) */
+  wave: '<path d="M1.5 12C3.5 5.5 6.5 5.5 8.5 12S13.5 18.5 15.5 12S20.5 5.5 22.5 12"/>',
 };
 
 export function icon(name: keyof typeof ICONS | string, cls = 'icon'): SVGSVGElement {

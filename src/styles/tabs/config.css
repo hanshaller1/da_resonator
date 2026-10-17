@@ -1,17 +1,16 @@
-/* CONFIG tab (ui/tabs/config.ts): source with the input under it | clock over spread | resonance over display | help */
+/* CONFIG tab (ui/tabs/config.ts): source with the input under it | clock, spread, display | resonance with the FB keys | help */
 .cfg {
   display: grid;
-  grid-template-columns: 1.45fr 1.15fr 1.15fr 1.25fr;
-  grid-template-rows: auto 1fr;
-  grid-template-areas: 'src clock reso help' 'src spread display help';
+  grid-template-columns: 1.35fr 1.35fr 1.15fr 1.15fr;
+  grid-template-areas: 'src col2 col3 help';
   gap: var(--sp-4);
   padding: var(--sp-4);
 }
 .cfg-src { grid-area: src; }
-.cfg-clock { grid-area: clock; }
-.cfg-spread { grid-area: spread; }
-.cfg-reso { grid-area: reso; }
-.cfg-display { grid-area: display; }
+.cfg-col { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; min-height: 0; }
+.cfg-col2 { grid-area: col2; }
+.cfg-col3 { grid-area: col3; }
+.cfg-col > .cfg-card:last-child { flex: 1 1 auto; }
 .cfg-help { grid-area: help; }
 .cfg-card {
   display: flex;
@@ -69,6 +68,10 @@
 
 /* resonance setup, spread and display: compact */
 .cfg-reso, .cfg-display, .cfg-spread { gap: var(--sp-3); }
+.cfg-step { gap: 0; }
+.cfg-step:focus-visible { outline: none; box-shadow: var(--sh-focus); }
+.cfg-step-btn { width: 22px; justify-content: center; padding: 0; }
+.cfg-step-val { display: flex; align-items: center; justify-content: center; align-self: stretch; min-width: 62px; }
 
 /* help */
 .cfg-help-list { display: grid; grid-template-columns: auto 1fr; gap: 5px var(--sp-5); margin: 0; font-size: var(--fs-xs); }

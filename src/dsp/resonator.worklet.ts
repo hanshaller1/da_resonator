@@ -197,7 +197,7 @@ const NOISE_FLOOR = 1e-9;
 const SQRT2 = Math.SQRT2;
 const QUARTER_PI = Math.PI / 4;
 const HALF_PI = Math.PI / 2;
-/** FB function keys: a held band wobbles by ±10 % of fader travel, one sine per beat of the master clock */
+/** FB function keys: a held band wobbles by ± this much fader travel (default; CONFIG sets it per press), one sine per beat of the master clock */
 const WOB_DEPTH = 0.1;
 /** the wobble fades in on press and out on release over this time (s), so the level never steps */
 const WOB_FADE_S = 0.03;
@@ -295,6 +295,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private wobAmt = new Float64Array(NS); // depth 0..1 per slot (fades in / out)
   private wobOn = false; // a slot is held or still fading out
   private wobPhase = 0; // wobble phase (cycles); runs at the clock's TEMPO while that clock stands
+  private wobDepth = WOB_DEPTH; // ± fader travel, from the last press
   private iBfOn = paramIndex('filterBand.on');
   private iBfType = paramIndex('filterBand.type');
   private iBfCut = paramIndex('filterBand.cutoff');
@@ -511,7 +512,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'ready' });
   }
 
-  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; int?: boolean; midi?: boolean; ev?: number; t?: number; band?: number; ch?: number; on?: boolean }) {
+  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; int?: boolean; midi?: boolean; ev?: number; t?: number; band?: number; ch?: number; on?: boolean; depth?: number }) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'params':
@@ -560,7 +561,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         const ch = on ? msg.ch ?? 0 : 0;
         if (ch !== 2) this.wobHeld[b * 2] = on ? 1 : 0;
         if (ch !== 1) this.wobHeld[b * 2 + 1] = on ? 1 : 0;
-        if (on) this.wobOn = true;
+        if (on) {
+          this.wobOn = true;
+          if (typeof msg.depth === 'number' && msg.depth >= 0) this.wobDepth = Math.min(0.5, msg.depth);
+        }
         break;
       }
     }
@@ -608,7 +612,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   /**
    * mode layers, once per block: the band filter curve at the band centres plus the scanner's values,
    * in dB on top of every slot's fader (locked bands of a mode get 0 dB from it). Off = nothing to do.
-   * The FB function keys add the wobble of a held band: its fader position ± WOB_DEPTH · sin, one cycle
+   * The FB function keys add the wobble of a held band: its fader position ± depth · sin, one cycle
    * per beat of the master clock (in phase with its beats while it runs, at its TEMPO while it stands).
    */
   private applyLayers(p: Float32Array) {
@@ -637,7 +641,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       const c = this.mod.masterClock;
       if (c.running) this.wobPhase = c.beats - Math.floor(c.beats);
       else this.wobPhase = (this.wobPhase + (this.mod.ctx.dt * c.bpm) / 60) % 1;
-      const sw = WOB_DEPTH * Math.sin(2 * Math.PI * this.wobPhase);
+      const sw = this.wobDepth * Math.sin(2 * Math.PI * this.wobPhase);
       for (let i = 0; i < NS; i++) {
         const a = this.wobAmt[i];
         if (!(a > 0)) continue;

@@ -58,7 +58,8 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
   ist; PLAY/LOAD und CONFIG haben keine.
 - **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK · FOOT (rechts in der Statuszeile). GENERAL: Source mit dem
-  Audio-Eingang unter LOAD FILE, Clock (nur Anzeige) mit Spread darunter, Resonance mit Display darunter, Help.
+  Audio-Eingang unter LOAD FILE, Clock (nur Anzeige) mit Spread und Display (eine Zeile) darunter, Resonance mit
+  der Karte Wobble · Dice darunter, Help.
   Der Audio-Zustand steht im Kopf.
 - **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder Clock-Mod und jeder LFO wählt
   seinen Takt selbst (Clock-Mod INT · MIDI, LFO RATE · INT · MIDI; Parameter `cmodN.clk`, `lfoN.clk` und
@@ -118,12 +119,14 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
   Linien die anderen, und jeder Bandknoten nennt beide Werte (`L+2.9 R-8.6`). Das gilt auch für SPREAD.
   Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R.
 - FB-Register, Funktionstasten wie an der Hardware:
-  - **WOB** unter jedem Band: Solange du die Taste hältst (Maus, Touch oder Enter), wackelt der Pegel des Bands
-    um ±10 % des Faderwegs, ein Sinus pro Schlag des Master-Takts (INT, oder MIDI, wenn INT aus ist). Läuft der
+  - **Wobble** (flache Taste mit Wellen-Symbol unter RES/FB jedes Bands): Solange du sie hältst (Maus, Touch oder
+    Enter), wackelt der Pegel des Bands um ±10 % des Faderwegs (einstellbar), ein Sinus pro Schlag des Master-Takts (INT, oder MIDI, wenn INT aus ist). Läuft der
     Takt, sitzt der Sinus auf den Schlägen, sonst läuft er in dessen Tempo. Ein- und Ausblenden in 30 ms. Der
     Fader selbst bleibt stehen, nichts wird gespeichert. Der Umschalter L · L+R · R gilt auch hier.
-  - **DICE** in der Statuszeile setzt alle 10 Bandpegel zufällig zwischen der −24-dB- und der +6-dB-Marke, im
-    Kanal des Umschalters (L+R: in beiden gleich).
+  - **DICE** in der Statuszeile setzt alle 10 Bandpegel zufällig zwischen der −24-dB- und der +6-dB-Marke
+    (einstellbar), im Kanal des Umschalters (L+R: in beiden gleich).
+  - Tiefe (1–50 %) und DICE-Bereich (−60 … +12 dB, ganze dB) stellst du in CONFIG → GENERAL in der Karte
+    Wobble · Dice ein. Sie gelten für alle Presets und bleiben in diesem Browser gespeichert, wie der Fußschalter.
 - Jede Route auf einen Bandwert oder FB ALL AMT hat eine Kanalwahl (Knopf in Routenliste, Popup und
   Makro-Karte): L+R, L, R oder INV (R gegenläufig, ein LFO lässt das Band zwischen links und rechts wandern).
   Neue Routen übernehmen die Stellung des Umschalters.

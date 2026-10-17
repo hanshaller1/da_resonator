@@ -23,6 +23,8 @@ import { buildClockPage } from './configClock';
 import { buildFootPage } from './configFoot';
 import { buildMidiPage, runWhileVisible } from './configMidi';
 import { playKit } from '../pool';
+import { fbKeys, WOBBLE_MAX, WOBBLE_MIN } from '../fbKeys';
+import { FADER_MAX_DB, FADER_MIN_DB } from '../../shared/params';
 
 const HELP: [string, string][] = [
   ['Drag', 'Change a value (up / down)'],
@@ -58,6 +60,33 @@ function paramButtons(p: ParamStoreAPI, id: string, items: [string, string][], a
   sync();
   p.subscribe(id, sync);
   return h('span', { class: 'inst', role: 'group', 'aria-label': ariaLabel }, ...btns);
+}
+
+/** − value + for a number kept outside the params: the buttons, the wheel and the arrow keys step it */
+function stepper(ariaLabel: string, get: () => number, set: (v: number) => void, fmt: (v: number) => string): { el: HTMLElement; sync(): void } {
+  const val = h('b', { class: 'cfg-val cfg-step-val' });
+  const dec = h('button', { type: 'button', class: 'inst-btn cfg-step-btn', 'aria-label': `${ariaLabel} down` }, '−');
+  const inc = h('button', { type: 'button', class: 'inst-btn cfg-step-btn', 'aria-label': `${ariaLabel} up` }, '+');
+  dec.addEventListener('click', () => set(get() - 1));
+  inc.addEventListener('click', () => set(get() + 1));
+  const el = h('span', { class: 'inst cfg-step', role: 'group', 'aria-label': ariaLabel, tabindex: '0' }, dec, val, inc);
+  el.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      set(get() + (e.deltaY > 0 ? -1 : 1));
+    },
+    { passive: false },
+  );
+  el.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    set(get() + d);
+  });
+  const sync = () => (val.textContent = fmt(get()));
+  sync();
+  return { el, sync };
 }
 
 type Page = 'general' | 'midi' | 'clock' | 'foot';
@@ -245,6 +274,24 @@ registerTab({
       spreadNote,
     );
 
+    /* ---------- FB function keys, own card under Resonance: WOBBLE depth, DICE range (this browser, all presets) ---------- */
+    const keys = fbKeys();
+    const dB = (v: number) => `${v > 0 ? '+' : ''}${v} dB`;
+    const steps = [
+      stepper('Wobble depth', () => keys.settings.wobble, (v) => keys.set({ wobble: v }), (v) => `±${v} %`),
+      stepper('Dice lowest level', () => keys.settings.diceMin, (v) => keys.set({ diceMin: v }), dB),
+      stepper('Dice highest level', () => keys.settings.diceMax, (v) => keys.set({ diceMax: v }), dB),
+    ];
+    keys.onChange(() => steps.forEach((s) => s.sync()));
+    const keyRow = (key: string, title: string, el: HTMLElement) => h('div', { class: 'cfg-row', title: `${title}. Remembered in this browser, for all presets` }, h('span', { class: 'cfg-key' }, key), el);
+    const keysCard = card(
+      'Wobble · Dice',
+      'cfg-fbkeys',
+      keyRow('WOBBLE', `Holding the wave key (FB) swings the band this far around its fader, in % of fader travel (${WOBBLE_MIN}–${WOBBLE_MAX} %)`, steps[0].el),
+      keyRow('DICE −', `Lowest level DICE (FB) can give a band (down to ${FADER_MIN_DB} dB = silent)`, steps[1].el),
+      keyRow('DICE +', `Highest level DICE (FB) can give a band (up to +${FADER_MAX_DB} dB)`, steps[2].el),
+    );
+
     /* ---------- display ---------- */
     const themeBtns = (['auto', 'light', 'dark'] as ThemePref[]).map((pref) => {
       const b = h('button', { type: 'button', class: 'inst-btn' }, pref.toUpperCase());
@@ -262,18 +309,21 @@ registerTab({
     const syncScale = (k: number) => (scale.textContent = `${Math.round(k * 100)} %`);
     syncScale(uiScale());
     onScaleChange(syncScale);
-    const display = card(
-      'Display',
-      'cfg-display',
+    // one row with its title in it, so the column holds clock, spread and display
+    const display = h(
+      'section',
+      { class: 'cfg-card cfg-display' },
       h(
         'div',
         { class: 'cfg-row' },
+        h('h3', { class: 'cfg-title micro-label' }, 'Display'),
         h('span', { class: 'inst', role: 'group', 'aria-label': 'Theme' }, ...themeBtns.map((x) => x.b)),
         h('span', { class: 'cfg-grow' }),
-        h('span', { class: 'cfg-key cfg-key--auto', title: `The window is a fixed ${DESIGN_W} × ${DESIGN_H} layout scaled to fit the browser. Use the browser's full screen for the largest view.` }, 'SCALE'),
         scale,
       ),
     );
+    // the scale readout without its key (no room in the row); the tooltip says what it is
+    scale.title = `Window scale. The window is a fixed ${DESIGN_W} × ${DESIGN_H} layout scaled to fit the browser. Use the browser's full screen for the largest view.`;
 
     /* ---------- help ---------- */
     const help = card(
@@ -282,7 +332,8 @@ registerTab({
       h('dl', { class: 'cfg-help-list' }, ...HELP.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
     );
 
-    general.append(source, clock, spreadCard, reso, display, help);
+    // columns: source | clock, spread, display | resonance with the FB keys | help
+    general.append(source, h('div', { class: 'cfg-col cfg-col2' }, clock, spreadCard, display), h('div', { class: 'cfg-col cfg-col3' }, reso, keysCard), help);
 
     /* ---------- status line: state, page switch GENERAL · MIDI ---------- */
     const status = h('span', { class: 'cfg-status' });

@@ -1,10 +1,12 @@
-// Offline tests for the FB function keys (2026-10-17): WOB (hold a band: it wobbles ±10 % of fader travel,
-// one sine per beat of the master clock) in the worklet, and DICE (all band levels at random, ui/channel.ts).
+// Offline tests for the FB function keys (2026-10-17): WOB (hold a band: it wobbles ±10 % of fader travel by default,
+// one sine per beat of the master clock) in the worklet, DICE (all band levels at random, ui/channel.ts), and their
+// settings in CONFIG (ui/fbKeys.ts).
 // Run: node scripts/test-fbkeys.mjs
 import { BLOCK, FS, check, importTs, loadProcessor, results, run } from './testkit.mjs';
 
 const P = importTs('src/shared/params.ts');
 const C = importTs('src/ui/channel.ts');
+const K = importTs('src/ui/fbKeys.ts');
 const idx = (id) => P.paramIndex(id);
 const dbOf = (g) => (g > 0 ? 20 * Math.log10(g) : -Infinity);
 const near = (a, b, e = 0.05) => Math.abs(a - b) < e;
@@ -15,7 +17,7 @@ function setup(set = {}) {
   const v = P.defaultValues();
   for (const [k, x] of Object.entries(set)) v[idx(k)] = x;
   proc.port.onmessage({ data: { type: 'params', values: v } });
-  const wob = (band, on, ch = 0) => proc.port.onmessage({ data: { type: 'wobble', band, on, ch } });
+  const wob = (band, on, ch = 0, depth) => proc.port.onmessage({ data: { type: 'wobble', band, on, ch, depth } });
   const gains = () => Array.from(proc.bGainTgt, dbOf);
   /** run `sec` seconds, collecting slot i's gain target (dB) and the clock's beat position after every block */
   const trace = (sec, i) => {
@@ -50,6 +52,15 @@ const blocksPerBeat = (bpm) => (60 / bpm) * (FS / BLOCK);
     near(max(t), hi, 0.1) && near(min(t), lo, 0.1) && near(period(t), blocksPerBeat(120), 1.5) && others,
     `${min(t).toFixed(2)} … +${max(t).toFixed(2)} dB (marks ${lo} / +${hi.toFixed(1)}), period ${period(t).toFixed(1)} blocks (${blocksPerBeat(120).toFixed(1)} per beat), other bands at 0 dB: ${others}`,
   );
+}
+
+/* ---------- 1b. the depth set in CONFIG travels with the press ---------- */
+{
+  const { wob, trace } = setup({ 'clock.bpm': 120 });
+  wob(4, true, 0, 0.25);
+  const t = trace(2, 8).g.slice(Math.round((0.1 * FS) / BLOCK));
+  const hi = P.faderNormToDb(0.75), lo = P.faderNormToDb(0.25);
+  check('1b with depth 25 % the band swings between the +25 % and −25 % marks', near(max(t), hi, 0.1) && near(min(t), lo, 0.1), `${min(t).toFixed(2)} … +${max(t).toFixed(2)} dB (marks ${lo.toFixed(2)} / +${hi.toFixed(2)})`);
 }
 
 /* ---------- 2. in phase with the clock's beats; at its TEMPO while it stands ---------- */
@@ -163,6 +174,26 @@ const blocksPerBeat = (bpm) => (60 / bpm) * (FS / BLOCK);
     '5b DICE L only touches L; the ends of the range are −24 and +6 dB',
     onlyL && ends.v['band0.gainR'] === -24 && !('band0.gain' in ends.v) && near(top.v['band9.gain'], 6, 0.051),
     `L only: ${onlyL}, low end ${ends.v['band0.gainR']} dB, high end ${top.v['band9.gain']} dB`,
+  );
+}
+
+/* ---------- 6. the settings: DICE range from CONFIG, values kept in range and in order ---------- */
+{
+  const v = {};
+  const st = { get: (id) => (id in v ? v[id] : P.PARAM_BY_ID[id].def), set: (id, x) => (v[id] = x), spec: (id) => P.PARAM_BY_ID[id], getNorm: (id) => P.toNorm(P.PARAM_BY_ID[id], st.get(id)), beginGesture() {}, endGesture() {} };
+  let seed = 5;
+  C.rollLevels(st, 'LR', () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296, -6, 0);
+  const inside = Object.values(v).every((x) => x >= -6 && x <= 0);
+  const mem = new Map();
+  const storage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, x) => mem.set(k, x) };
+  const k = new K.FbKeys(storage);
+  k.set({ wobble: 99, diceMax: -30 });
+  const pushed = k.settings.wobble === K.WOBBLE_MAX && k.settings.diceMax === -30 && k.settings.diceMin === -31;
+  const again = new K.FbKeys(storage).settings;
+  check(
+    '6 DICE uses the range set in CONFIG; WOB is capped, low and high push each other, settings come back from storage',
+    inside && pushed && again.wobble === K.WOBBLE_MAX && again.diceMin === -31,
+    `range −6…0: ${inside}; after set: ${JSON.stringify(k.settings)}; reloaded: ${JSON.stringify(again)}`,
   );
 }
 

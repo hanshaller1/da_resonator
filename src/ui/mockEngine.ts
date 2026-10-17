@@ -298,7 +298,7 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       smooth.fill(0);
       wob.fill(0);
     },
-    wobble(band, on, ch = 0) {
+    wobble(band, on, ch = 0, _depth) {
       if (band < 0 || band >= NUM_BANDS) return;
       if (!on || ch !== 2) wob[band * 2] = on ? 1 : 0;
       if (!on || ch !== 1) wob[band * 2 + 1] = on ? 1 : 0;

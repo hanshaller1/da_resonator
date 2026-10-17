@@ -1,41 +1,35 @@
 /* FB tab */
-.tab-panel--fb .tp-slot { gap: var(--sp-3); }
+/* a band: RES and FB side by side, the WOB key wide and flat under them */
+.tab-panel--fb .tp-slot { flex-direction: column; gap: 4px; padding-top: 2px; padding-bottom: 2px; }
+.fb-knobs { display: flex; gap: var(--sp-4); }
 
 /* WOB: the function key of the band (hold it and the band wobbles) */
 .fb-wob {
-  display: grid;
-  justify-items: center;
-  gap: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  width: 78%;
+  height: 14px;
   padding: 0;
   border: 0;
-  background: none;
-  color: var(--c-text-3);
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-}
-.fb-wob-key {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  margin: 6px 0;
   border-radius: var(--r-sm);
   background: var(--c-raised);
   box-shadow: var(--sh-raised);
-  transition: background-color var(--dur-fast) var(--ease-out);
-}
-.fb-wob:hover .fb-wob-key { background: var(--c-raised-hi); }
-.fb-wob.is-on .fb-wob-key { transform: translateY(1px); }
-.fb-wob.is-on .led { background: var(--c-accent); box-shadow: 0 0 8px var(--c-accent-glow); }
-.fb-wob-name {
+  color: var(--c-text-3);
   font-size: var(--fs-2xs);
   font-weight: var(--fw-medium);
   letter-spacing: var(--ls-label);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
-.fb-wob.is-on .fb-wob-name { color: var(--c-text); }
-.fb-wob:focus-visible { outline: none; }
-.fb-wob:focus-visible .fb-wob-key { box-shadow: var(--sh-raised), var(--sh-focus); }
+.fb-wob-icon { width: 22px; height: 12px; stroke-width: 2.2; }
+.fb-wob:hover { background: var(--c-raised-hi); color: var(--c-text-2); }
+.fb-wob.is-on { color: var(--c-accent); transform: translateY(1px); }
+.fb-wob.is-on .fb-wob-icon { filter: drop-shadow(0 0 4px var(--c-accent-glow)); }
+.fb-wob:focus-visible { outline: none; box-shadow: var(--sh-raised), var(--sh-focus); }
 
 .fb-hot {
   display: inline-flex;

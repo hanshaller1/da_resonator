@@ -3,9 +3,10 @@
  * each band node sits over its fader and glows with its feedback. Control row = per band
  * RES, FB and WOB (slot k = band k). Status line = global resonance, spread, feedback state and
  * DICE (RES/BAND and FB/BAND under RESET sit in the global column).
- * The hardware's function keys in FB mode: holding WOB wobbles the band ±10 % of fader travel, one
- * sine per beat of the master clock (engine.wobble, a DSP layer, never saved); DICE sets all band
- * levels at random (channel.ts rollLevels).
+ * The hardware's function keys in FB mode: holding WOB (a flat key under RES and FB) wobbles the band
+ * ± the WOBBLE % of fader travel, one sine per beat of the master clock (engine.wobble, a DSP layer,
+ * never saved); DICE sets all band levels at random between the DICE limits (channel.ts rollLevels).
+ * Both settings: CONFIG → GENERAL, under the Resonance card (ui/fbKeys.ts).
  * L/R per band: the response follows the channel switch (L, R, or both averaged); once the
  * channels differ, the other channel(s) show as thin dashed lines. A node's ring is split: left
  * half L feedback, right half R feedback.
@@ -13,9 +14,10 @@
 import '../../styles/tabs/fb.css';
 import type { EngineAPI } from '../../core/types';
 import { BAND_FREQS, NUM_BANDS, bandParamId, bandParamIdR, formatValue } from '../../shared/params';
-import { channelSel, rollLevels, DICE_MAX_DB, DICE_MIN_DB } from '../channel';
+import { channelSel, rollLevels } from '../channel';
+import { fbKeys } from '../fbKeys';
 import { Knob } from '../components/knob';
-import { h, toggleClass } from '../dom';
+import { h, icon, toggleClass } from '../dom';
 import { bandResFb, readModel, responseAt, type ModelChannel, type ResponseModel } from '../response';
 import { colCenter } from '../shell/bandAxis';
 import { freqText } from '../shell/faders';
@@ -31,19 +33,24 @@ const GRID_DB = [12, 0, -12, -24, -36];
 /** the channel(s) a wobble takes, from the L · L+R · R switch */
 const WOB_CH = { LR: 0, L: 1, R: 2 } as const;
 
+const signed = (db: number) => (db > 0 ? `+${db}` : `${db}`);
+
 /** WOB: hold it and the band wobbles (the hardware's function key in FB mode); mouse, touch or Enter */
 function wobKey(engine: EngineAPI, b: number, name: string): HTMLElement {
   const key = h(
     'button',
-    { type: 'button', class: 'fb-wob', title: 'Hold: the band wobbles ±10 % around its fader, one sine per beat of the clock', 'aria-label': `${name}: hold to wobble` },
-    h('span', { class: 'fb-wob-key' }, h('span', { class: 'led', 'aria-hidden': 'true' })),
-    h('span', { class: 'fb-wob-name' }, 'WOB'),
+    { type: 'button', class: 'fb-wob', 'aria-label': `${name}: hold to wobble` },
+    icon('wave', 'fb-wob-icon'),
   );
+  const keys = fbKeys();
+  const title = () => (key.title = `Hold: the band wobbles ±${keys.settings.wobble} % of fader travel around its fader, one sine per beat of the clock (CONFIG)`);
+  title();
+  keys.onChange(title);
   let held = false;
   const press = () => {
     if (held) return;
     held = true;
-    engine.wobble(b, true, WOB_CH[channelSel.get()]);
+    engine.wobble(b, true, WOB_CH[channelSel.get()], keys.settings.wobble / 100);
     toggleClass(key, 'is-on', true);
   };
   const release = () => {
@@ -79,12 +86,15 @@ function statusLine(engine: EngineAPI, el: HTMLElement): void {
   const fbAll = h('b');
   const bands = h('b');
   const hot = h('span', { class: 'fb-hot' }, h('span', { class: 'led' }), 'HOT');
-  const dice = h(
-    'button',
-    { type: 'button', class: 'inst-btn', title: `All 10 band levels to random fader positions (${DICE_MIN_DB} … +${DICE_MAX_DB} dB), in the channel(s) of the switch` },
-    'DICE',
-  );
-  dice.addEventListener('click', () => rollLevels(p, channelSel.get()));
+  const dice = h('button', { type: 'button', class: 'inst-btn' }, 'DICE');
+  const keys = fbKeys();
+  const diceTitle = () => {
+    const { diceMin, diceMax } = keys.settings;
+    dice.title = `All 10 band levels to random fader positions (${signed(diceMin)} … ${signed(diceMax)} dB, CONFIG), in the channel(s) of the switch`;
+  };
+  diceTitle();
+  keys.onChange(diceTitle);
+  dice.addEventListener('click', () => rollLevels(p, channelSel.get(), Math.random, keys.settings.diceMin, keys.settings.diceMax));
   el.append(
     h('span', null, 'Resonance ', res),
     h('span', null, 'Spread ', spread),
@@ -134,7 +144,7 @@ registerTab({
       const name = `Band ${b + 1} (${f.value} ${f.unit})`;
       const res = new Knob(p, bandParamId(b, 'res'), { size: 'sm', tone: 'accent', label: 'RES', ariaLabel: `${name} resonance` });
       const fb = new Knob(p, bandParamId(b, 'fb'), { size: 'sm', tone: 'fb', label: 'FB', ariaLabel: `${name} feedback` });
-      tab.slots[b].append(res.el, fb.el, wobKey(engine, b, name));
+      tab.slots[b].append(h('div', { class: 'fb-knobs' }, res.el, fb.el), wobKey(engine, b, name));
     }
 
     /* ---------- visualisation ---------- */

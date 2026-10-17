@@ -66,18 +66,18 @@ export function resetBands(p: ParamStoreAPI, key: BandParamKey): void {
   setGrouped(p, edits);
 }
 
-/** DICE range: fader positions between the −24 dB and the +6 dB mark (no band falls silent, none jumps to +12) */
+/** default DICE range (CONFIG → GENERAL, Resonance card): −24 to +6 dB, so no band falls silent and none jumps to +12 */
 export const DICE_MIN_DB = -24;
 export const DICE_MAX_DB = 6;
 
 /**
  * DICE (FB tab; hardware: SHIFT + encoder in FB mode): every band level to a random fader position,
- * evenly spread over the fader travel between DICE_MIN_DB and DICE_MAX_DB, in the channel(s) of the
- * switch (L+R: the same value in both).
+ * evenly spread over the fader travel between minDb and maxDb, in the channel(s) of the switch
+ * (L+R: the same value in both).
  */
-export function rollLevels(p: ParamStoreAPI, ch: ChannelSel = sel, rnd: () => number = Math.random): void {
-  const lo = faderDbToNorm(DICE_MIN_DB);
-  const hi = faderDbToNorm(DICE_MAX_DB);
+export function rollLevels(p: ParamStoreAPI, ch: ChannelSel = sel, rnd: () => number = Math.random, minDb = DICE_MIN_DB, maxDb = DICE_MAX_DB): void {
+  const lo = faderDbToNorm(minDb);
+  const hi = faderDbToNorm(maxDb);
   const edits: [string, number][] = [];
   for (let b = 0; b < NUM_BANDS; b++) {
     const db = Math.round(faderNormToDb(lo + rnd() * (hi - lo)) * 10) / 10;

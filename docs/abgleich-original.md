@@ -60,7 +60,7 @@ Bewertung:
 | K8 | Stereo | Jeder Parameter existiert pro Kanal. Die Fader steuern L und R gemeinsam; einzeln geht es über FB CH-SELECT oder getrennte MIDI-Kanäle (S. 7, 18–19). | L und R sind immer identisch eingestellt | B |
 | K9 | Spread | Hängt vom Modus ab. FB: Versatz eines Kanals. FILTER: R bekommt eine versetzte Frequenz. CLK und DYN: Modulation auf L oder R verzögert. Mit FB CH-SELECT wählt Spread im FB-Modus den Kanal L, beide oder R (S. 5, 7, 9–11, 18). | Odd/Even-Panning (ungerade Bänder links, gerade rechts) | **A** |
 | K10 | Bandgüte | 17 dB/Dekade, also breite Bänder mit Q von etwa 0,7 | Standardgüte Q ≈ 6,5, schmale Bänder | **A**: klingt deutlich anders |
-| K11 | Funktionstasten im FB-Modus | Gedrückt halten wackelt das Band mit einem Sinus im internen Takt, 10 % Tiefe. SHIFT + Encoder würfelt alle Bandpegel (S. 7). | Seit 17.10.2026: WOB je Band im FB-Register (±10 % Faderweg, Sinus pro Schlag des Master-Takts), DICE würfelt alle Bandpegel. | – |
+| K11 | Funktionstasten im FB-Modus | Gedrückt halten wackelt das Band mit einem Sinus im internen Takt, 10 % Tiefe. SHIFT + Encoder würfelt alle Bandpegel (S. 7). | Seit 17.10.2026: Wobble-Taste (Wellen-Symbol) je Band im FB-Register (±10 % Faderweg, Sinus pro Schlag des Master-Takts), DICE würfelt alle Bandpegel; Tiefe und DICE-Bereich in CONFIG einstellbar. | – |
 | K12 | Input, Volume, Dry/Wet | Input und Volume sind analog: nicht per MIDI und nicht im Snapshot (S. 5, 15) | Alles normale, speicherbare Parameter | C |
 | K13 | Regler „Analog“ | Gibt es nicht | Zusatz der Emulation (Toleranzen, Drift) | C |
 | K14 | Bypass | Über den Fußschalter (S. 5, 19) | Bypass-Schalter | gleich im Prinzip |
