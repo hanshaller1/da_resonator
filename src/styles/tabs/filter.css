@@ -1,18 +1,20 @@
 /* FILTER tab (ui/tabs/filter.ts, ui/tabs/filter/viz.ts) */
 
 /* status line: description, summary of both filters, PRE / POST + on (20 px high) */
+.flt-line { display: inline-flex; align-items: baseline; gap: var(--sp-5); min-width: 0; }
 .flt-desc { color: var(--c-text-2); }
-.flt-sep { width: 1px; height: 12px; background: var(--c-line-strong); }
+.flt-sep { align-self: center; width: 1px; height: 12px; background: var(--c-line-strong); }
 .flt-sum {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 5px;
   color: var(--c-text-4);
   font-size: var(--fs-2xs);
   font-weight: var(--fw-medium);
   letter-spacing: var(--ls-label);
 }
-.flt-sum .led { width: 5px; height: 5px; }
+/* the led sits on the baseline, lifted to the middle of the capitals */
+.flt-sum .led { position: relative; top: -1px; width: 5px; height: 5px; }
 .flt-sum.is-on .led { background: var(--c-accent); box-shadow: 0 0 5px var(--c-accent-glow); }
 .flt-sum.is-selected { color: var(--c-text-2); }
 .tp-status .flt-sum b { color: var(--c-text-3); letter-spacing: 0; }

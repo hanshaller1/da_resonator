@@ -74,7 +74,8 @@ registerTab({
       return { slot, el, val, text: '' };
     });
     const toggles = FILTER_INSTANCES.map((slot) => new ParamToggle(p, `${slot}.on`, { label: 'ON', ariaLabel: `${NAME[slot]} on` }));
-    tab.status.append(desc, h('span', { class: 'flt-sep', 'aria-hidden': 'true' }), ...sums.map((s) => s.el), h('span', { class: 'tp-spacer' }), select.el, ...toggles.map((t) => t.el));
+    // description and summaries in one group on a shared text baseline (mixed font sizes)
+    tab.status.append(h('span', { class: 'flt-line' }, desc, h('span', { class: 'flt-sep', 'aria-hidden': 'true' }), ...sums.map((s) => s.el)), h('span', { class: 'tp-spacer' }), select.el, ...toggles.map((t) => t.el));
 
     const eff = (id: string) => (p.isModulated(id) ? fromNorm(p.spec(id), p.getEffectiveNorm(id)) : p.get(id));
     /** summary text (effective cutoff, so it follows modulation) */
