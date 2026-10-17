@@ -206,4 +206,25 @@ function sustains(v, seconds = 3) {
   check('7j FB RESET: FB of all bands 0 in L and R, FB ALL untouched', Array.from({ length: NB }, (_, b) => p.get(`band${b}.fb`) === 0 && p.get(`band${b}.fbR`) === 0).every(Boolean) && p.get('fbAllOn') === 1);
 }
 
+/* ---------- 8. band groups (MACRO targets BAND LOW / MID / HIGH / ALL) ---------- */
+{
+  const v = () => values({ 'macro1.value': 0.8 }, null);
+  // the same noise for every render
+  const go = (routes) => ((seed = 7), render(v(), 0.5, noise, routes));
+  const one = go([['macro1', 'bands.low', 0.4, 'INV']]);
+  const three = go([0, 1, 2].map((b) => ['macro1', `band${b}.gain`, 0.4, 'INV']));
+  const none = go([]);
+  const same = one.L.every((x, i) => x === three.L[i]) && one.R.every((x, i) => x === three.R[i]);
+  const moved = one.L.some((x, i) => x !== none.L[i]);
+  check('8a a route onto BAND LOW sounds exactly like one route per low band', same && moved, `same ${same}, differs from no route ${moved}`);
+
+  const routing = new RT.ModRouting();
+  const r = routing.addRoute('macro1', 'bands.all', 'L');
+  const { ParamStore } = importTs('src/core/ParamStore.ts');
+  const M = importTs('src/core/midiMap.ts');
+  const keys = Object.keys(new ParamStore().getState());
+  const ok = r.ch === 'L' && P.BAND_GROUPS.length === 4 && !keys.some((k) => k.startsWith('bands.')) && !M.midiMappable('bands.mid');
+  check('8b band group: route keeps its channel, not stored, not MIDI-mapped', ok, `ch ${r.ch}, stored ${keys.filter((k) => k.startsWith('bands.'))}`);
+}
+
 console.table(results);

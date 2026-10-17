@@ -36,6 +36,25 @@ export function routeHitsL(ch: number | undefined): boolean {
 export function routeHitsR(ch: number | undefined): boolean {
   return ch !== CH_L;
 }
+/**
+ * Every param a route onto `dst` with channel `ch` moves, as [index, sign] (sign −1: R of an INV
+ * route). A band group stands for its member bands; an L/R pair for its L param and / or R twin.
+ */
+export function routeDests(dst: number, ch: number | undefined): [number, number][] {
+  const out: [number, number][] = [];
+  const p = PARAMS[dst];
+  if (!p) return out;
+  for (const m of p.members ?? [dst]) {
+    const tw = PARAMS[m].twin;
+    if (tw === undefined) out.push([m, 1]);
+    else {
+      if (routeHitsL(ch)) out.push([m, 1]);
+      if (routeHitsR(ch)) out.push([tw, ch === CH_INV ? -1 : 1]);
+    }
+  }
+  return out;
+}
+
 /** trigger route: trigger output → trigger input */
 export interface TriggerRouteConfig {
   /** index into TRIGGER_OUTS */

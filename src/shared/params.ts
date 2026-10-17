@@ -38,7 +38,7 @@ export type { ModClass, ParamCurve, ParamUnit };
 export const FADER_MIN_DB = -60;
 export const FADER_MAX_DB = 12;
 
-export type ParamGroup = 'global' | 'band' | 'module';
+export type ParamGroup = 'global' | 'band' | 'module' | 'bandGroup';
 
 export interface ParamSpec {
   id: string;
@@ -65,6 +65,8 @@ export interface ParamSpec {
   twin?: number;
   /** on an R twin, the index of its left-channel param */
   twinOf?: number;
+  /** band group (BAND LOW / MID / HIGH / ALL): the L params a route onto it moves; it has no value of its own */
+  members?: readonly number[];
 }
 
 type Def = Omit<ParamDef, 'id'> & { id: string };
@@ -128,7 +130,7 @@ addModule('scan', 'scan', scanParams());
  * The historic ids (band0.gain …, fbAllOn, fbAll) are the left channel. Each gets an R twin with
  * the same range, appended here so every older index stays. Twins are never route targets of their
  * own: a route onto the L id carries a channel choice (L+R, L, R, INV) instead (shared/mod/rules.ts). */
-/** first index of the R twins (they run to the end of PARAMS) */
+/** first index of the R twins (they run up to the band groups) */
 export const R_FIRST = PARAMS.length;
 const STEREO_IDS = ['fbAllOn', 'fbAll'];
 for (let b = 0; b < NUM_BANDS; b++) for (const k of ['gain', 'res', 'fb']) STEREO_IDS.push(`band${b}.${k}`);
@@ -136,6 +138,31 @@ for (const id of STEREO_IDS) {
   const l = PARAMS.find((p) => p.id === id)!;
   l.twin = PARAMS.length;
   PARAMS.push({ ...l, id: `${id}R`, label: `${l.label} R`, index: PARAMS.length, modulatable: false, twin: undefined, twinOf: l.index });
+}
+
+/* ---------- band groups (hardware MACRO: BAND LOW, MID, HIGH, ALL) ----------
+ * Route targets only: a route onto a group moves the level faders of all its bands, like one route
+ * per band (same depth, same channel choice). The group itself holds no value: it is not stored in
+ * snapshots, not MIDI-mapped and never reaches the DSP. Appended last, so every older index stays. */
+export const BAND_GROUPS = [
+  { id: 'bands.low', label: 'Band Low', short: 'B·LOW', bands: [0, 1, 2] },
+  { id: 'bands.mid', label: 'Band Mid', short: 'B·MID', bands: [3, 4, 5, 6] },
+  { id: 'bands.high', label: 'Band High', short: 'B·HIGH', bands: [7, 8, 9] },
+  { id: 'bands.all', label: 'Band All', short: 'B·ALL', bands: Array.from({ length: NUM_BANDS }, (_, b) => b) },
+] as const;
+for (const g of BAND_GROUPS) {
+  const gain = BAND_DEFS[0];
+  PARAMS.push({
+    ...gain,
+    id: g.id,
+    label: g.label,
+    short: g.short,
+    group: 'bandGroup',
+    index: PARAMS.length,
+    module: 'resonator',
+    modClass: 'resonator',
+    members: g.bands.map((b) => NUM_GLOBAL + b * PARAMS_PER_BAND),
+  });
 }
 
 export const NUM_PARAMS = PARAMS.length;
@@ -166,6 +193,12 @@ export const PARAM_BY_ID: Record<string, ParamSpec> = Object.fromEntries(PARAMS.
 export function twinId(id: string): string | undefined {
   const t = PARAM_BY_ID[id]?.twin;
   return t === undefined ? undefined : PARAMS[t].id;
+}
+
+/** does a route onto this param carry a channel choice (L+R, L, R, INV)? L/R pairs and band groups do */
+export function hasRouteChannel(id: string): boolean {
+  const p = PARAM_BY_ID[id];
+  return !!p && (p.twin !== undefined || p.members !== undefined);
 }
 
 /** index of a param id (throws on unknown ids: use at module load to cache indices) */
@@ -323,10 +356,13 @@ export const RES_DEFAULT_V2 = 0.45;
 
 export const RES_KNOB_RES = 0;
 export const RES_KNOB_FEEDBACK = 1;
-/** knob travel through the curve (0 linear, 1 log: fast first, 2 exp: fine first), sign kept: -1..1 → -1..1 */
+/**
+ * knob travel through the curve (0 linear, 1 log: fast first, 2 exp: fine first, 3 S-curve "balanced": fine
+ * around the centre and at the stops, fast in between), sign kept: -1..1 → -1..1
+ */
 export function resKnobShape(p: number, curve: number): number {
   const a = Math.min(1, Math.abs(p));
-  const s = curve === 1 ? Math.log10(1 + 9 * a) : curve === 2 ? (Math.pow(10, a) - 1) / 9 : a;
+  const s = curve === 1 ? Math.log10(1 + 9 * a) : curve === 2 ? (Math.pow(10, a) - 1) / 9 : curve === 3 ? a * a * (3 - 2 * a) : a;
   return p < 0 ? -s : s;
 }
 /** share of the knob that reaches band b (0 all alike, 1 rising to the highs, 2 rising to the lows) */

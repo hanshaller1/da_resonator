@@ -34,7 +34,7 @@ export function defaultMidiMap(): Map<string, number> {
 /** may this param get a CC? Every param a control shows, except R twins (IN R reaches them) and route depths */
 export function midiMappable(id: string): boolean {
   const p = PARAM_BY_ID[id];
-  return !!p && p.twinOf === undefined && p.modClass !== 'route';
+  return !!p && p.twinOf === undefined && !p.members && p.modClass !== 'route';
 }
 
 /** a stored or imported map, cleaned: known params, CC 0–127 outside the reserved ones, one CC per param and one param per CC */

@@ -194,7 +194,9 @@ const f2 = (x) => x.toFixed(2);
 {
   const S = P.resKnobShape;
   const shapes = [S(0.5, 0), S(0.5, 1), S(0.5, 2), S(-0.5, 1), S(1, 1), S(1, 2)];
-  const shapeOk = shapes[0] === 0.5 && shapes[1] > 0.7 && shapes[2] < 0.3 && shapes[3] === -shapes[1] && Math.abs(shapes[4] - 1) < 1e-12 && Math.abs(shapes[5] - 1) < 1e-12;
+  // S-curve "balanced": fine around the centre and at the stops, half travel at half the knob, sign kept
+  const sOk = S(0.5, 3) === 0.5 && S(0.25, 3) < 0.2 && S(0.75, 3) > 0.8 && S(1, 3) === 1 && S(-0.25, 3) === -S(0.25, 3);
+  const shapeOk = sOk && shapes[0] === 0.5 && shapes[1] > 0.7 && shapes[2] < 0.3 && shapes[3] === -shapes[1] && Math.abs(shapes[4] - 1) < 1e-12 && Math.abs(shapes[5] - 1) < 1e-12;
   // HIGHS: the knob leaves band 1 alone and moves band 10 fully; LOWS the other way round.
   // Measured as the band's centre gain, which rises with RES (narrower, lifted peak).
   const centre = (b, weight, kv) => gainDb(impulse(setup({ res: 0.3, solo: b, analog: 0, kv, weight })), F[b]);
@@ -202,7 +204,7 @@ const f2 = (x) => x.toFixed(2);
   const lowStill = Math.abs(moved(0, 1)) < 0.01;
   const highMoves = moved(9, 1) > 6;
   const lowsMoves = moved(0, 2) > 6 && Math.abs(moved(9, 2)) < 0.01;
-  check('7 knob curve and band weighting', shapeOk && lowStill && highMoves && lowsMoves, `shapes ${shapes.map(f2).join(' ')}; HIGHS: band 1 still ${lowStill}, band 10 moves ${highMoves}; LOWS mirrored ${lowsMoves}`);
+  check('7 knob curve and band weighting', shapeOk && lowStill && highMoves && lowsMoves, `shapes ${shapes.map(f2).join(' ')}, S ${sOk}; HIGHS: band 1 still ${lowStill}, band 10 moves ${highMoves}; LOWS mirrored ${lowsMoves}`);
 }
 
 console.table(results);

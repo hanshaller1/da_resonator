@@ -9,7 +9,7 @@ import { ModController } from './ModController';
 import { ParamStore } from './ParamStore';
 import { StateHub } from './state';
 import { renderTestSignal, type TestSignalKind } from './testSignals';
-import type { AudioInputInfo, EngineAPI, EngineSnapshot, EngineState, InputChannels, MeterBusAPI, SourceInfo, SourceKind, StateProvider, Unsubscribe } from './types';
+import type { AudioInputInfo, ChannelAnalysers, EngineAPI, EngineSnapshot, EngineState, InputChannels, MeterBusAPI, SourceInfo, SourceKind, StateProvider, Unsubscribe } from './types';
 
 class MeterBus implements MeterBusAPI {
   private e = new Emitter<[MeterFrame]>();
@@ -46,9 +46,24 @@ function inputConstraints(deviceId: string): MediaTrackConstraints {
   };
 }
 
+/** one analyser per channel behind `src` (a mono source shows in both); a side branch, nothing is passed on */
+function channelTaps(ctx: AudioContext, src: AudioNode): [AnalyserNode, AnalyserNode] {
+  const up = new GainNode(ctx, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
+  const split = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+  const l = new AnalyserNode(ctx, { fftSize: 4096, smoothingTimeConstant: 0.75 });
+  const r = new AnalyserNode(ctx, { fftSize: 4096, smoothingTimeConstant: 0.75 });
+  src.connect(up);
+  up.connect(split);
+  split.connect(l, 0);
+  split.connect(r, 1);
+  return [l, r];
+}
+
 /**
  * Signal flow:
  *   source -> sourceGain -> analyserIn -> preInserts -> [worklet: pre filter -> resonator -> post filter] -> postInserts -> analyserOut -> destination
+ * Side taps (no effect on the sound): analyserIn and analyserOut also feed one analyser per channel
+ * (analysersLR, the SPECTR pairs).
  *
  * Everything the instrument does (resonator, band dynamics, filters, LFOs, clock mods, env followers,
  * macros, clock) runs inside the worklet and is controlled by params (shared/params.ts) plus the
@@ -83,6 +98,7 @@ export class AudioEngine implements EngineAPI {
   postInserts: InsertChain | null = null;
   analyserIn: AnalyserNode | null = null;
   analyserOut: AnalyserNode | null = null;
+  analysersLR: ChannelAnalysers | null = null;
 
   private _state: EngineState = 'idle';
   private stateE = new Emitter<[EngineState]>();
@@ -206,6 +222,9 @@ export class AudioEngine implements EngineAPI {
     node.connect(this.postInserts.input);
     this.postInserts.output.connect(this.analyserOut);
     this.analyserOut.connect(ctx.destination);
+    const [inL, inR] = channelTaps(ctx, this.analyserIn);
+    const [outL, outR] = channelTaps(ctx, this.analyserOut);
+    this.analysersLR = { inL, inR, outL, outR };
 
     ctx.onstatechange = () => {
       this.setStateInternal(ctx.state === 'running' ? 'running' : ctx.state === 'suspended' ? 'suspended' : 'idle');

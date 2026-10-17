@@ -135,7 +135,8 @@ function windowsRms(x, win) {
   for (let n = 1; n <= 2; n++) Object.assign(vals, { [`cmod${n}.on`]: 1, [`cmod${n}.mode`]: n });
   for (let b = 0; b < P.NUM_BANDS; b++) vals[`band${b}.fb`] = 0.5;
   const srcs = ['lfo1', 'lfo2', 'lfo3', 'lfo4', 'cmod1', 'cmod2', 'ef1', 'ef2', 'ef3', 'ef4', 'macro1', 'macro2'];
-  const targets = P.PARAMS.filter((p) => ['resonator', 'filter', 'dyn'].includes(p.modClass) && p.modulatable && p.curve !== 'discrete' && p.curve !== 'toggle').map((p) => p.id);
+  // band groups left out: the route set stays the one measured before they existed
+  const targets = P.PARAMS.filter((p) => ['resonator', 'filter', 'dyn'].includes(p.modClass) && !p.members && p.modulatable && p.curve !== 'discrete' && p.curve !== 'toggle').map((p) => p.id);
   const routes = [];
   for (let k = 0; routes.length < 64 && k < 500; k++) routes.push([srcs[k % srcs.length], targets[(k * 7) % targets.length], 0.2]);
   const routing = new R.ModRouting();

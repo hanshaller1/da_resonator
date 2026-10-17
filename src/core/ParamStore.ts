@@ -100,7 +100,7 @@ export class ParamStore implements ParamStoreAPI {
 
   getState(): Record<string, number> {
     const s: Record<string, number> = {};
-    for (const p of PARAMS) s[p.id] = this.base[p.index];
+    for (const p of PARAMS) if (!p.members) s[p.id] = this.base[p.index];
     return s;
   }
   setState(s: Record<string, number>): void {

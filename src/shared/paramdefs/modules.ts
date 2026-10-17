@@ -232,7 +232,7 @@ export const FB_ROUTES = ['Band', 'Common'] as const;
 /** what the RESONANCE knob does: shift RES of all bands, or scale all feedback (centre = as set, left inverts) */
 export const RES_KNOB_MODES = ['Res', 'Feedback'] as const;
 /** travel of the RESONANCE knob */
-export const RES_CURVES = ['Linear', 'Log', 'Exp'] as const;
+export const RES_CURVES = ['Linear', 'Log', 'Exp', 'S-Curve'] as const;
 /** which bands the RESONANCE knob reaches: all alike, rising to the highs, rising to the lows */
 export const RES_WEIGHTS = ['All', 'Highs', 'Lows'] as const;
 /**

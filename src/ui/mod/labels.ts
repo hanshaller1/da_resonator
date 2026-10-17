@@ -80,9 +80,13 @@ const MODULE_TITLES: Record<string, string> = {
   clock: 'Clock',
 };
 
+/** heading of the band groups (BAND LOW / MID / HIGH / ALL), listed right after the resonator */
+export const BAND_GROUPS_TITLE = 'Band Groups';
+
 /** group heading for a target param ('Band 3', 'LFO 2', 'Route depths' …) */
 export function targetGroup(spec: ParamSpec): string {
   if (spec.group === 'band' && spec.band !== undefined) return `Band ${spec.band + 1}`;
+  if (spec.members) return BAND_GROUPS_TITLE;
   if (spec.modClass === 'route') return 'Route depths';
   const m = /^(lfo|cmod|ef|macro)(\d+)$/.exec(spec.module);
   if (m) return `${{ lfo: 'LFO', cmod: 'Clock Mod', ef: 'Env Follower', macro: 'Macro' }[m[1]]} ${m[2]}`;
@@ -122,6 +126,8 @@ export function targetGroups(mod: RouteSource, source: string): TargetGroup[] {
   const routes = mod.routes();
   const live = new Set(routes.map((r) => r.depthParam));
   const groups = new Map<string, TargetGroup>();
+  groups.set(targetGroup(PARAMS[0]), { label: targetGroup(PARAMS[0]), options: [] });
+  groups.set(BAND_GROUPS_TITLE, { label: BAND_GROUPS_TITLE, options: [] });
   for (const p of PARAMS) {
     if (!p.modulatable || p.curve === 'toggle') continue;
     if (p.modClass === 'route' && !live.has(p.id)) continue;
@@ -131,7 +137,7 @@ export function targetGroups(mod: RouteSource, source: string): TargetGroup[] {
     const c = mod.canRoute(source, p.id);
     grp.options.push({ id: p.id, label: targetLabel(p.id, routes), reason: c.ok ? null : c.reason });
   }
-  return [...groups.values()];
+  return [...groups.values()].filter((g) => g.options.length);
 }
 
 /** is the source currently swinging both ways? (LFO / clock mod can be switched with their `uni` param) */

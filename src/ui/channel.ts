@@ -7,7 +7,7 @@
  */
 import { Emitter } from '../core/Emitter';
 import type { ParamStoreAPI, RouteChannel, Unsubscribe } from '../core/types';
-import { NUM_BANDS, PARAMS, bandParamId, bandParamIdR, faderDbToNorm, faderNormToDb, twinId, type BandParamKey } from '../shared/params';
+import { NUM_BANDS, PARAMS, bandParamId, bandParamIdR, faderDbToNorm, faderNormToDb, hasRouteChannel, twinId, type BandParamKey } from '../shared/params';
 
 export type ChannelSel = 'L' | 'LR' | 'R';
 
@@ -28,9 +28,9 @@ export const channelSel = {
   },
 };
 
-/** channel of a new route onto `target`: the switch on an L/R pair, L+R anywhere else */
+/** channel of a new route onto `target`: the switch on an L/R pair or a band group, L+R anywhere else */
 export function newRouteChannel(target: string): RouteChannel {
-  return twinId(target) ? sel : 'LR';
+  return hasRouteChannel(target) ? sel : 'LR';
 }
 
 /** L+R: both channels move by the same travel `delta` from where the gesture started; each stops at its end */

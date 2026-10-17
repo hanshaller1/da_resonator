@@ -1,8 +1,8 @@
 import type { ModFrame } from '../shared/messages';
 import { ModRouting, routeDepthId } from '../shared/mod/routing';
-import { routeHitsL, routeHitsR, type ModConfig, type RouteChannel, type RouteCheck } from '../shared/mod/rules';
+import { routeDests, type ModConfig, type RouteChannel, type RouteCheck } from '../shared/mod/rules';
 import { NUM_SOURCES, SOURCES, SOURCE_BY_ID, TRIGGER_INS, TRIGGER_OUTS } from '../shared/mod/sources';
-import { NUM_PARAMS, PARAMS } from '../shared/params';
+import { NUM_PARAMS } from '../shared/params';
 import { Emitter } from './Emitter';
 import type { ParamStore } from './ParamStore';
 import type { ModAPI, RouteInfo, Unsubscribe } from './types';
@@ -37,11 +37,7 @@ export class ModController implements ModAPI {
     this.routing.onChange(() => {
       const cfg = this.routing.config();
       const mask = new Uint8Array(NUM_PARAMS);
-      for (const r of cfg.routes) {
-        const tw = PARAMS[r.dst].twin;
-        if (tw === undefined || routeHitsL(r.ch)) mask[r.dst] = 1;
-        if (tw !== undefined && routeHitsR(r.ch)) mask[tw] = 1;
-      }
+      for (const r of cfg.routes) for (const [d] of routeDests(r.dst, r.ch)) mask[d] = 1;
       this.params.setModulated(mask);
       this.send(cfg);
       this.changed.emit();

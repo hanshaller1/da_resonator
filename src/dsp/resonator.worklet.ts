@@ -887,7 +887,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.bypTgt = p[G.bypass] >= 0.5 ? 1 : 0;
     this.fbRoute = p[this.iRoute] >= 0.5 ? 1 : 0;
     this.knobMode = p[this.iKnob] >= 0.5 ? RES_KNOB_FEEDBACK : 0;
-    this.knobCurve = clamp(Math.round(p[this.iCurve]), 0, 2);
+    this.knobCurve = clamp(Math.round(p[this.iCurve]), 0, 3);
     const w = clamp(Math.round(p[this.iWeight]), 0, 2);
     if (w !== this.knobWeight) {
       this.knobWeight = w;

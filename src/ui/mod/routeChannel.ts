@@ -1,9 +1,9 @@
 /**
  * Channel of a route onto a band value (L/R per band, docs/lr-pro-band-2026-10-16.md): a small
- * button cycling L+R → L → R → INV. Only routes onto a param with an R twin get one.
+ * button cycling L+R → L → R → INV. Only routes onto a param with an R twin or a band group get one.
  */
 import type { ModAPI, RouteChannel, RouteInfo } from '../../core/types';
-import { twinId } from '../../shared/params';
+import { hasRouteChannel } from '../../shared/params';
 import { h, toggleClass } from '../dom';
 
 const ORDER: RouteChannel[] = ['LR', 'L', 'R', 'INV'];
@@ -16,7 +16,7 @@ const TEXT: Record<RouteChannel, [string, string]> = {
 
 /** the button for route r, or null when its target has no L/R pair; it follows later changes itself */
 export function routeChannelButton(mod: ModAPI, r: RouteInfo): { el: HTMLButtonElement; dispose(): void } | null {
-  if (!twinId(r.target)) return null;
+  if (!hasRouteChannel(r.target)) return null;
   const el = h('button', { type: 'button', class: 'route-ch' });
   let ch: RouteChannel = r.ch;
   const sync = () => {

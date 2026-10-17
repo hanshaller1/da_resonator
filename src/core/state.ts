@@ -40,7 +40,7 @@ export function migrateSnapshot(input: unknown): EngineSnapshot {
     return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
   };
   for (const p of PARAMS) {
-    if (p.twinOf !== undefined) continue;
+    if (p.twinOf !== undefined || p.members) continue;
     const def = old && p.group === 'band' && p.id.endsWith('.res') ? RES_DEFAULT_V2 : p.def;
     params[p.id] = given(p.id) ?? def;
   }

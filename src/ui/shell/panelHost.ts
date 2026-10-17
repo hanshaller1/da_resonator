@@ -3,6 +3,7 @@
  * (controls keep their subscriptions, reveal can find them); only the current one is shown.
  */
 import type { EngineAPI, Unsubscribe } from '../../core/types';
+import { PARAMS, PARAM_BY_ID } from '../../shared/params';
 import { h, toggleClass } from '../dom';
 import { getTabDef, nav, NUM_SLOTS, TABS, type Notify, type TabContext, type TabId } from './tabs';
 
@@ -151,7 +152,12 @@ export function buildTabs(engine: EngineAPI, notify: Notify): { tabRow: HTMLElem
       });
       return true;
     }
-    // faders and the global column are always visible
+    // faders and the global column are always visible; a band group shows the faders of its bands
+    const members = PARAM_BY_ID[paramId]?.members;
+    if (members) {
+      for (const m of members) document.querySelectorAll<HTMLElement>(`.faders [data-param="${CSS.escape(PARAMS[m].id)}"]`).forEach((e) => e.offsetParent !== null && flash(e));
+      return true;
+    }
     const el = [...document.querySelectorAll<HTMLElement>(`.faders [data-param="${CSS.escape(paramId)}"], .globals [data-param="${CSS.escape(paramId)}"]`)].find((e) => e.offsetParent !== null);
     if (el) {
       flash(el);

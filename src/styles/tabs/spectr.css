@@ -4,3 +4,5 @@
 .sp-peak { color: var(--c-accent); font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono); font-variant-numeric: tabular-nums; margin-left: var(--sp-2); }
 .sp-body { position: relative; }
 .sp-body > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.sp-drop .cfg-step-val { min-width: 58px; }
+.sp-drop.is-off .cfg-step-val { color: var(--c-text-4); }

@@ -27,6 +27,7 @@ function shortTarget(id: string): string {
   const s = PARAM_BY_ID[id];
   if (!s) return id;
   if (s.group === 'band' && s.band !== undefined) return `B${s.band + 1} ${s.short}`;
+  if (s.members) return s.short;
   const m = /^(lfo|cmod|ef)(\d+)$/.exec(s.module);
   const mod = m ? `${{ lfo: 'LFO', cmod: 'CM', ef: 'EF' }[m[1]]}${m[2]}` : (MODULE_SHORT[s.module] ?? s.module.toUpperCase());
   return mod ? `${mod} ${s.short}` : s.label.toUpperCase();
@@ -201,6 +202,7 @@ registerTab({
         h('span', { class: 'micro-label' }, 'How to'),
         h('p', {}, h('b', {}, 'ASSIGN'), ' then drag any control: the macro moves it that far.'),
         h('p', {}, 'Click a target to show it, drag its % to change the depth.'),
+        h('p', {}, h('b', {}, '+ target'), ' → Band Groups: one target for the faders of LOW, MID, HIGH or ALL bands.'),
         h('p', {}, 'Double-click a name to rename it. Names are saved with presets.'),
         h('p', {}, 'Right-click any control to add or edit its modulation.'),
       ),

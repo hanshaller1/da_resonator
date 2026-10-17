@@ -3,7 +3,7 @@
  * fixed route slots (depth = param `route{slot}.depth`), trigger routes, validation.
  */
 import { NUM_ROUTES } from '../paramdefs/modules';
-import { PARAMS, PARAM_BY_ID, paramIndex } from '../params';
+import { PARAMS, PARAM_BY_ID, hasRouteChannel, paramIndex } from '../params';
 import { ROUTE_CHANNELS, checkRoute, checkTriggerRoute, type ModConfig, type RouteChannel, type RouteCheck, type RouteConfig, type TriggerRouteConfig } from './rules';
 import { MAX_TRIGGER_ROUTES, SOURCES, SOURCE_BY_ID, TRIGGER_INS, TRIGGER_IN_BY_ID, TRIGGER_OUTS, TRIGGER_OUT_BY_ID } from './sources';
 
@@ -27,10 +27,10 @@ export interface TriggerRouteInfo {
 
 export const routeDepthId = (slot: number) => `route${slot}.depth`;
 
-/** channel index for a target: anything but L+R only on params with an R twin */
+/** channel index for a target: anything but L+R only on params with an R twin and on band groups */
 function channelIndex(dst: number, ch: RouteChannel | undefined): number {
   const i = ch ? ROUTE_CHANNELS.indexOf(ch) : 0;
-  return PARAMS[dst]?.twin === undefined || i < 0 ? 0 : i;
+  return !PARAMS[dst] || !hasRouteChannel(PARAMS[dst].id) || i < 0 ? 0 : i;
 }
 
 export class ModRouting {

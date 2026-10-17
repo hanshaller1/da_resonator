@@ -198,6 +198,14 @@ export interface MidiAPI {
   onTriggerLearn(cb: (name: string, t: MidiTrigger) => void): Unsubscribe;
 }
 
+/** per-channel analysers (input before the resonator, output after the post inserts) */
+export interface ChannelAnalysers {
+  inL: AnalyserNode;
+  inR: AnalyserNode;
+  outL: AnalyserNode;
+  outR: AnalyserNode;
+}
+
 export interface EngineAPI {
   readonly params: ParamStoreAPI;
   readonly meters: MeterBusAPI;
@@ -238,6 +246,8 @@ export interface EngineAPI {
   readonly analyserOut: AnalyserNode | null;
   /** pre-resonator analyser (null before start) */
   readonly analyserIn: AnalyserNode | null;
+  /** one analyser per channel of the input and the output, for the SPECTR pairs (null before start) */
+  readonly analysersLR: ChannelAnalysers | null;
 
   /** modulation: sources, routes, live values */
   readonly mod: ModAPI;

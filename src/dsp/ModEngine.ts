@@ -12,7 +12,7 @@
  */
 import { NUM_CMODS, NUM_EFS, NUM_LFOS, NUM_TAPS, followsMidi } from '../shared/paramdefs/modules';
 import { NUM_PARAMS, PARAMS, PARAM_BY_ID, defaultValues, fromNorm, paramIndex, toNorm } from '../shared/params';
-import { CH_INV, evaluationOrder, routeHitsL, routeHitsR, type ModConfig } from '../shared/mod/rules';
+import { evaluationOrder, routeDests, type ModConfig } from '../shared/mod/rules';
 import { NUM_SOURCES, NUM_TRIGGER_INS, NUM_TRIGGER_OUTS, SOURCE_BY_ID, TRIGGER_OUT_BY_ID } from '../shared/mod/sources';
 import { ClockModDsp } from './modules/cmod';
 import { EnvFollowerDsp } from './modules/ef';
@@ -158,11 +158,8 @@ export class ModEngine {
     this.modulated.fill(0);
     this.routeDsts = [];
     for (const r of cfg.routes) {
-      // a route onto an L/R pair moves the L param, its R twin or both (channel, shared/mod/rules.ts)
-      const tw = PARAMS[r.dst]?.twin;
-      const dsts = tw === undefined ? [r.dst] : [routeHitsL(r.ch) ? r.dst : -1, routeHitsR(r.ch) ? tw : -1];
-      for (const d of dsts) {
-        if (d < 0) continue;
+      // a route onto an L/R pair moves the L param, its R twin or both (channel); onto a band group its bands (shared/mod/rules.ts)
+      for (const [d] of routeDests(r.dst, r.ch)) {
         this.modulated[d] = 1;
         if (!this.routeDsts.includes(d)) this.routeDsts.push(d);
       }
@@ -226,16 +223,27 @@ export class ModEngine {
         if (!r) continue;
         const di = paramIndex(`route${slot}.depth`);
         const src = r.src;
-        const tw = PARAMS[r.dst].twin;
-        const dL = tw === undefined || routeHitsL(r.ch) ? r.dst : -1;
-        const dR = tw !== undefined && routeHitsR(r.ch) ? tw : -1;
-        const sR = r.ch === CH_INV ? -1 : 1;
-        steps.push(() => {
-          resolve?.();
-          const v = this.srcVals[src] * this.eff[di];
-          if (dL >= 0) this.offset[dL] += v;
-          if (dR >= 0) this.offset[dR] += sR * v;
-        });
+        const dests = routeDests(r.dst, r.ch);
+        if (dests.length <= 2) {
+          // one param or one L/R pair (the common case, kept as it was)
+          const [dL, sL] = dests[0] ?? [-1, 1];
+          const [dR, sR] = dests[1] ?? [-1, 1];
+          steps.push(() => {
+            resolve?.();
+            const v = this.srcVals[src] * this.eff[di];
+            if (dL >= 0) this.offset[dL] += sL * v;
+            if (dR >= 0) this.offset[dR] += sR * v;
+          });
+        } else {
+          // band group: the same offset on every band of the group
+          const idx = Int32Array.from(dests.map((d) => d[0]));
+          const sgn = Float32Array.from(dests.map((d) => d[1]));
+          steps.push(() => {
+            resolve?.();
+            const v = this.srcVals[src] * this.eff[di];
+            for (let k = 0; k < idx.length; k++) this.offset[idx[k]] += sgn[k] * v;
+          });
+        }
       } else if (resolve) {
         // audio modules (resonator, dyn, filters) and anything else with modulated params
         steps.push(resolve);

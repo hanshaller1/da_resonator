@@ -1,22 +1,57 @@
 /**
- * SPECTR tab: the analyser as a page. Input and output spectra on the band axis (each band's
- * centre over its fader), optional peak hold, freeze, the filterbank response as a guide and a
- * crosshair readout. Status line = loudest output frequency, view and display switches.
+ * SPECTR tab: the analyser as a page. Two spectra on the band axis (each band's centre over its
+ * fader), chosen as a pair like on the hardware: OUT L·R, IN L·R, L IN·OUT, R IN·OUT, or input and
+ * output with L and R together (IN·OUT). A Lissajous figure of the same pair (X = first, Y =
+ * second), optional peak hold with an adjustable drop, freeze, the filterbank response as a guide
+ * and a crosshair readout. Status line = loudest frequency of the second trace, pair and display switches.
  */
 import '../../styles/tabs/spectr.css';
+import type { ChannelAnalysers, EngineAPI } from '../../core/types';
 import { BAND_FREQS, NUM_BANDS } from '../../shared/params';
+import { stepper } from '../components/stepper';
 import { h, toggleClass } from '../dom';
 import { readModel, responseAt, type ResponseModel } from '../response';
 import { colCenter, freqOfX } from '../shell/bandAxis';
 import { registerTab } from '../shell/tabs';
 import { cornerNote, drawBandGrid, drawDbGrid, fillTrace, formatHz, monoFont, strokeTrace } from '../viz/draw';
-import { SPEC_BOT, SPEC_TOP, SpectrumSampler } from '../viz/spectrum';
+import { Lissajous } from '../viz/lissajous';
+import { SPEC_BOT, SPEC_TOP, SpectrumSampler, type SynthTrace } from '../viz/spectrum';
 import { VizCanvas } from '../viz/vizCanvas';
 
-type View = 'in' | 'out' | 'both';
+type Pair = 'sum' | 'out' | 'in' | 'l' | 'r';
+interface PairDef {
+  label: string;
+  title: string;
+  /** names of trace A (grey, X of the figure) and trace B (accent, Y) */
+  a: string;
+  b: string;
+  pick(e: EngineAPI, lr: ChannelAnalysers | null): [AnalyserNode | null, AnalyserNode | null];
+  synth: [SynthTrace, SynthTrace];
+}
+const IN = (ch: 0 | 1 | -1): SynthTrace => ({ kind: 'in', ch });
+const OUT = (ch: 0 | 1 | -1): SynthTrace => ({ kind: 'out', ch });
+/** the display pairs, in button order (hardware: OUT L & R, IN L & R, L IN & OUT, R IN & OUT) */
+const PAIRS: Record<Pair, PairDef> = {
+  sum: { label: 'IN·OUT', title: 'Input and output, L and R together', a: 'INPUT', b: 'OUTPUT', pick: (e) => [e.analyserIn, e.analyserOut], synth: [IN(-1), OUT(-1)] },
+  out: { label: 'OUT L·R', title: 'Left and right output', a: 'OUT L', b: 'OUT R', pick: (_e, lr) => [lr?.outL ?? null, lr?.outR ?? null], synth: [OUT(0), OUT(1)] },
+  in: { label: 'IN L·R', title: 'Left and right input', a: 'IN L', b: 'IN R', pick: (_e, lr) => [lr?.inL ?? null, lr?.inR ?? null], synth: [IN(0), IN(1)] },
+  l: { label: 'L IN·OUT', title: 'Left input and left output', a: 'IN L', b: 'OUT L', pick: (_e, lr) => [lr?.inL ?? null, lr?.outL ?? null], synth: [IN(0), OUT(0)] },
+  r: { label: 'R IN·OUT', title: 'Right input and right output', a: 'IN R', b: 'OUT R', pick: (_e, lr) => [lr?.inR ?? null, lr?.outR ?? null], synth: [IN(1), OUT(1)] },
+};
+const PAIR_ORDER = Object.keys(PAIRS) as Pair[];
+/** peak-hold drop speeds (dB per second after the hold), slow to fast */
+const DROPS = [3, 6, 12, 24, 48, 96, 192];
+const DROP_DEF = 3;
+/** how long a peak stays before it drops */
+const HOLD_MS = 1500;
+
 interface Settings {
-  view: View;
+  pair: Pair;
   hold: boolean;
+  /** index into DROPS */
+  drop: number;
+  /** Lissajous figure shown */
+  xy: boolean;
   resp: boolean;
 }
 const STORE_KEY = 'resonator.spectr';
@@ -28,12 +63,14 @@ const RESP_BOT = -42;
 const PEAK_MS = 200;
 
 function loadSettings(): Settings {
-  const d: Settings = { view: 'both', hold: true, resp: true };
+  const d: Settings = { pair: 'sum', hold: true, drop: DROP_DEF, xy: true, resp: true };
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null') as Partial<Settings> | null;
     if (s && typeof s === 'object') {
-      if (s.view === 'in' || s.view === 'out' || s.view === 'both') d.view = s.view;
+      if (typeof s.pair === 'string' && s.pair in PAIRS) d.pair = s.pair;
       if (typeof s.hold === 'boolean') d.hold = s.hold;
+      if (typeof s.drop === 'number' && DROPS[s.drop] !== undefined) d.drop = s.drop;
+      if (typeof s.xy === 'boolean') d.xy = s.xy;
       if (typeof s.resp === 'boolean') d.resp = s.resp;
     }
   } catch {
@@ -66,41 +103,76 @@ registerTab({
     let frozen = false;
 
     /* ---------- status line ---------- */
+    const peakName = h('span', { class: 'sp-st' });
     const peak = h('b', { class: 'sp-peak' }, '–');
     const btn = (label: string, title: string) => h('button', { type: 'button', class: 'inst-btn', title }, label);
-    const views: Record<View, HTMLButtonElement> = { in: btn('IN', 'Show the input spectrum'), out: btn('OUT', 'Show the output spectrum'), both: btn('BOTH', 'Show input and output') };
-    const holdBtn = btn('HOLD', 'Peak hold: keep the loudest level per frequency for a moment');
+    const pairs = Object.fromEntries(PAIR_ORDER.map((k) => [k, btn(PAIRS[k].label, PAIRS[k].title)])) as Record<Pair, HTMLButtonElement>;
+    const holdBtn = btn('HOLD', 'Peak hold: keep the loudest level per frequency for a moment, then let it drop');
+    const drop = stepper(
+      'Peak drop',
+      () => set.drop,
+      (v) => {
+        const i = Math.max(0, Math.min(DROPS.length - 1, v));
+        if (i === set.drop) return;
+        set.drop = i;
+        spec.dropDbPerSec = DROPS[i];
+        saveSettings(set);
+        drop.sync();
+      },
+      (i) => `${DROPS[i]} dB/s`,
+    );
+    drop.el.classList.add('sp-drop');
+    drop.el.title = 'How fast the peaks drop after the hold';
+    const xyBtn = btn('XY', 'Lissajous figure of the pair: first on X, second on Y');
     const freezeBtn = btn('FREEZE', 'Freeze the picture');
     const respBtn = btn('RESP', 'Filterbank response as a guide');
     tab.status.append(
-      h('span', { class: 'sp-st' }, 'Loudest out ', peak),
+      h('span', { class: 'sp-st' }, peakName, peak),
       h('span', { class: 'tp-spacer' }),
-      h('span', { class: 'inst', role: 'group', 'aria-label': 'Spectrum view' }, views.in, views.out, views.both),
-      h('span', { class: 'inst', role: 'group', 'aria-label': 'Display' }, holdBtn, respBtn, freezeBtn),
+      h('span', { class: 'inst', role: 'group', 'aria-label': 'Spectrum pair' }, ...PAIR_ORDER.map((k) => pairs[k])),
+      h('span', { class: 'inst', role: 'group', 'aria-label': 'Peak hold' }, holdBtn, drop.el),
+      h('span', { class: 'inst', role: 'group', 'aria-label': 'Display' }, xyBtn, respBtn, freezeBtn),
     );
     const syncButtons = () => {
-      for (const v of Object.keys(views) as View[]) {
-        toggleClass(views[v], 'is-selected', set.view === v);
-        views[v].setAttribute('aria-pressed', String(set.view === v));
+      for (const k of PAIR_ORDER) {
+        toggleClass(pairs[k], 'is-selected', set.pair === k);
+        pairs[k].setAttribute('aria-pressed', String(set.pair === k));
       }
       for (const [b, on] of [
         [holdBtn, set.hold],
+        [xyBtn, set.xy],
         [respBtn, set.resp],
         [freezeBtn, frozen],
       ] as const) {
         toggleClass(b, 'is-selected', on);
         b.setAttribute('aria-pressed', String(on));
       }
+      toggleClass(drop.el, 'is-off', !set.hold);
+      peakName.textContent = `Loudest ${PAIRS[set.pair].b} `;
       viz.dirty = true;
     };
-    for (const v of Object.keys(views) as View[])
-      views[v].addEventListener('click', () => {
-        set.view = v;
+    const usePair = () => {
+      const d = PAIRS[set.pair];
+      spec.pick = () => d.pick(engine, engine.analysersLR);
+      spec.synthTraces = d.synth;
+      spec.clear();
+      xy.clear();
+    };
+    for (const k of PAIR_ORDER)
+      pairs[k].addEventListener('click', () => {
+        if (set.pair === k) return;
+        set.pair = k;
         saveSettings(set);
+        usePair();
         syncButtons();
       });
     holdBtn.addEventListener('click', () => {
       set.hold = !set.hold;
+      saveSettings(set);
+      syncButtons();
+    });
+    xyBtn.addEventListener('click', () => {
+      set.xy = !set.xy;
       saveSettings(set);
       syncButtons();
     });
@@ -117,13 +189,14 @@ registerTab({
     /* ---------- picture ---------- */
     const body = tab.useBody();
     body.classList.add('sp-body');
-    const spec = new SpectrumSampler(engine, { peakHold: true, holdMs: 1500 });
+    const spec = new SpectrumSampler(engine, { peakHold: true, holdMs: HOLD_MS, dropDbPerSec: DROPS[set.drop] });
+    const xy = new Lissajous();
     let model: ResponseModel | null = null;
     let resp = new Float32Array(0);
     let peakAge = PEAK_MS;
     let cursor: { x: number; y: number } | null = null;
     const viz = new VizCanvas(body, tab, frame, {
-      label: 'Input and output spectrum on the band axis',
+      label: 'Spectra of two signals on the band axis and their Lissajous figure',
       onResize: (s) => {
         spec.resize(s.w);
         resp = new Float32Array(spec.cols);
@@ -136,6 +209,7 @@ registerTab({
     });
     engine.onStateChange(() => {
       spec.clear();
+      xy.clear();
       viz.dirty = true;
     });
 
@@ -163,7 +237,10 @@ registerTab({
       }
       const live = running && !frozen;
       if (!live && !viz.dirty) return;
-      if (live) spec.update(dt);
+      if (live) {
+        spec.update(dt);
+        if (set.xy) readXY(dt);
+      }
       draw(running);
       viz.dirty = false;
       peakAge += dt;
@@ -171,6 +248,22 @@ registerTab({
         peakAge = 0;
         updatePeak(running);
       }
+    }
+
+    /** the pair's time signals for the Lissajous figure (mock engine: from the level meters) */
+    function readXY(dt: number) {
+      const [a, b] = PAIRS[set.pair].pick(engine, engine.analysersLR);
+      if (a && b) {
+        xy.read(a, b, dt);
+        return;
+      }
+      const fr = engine.meters.latest();
+      const lvl = (t: SynthTrace) => {
+        const pr = t.kind === 'in' ? fr?.inPeak : fr?.outPeak;
+        return pr ? (t.ch === -1 ? Math.max(pr[0], pr[1]) : pr[t.ch]) : 0;
+      };
+      const [sa, sb] = PAIRS[set.pair].synth;
+      xy.synth(lvl(sa), lvl(sb), dt);
     }
 
     function updatePeak(running: boolean) {
@@ -198,16 +291,15 @@ registerTab({
       g.fillStyle = pal.line;
       g.fillRect(0, plotH, w, 1);
 
+      const pd = PAIRS[set.pair];
       if (running) {
-        const showIn = set.view !== 'out';
-        const showOut = set.view !== 'in';
-        if (showIn) fillTrace(g, spec.dispIn, spec.colPx, w, plotH, ySpec, pal.specIn, set.view === 'in' ? pal.text2 : null);
-        if (showOut) fillTrace(g, spec.dispOut, spec.colPx, w, plotH, ySpec, pal.specOut, pal.accent, 0.9);
+        fillTrace(g, spec.dispIn, spec.colPx, w, plotH, ySpec, pal.specIn, null);
+        fillTrace(g, spec.dispOut, spec.colPx, w, plotH, ySpec, pal.specOut, pal.accent, 0.9);
         if (set.hold) {
           g.save();
           g.globalAlpha = 0.4;
-          if (showIn) strokeTrace(g, spec.peakIn, spec.colPx, w, ySpec, pal.text3, 1, [0, plotH]);
-          if (showOut) strokeTrace(g, spec.peakOut, spec.colPx, w, ySpec, pal.accent, 1, [0, plotH]);
+          strokeTrace(g, spec.peakIn, spec.colPx, w, ySpec, pal.text3, 1, [0, plotH]);
+          strokeTrace(g, spec.peakOut, spec.colPx, w, ySpec, pal.accent, 1, [0, plotH]);
           g.restore();
         }
       }
@@ -250,12 +342,18 @@ registerTab({
         lx += 22 + g.measureText(text).width + 10;
       };
       if (running) {
-        if (set.view !== 'out') item(pal.text3, 'INPUT');
-        if (set.view !== 'in') item(pal.accent, 'OUTPUT');
-        if (set.hold) item(pal.text3, 'PEAK HOLD');
+        item(pal.text3, pd.a);
+        item(pal.accent, pd.b);
+        if (set.hold) item(pal.text3, `PEAK HOLD ${DROPS[set.drop]} dB/s`);
       }
       if (set.resp) item(pal.text2, 'RESPONSE (SHAPE)', true);
       if (frozen) item(pal.mod, 'FROZEN');
+
+      // Lissajous figure of the pair, top right
+      if (running && set.xy) {
+        const size = Math.min(170, plotH - 16);
+        xy.draw(g, w - size - 46, 8, size, pal, pd.a, pd.b);
+      }
 
       // crosshair readout
       if (cursor && cursor.y < plotH) {
@@ -272,8 +370,9 @@ registerTab({
         const f = freqOfX(cursor.x, w);
         const lines = [`${formatHz(f)} Hz`];
         if (running) {
-          if (set.view !== 'out') lines.push(`IN  ${spec.dispIn[i].toFixed(0)} dB`);
-          if (set.view !== 'in') lines.push(`OUT ${spec.dispOut[i].toFixed(0)} dB`);
+          const pad = Math.max(pd.a.length, pd.b.length) + 1;
+          lines.push(`${pd.a.padEnd(pad)}${spec.dispIn[i].toFixed(0)} dB`);
+          lines.push(`${pd.b.padEnd(pad)}${spec.dispOut[i].toFixed(0)} dB`);
         }
         g.font = monoFont(pal, 10);
         const bw = Math.max(...lines.map((t) => g.measureText(t).width)) + 14;
@@ -300,6 +399,7 @@ registerTab({
       }
     }
 
+    usePair();
     syncButtons();
   },
 });

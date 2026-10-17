@@ -80,6 +80,13 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - Alle bandbezogenen Bilder nutzen dieselbe Frequenzachse: die Mitte von Band k liegt genau über Fader k.
 - Die Modulationsmatrix ist pro Quelle verteilt: jedes Quellen-Register (CLK, ENV, LFO, MACRO) zeigt die Ziele
   seiner Quelle mit Tiefe; Rechtsklick auf jeden Regler öffnet weiterhin dessen Modulation und MIDI Learn.
+- **Bandgruppen** (MACRO, „+ target“ → Band Groups): BAND LOW (Bänder 1–3), MID (4–7), HIGH (8–10) und ALL sind
+  je ein Ziel. Eine Route darauf bewegt die Fader aller Bänder der Gruppe, genau wie eine Route pro Band, mit
+  derselben Tiefe und Kanalwahl (L+R, L, R, INV). Ein Klick auf das Ziel zeigt die Fader der Gruppe.
+- **SPECTR:** zwei Spektren als Paar wie an der Hardware: OUT L·R, IN L·R, L IN·OUT, R IN·OUT, dazu IN·OUT mit L
+  und R zusammen (die bisherige Ansicht). Das erste ist grau, das zweite orange. XY zeigt die Lissajous-Figur
+  desselben Paars (erstes auf X, zweites auf Y, Maßstab folgt dem Pegel). HOLD schaltet die Spitzenhaltung, daneben
+  stellst du ein, wie schnell die Spitzen nach 1,5 s fallen (3 bis 192 dB/s, Standard 24). Gespeichert im Browser.
 
 ### Resonanz und Feedback (CONFIG → Resonance)
 
@@ -96,7 +103,8 @@ Stand nach dem DSP-Durchgang vom 16.10.2026, siehe `docs/dsp-durchgang-2026-10-1
   - RES (Standard): verschiebt RES der Bänder.
   - FEEDBACK: skaliert alles Feedback (FB pro Band und FB ALL). In der Mitte wirkt es wie eingestellt,
     rechts bis zum Doppelten, links über null bis invertiert (negatives Feedback dämpft).
-  - CURVE: Drehweg LIN, LOG (schnell, dann fein) oder EXP (fein, dann schnell).
+  - CURVE: Drehweg LIN, LOG (schnell, dann fein), EXP (fein, dann schnell) oder S, die S-Kurve „balanced“
+    (fein um die Mitte und an den Anschlägen, schnell dazwischen).
   - BANDS: Der Knopf wirkt auf alle Bänder gleich (ALL), zu den Höhen ansteigend (HIGHS) oder zu den Tiefen ansteigend (LOWS).
 - **FB ALL:** Eigenschwingung ab AMT ≈ 0,75 mit Fadern auf 0 dB, bei breiten wie schmalen Bändern.
   Ältere Presets werden beim Laden umgerechnet und klingen gleich.

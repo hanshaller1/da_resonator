@@ -305,6 +305,7 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
     },
     analyserOut: null,
     analyserIn: null,
+    analysersLR: null,
     mod,
     getState: () => stateHub.get(),
     setState: (s) => stateHub.set(s),
