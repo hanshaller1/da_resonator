@@ -194,10 +194,14 @@ registerTab({
     const resoNote = h('p', { class: 'cfg-note' });
     const syncReso = () => {
       const common = p.get('reso.route') >= 0.5;
-      const fb = p.get('reso.knob') >= 0.5;
+      const knob = Math.round(p.get('reso.knob'));
       resoNote.textContent = [
         common ? 'Bands feed back after their faders into the shared input.' : 'Each band feeds back into itself.',
-        fb ? 'RESONANCE sets all feedback: centre none, right more, left inverted.' : 'RESONANCE shifts RES.',
+        knob === 2
+          ? 'RESONANCE moves a resonance spot from band 1 to 10.'
+          : knob === 1
+            ? 'RESONANCE sets all feedback: centre none, right more, left inverted.'
+            : 'RESONANCE shifts RES.',
       ].join(' ');
     };
     syncReso();
@@ -214,6 +218,7 @@ registerTab({
       row('KNOB', paramButtons(p, 'reso.knob', [
         ['RES', 'RESONANCE shifts RES of the bands'],
         ['FEEDBACK', 'RESONANCE sets all feedback like the hardware: centre none, right more, left inverted'],
+        ['FOCUS', 'Experimental: RESONANCE sweeps a resonance spotlight through the bands, left band 1, right band 10. Try an LFO on it'],
       ], 'What the RESONANCE knob does')),
       row('CURVE', paramButtons(p, 'reso.curve', [
         ['LIN', 'Even travel'],

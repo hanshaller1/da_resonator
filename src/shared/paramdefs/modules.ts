@@ -229,8 +229,8 @@ export function clockParams(): ParamDef[] {
 /* ---------- resonance and spread setup (CONFIG page; stored with the sound, never modulated) ---------- */
 /** where the per-band feedback goes: into the band itself before its fader, or after the fader into the shared input */
 export const FB_ROUTES = ['Band', 'Common'] as const;
-/** what the RESONANCE knob does: shift RES of all bands, or scale all feedback (centre = none, left inverts) */
-export const RES_KNOB_MODES = ['Res', 'Feedback'] as const;
+/** what the RESONANCE knob does: shift RES of all bands, or scale all feedback (centre = none, left inverts), or sweep a resonance spotlight through the bands */
+export const RES_KNOB_MODES = ['Res', 'Feedback', 'Focus'] as const;
 /** travel of the RESONANCE knob */
 export const RES_CURVES = ['Linear', 'Log', 'Exp', 'S-Curve'] as const;
 /** which bands the RESONANCE knob reaches: all alike, rising to the highs, rising to the lows */

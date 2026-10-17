@@ -1,6 +1,6 @@
 import type { ParamStoreAPI } from '../core/types';
 import { SPREAD_CLASSIC_DB } from '../shared/paramdefs/modules';
-import { BAND_FREQS, NUM_BANDS, bandParamId, bandParamIdR, dbToGain, fbKnobFactor, resKnobShape, resKnobWeight, resToQ, resonanceMakeup } from '../shared/params';
+import { BAND_FREQS, NUM_BANDS, RES_KNOB_FEEDBACK, RES_KNOB_FOCUS, bandParamId, bandParamIdR, dbToGain, fbKnobFactor, resFocusShift, resKnobMode, resKnobShape, resKnobWeight, resToQ, resonanceMakeup } from '../shared/params';
 
 /** which channel a picture shows (L/R per band): left, right, or both averaged */
 export type ModelChannel = 0 | 1 | 'both';
@@ -26,8 +26,9 @@ function fbShape(fb: number): number {
 export function bandResFb(p: ParamStoreAPI, b: number, ch: 0 | 1 = 0): { res: number; fb: number } {
   const id = ch === 0 ? bandParamId : bandParamIdR;
   const knob = resKnobShape(p.get('resOffset'), Math.round(p.get('reso.curve')));
-  const kb = knob * resKnobWeight(b, Math.round(p.get('reso.weight')));
-  const fbMode = p.get('reso.knob') >= 0.5;
+  const mode = resKnobMode(p.get('reso.knob'));
+  const fbMode = mode === RES_KNOB_FEEDBACK;
+  const kb = mode === RES_KNOB_FOCUS ? resFocusShift(b, knob) : knob * resKnobWeight(b, Math.round(p.get('reso.weight')));
   const allOn = p.get(ch === 0 ? 'fbAllOn' : 'fbAllOnR') >= 0.5;
   const all = allOn ? p.get(ch === 0 ? 'fbAll' : 'fbAllR') * (fbMode ? fbKnobFactor(knob) : 1) : 0;
   const fb = p.get(id(b, 'fb')) * (fbMode ? fbKnobFactor(kb) : 1) + all;

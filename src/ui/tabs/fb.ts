@@ -106,7 +106,7 @@ function statusLine(engine: EngineAPI, el: HTMLElement): void {
   );
   const allText = (on: string, amt: string) => (p.get(on) >= 0.5 ? `on ${val(amt)}` : 'off');
   const sync = () => {
-    res.textContent = `${val('resOffset')}${p.get('reso.knob') >= 0.5 ? ' (feedback)' : ''}`;
+    res.textContent = `${val('resOffset')}${['', ' (feedback)', ' (focus)'][Math.round(p.get('reso.knob'))] ?? ''}`;
     spread.textContent = `${val('spread')}${p.get('reso.spread') >= 0.5 ? ' (classic)' : ''}`;
     const l = allText('fbAllOn', 'fbAll');
     const r = allText('fbAllOnR', 'fbAllR');

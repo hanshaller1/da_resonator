@@ -72,7 +72,13 @@ export function buildGlobalColumn(engine: EngineAPI): HTMLElement {
   const res = new Knob(p, 'resOffset', { size: 'lg', label: 'RESONANCE', ariaLabel: 'Global resonance' });
   // what the knob does is set in CONFIG (shift RES, or scale all feedback like the hardware)
   const syncResTitle = () => {
-    res.el.title = p.get('reso.knob') >= 0.5 ? 'Feedback amount like the hardware: centre none, right more (rings from 3 o\'clock), left inverted (CONFIG)' : 'Shifts RES of the bands (CONFIG)';
+    const m = Math.round(p.get('reso.knob'));
+    res.el.title =
+      m === 2
+        ? 'Sweeps a resonance spotlight through the bands: left band 1, right band 10 (CONFIG)'
+        : m === 1
+          ? 'Feedback amount like the hardware: centre none, right more (rings from 3 o\'clock), left inverted (CONFIG)'
+          : 'Shifts RES of the bands (CONFIG)';
   };
   syncResTitle();
   p.subscribe('reso.knob', syncResTitle);

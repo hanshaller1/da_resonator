@@ -356,6 +356,23 @@ export const RES_DEFAULT_V2 = 0.45;
 
 export const RES_KNOB_RES = 0;
 export const RES_KNOB_FEEDBACK = 1;
+export const RES_KNOB_FOCUS = 2;
+/** RESONANCE knob mode from the param value (0 RES, 1 FEEDBACK, 2 FOCUS) */
+export function resKnobMode(v: number): number {
+  return v >= 1.5 ? RES_KNOB_FOCUS : v >= 0.5 ? RES_KNOB_FEEDBACK : 0;
+}
+/** FOCUS: RES added at the spotlight's centre, and its width (in bands, Gaussian sigma) */
+export const FOCUS_DEPTH = 0.6;
+export const FOCUS_WIDTH = 0.7;
+/**
+ * FOCUS knob: a resonance spotlight swept through the bands by the shaped knob value, 7:30 = band 1,
+ * 4:30 = band 10, continuous in between. Returns the RES added to band b.
+ */
+export function resFocusShift(b: number, s: number): number {
+  const x = ((Math.min(1, Math.max(-1, s)) + 1) / 2) * (NUM_BANDS - 1);
+  const d = (b - x) / FOCUS_WIDTH;
+  return FOCUS_DEPTH * Math.exp(-0.5 * d * d);
+}
 /**
  * knob travel through the curve (0 linear, 1 log: fast first, 2 exp: fine first, 3 S-curve "balanced": fine
  * around the centre and at the stops, fast in between), sign kept: -1..1 → -1..1

@@ -44,6 +44,8 @@
  *  Knob FEEDBACK: per band factor 1.3·s on fb (hardware attenuverter: centre no feedback, right up to ×1.3,
  *                FB 1 rings from 3 o'clock; left inverted), s = shaped, weighted knob; Feedback All gets the
  *                unweighted factor. Negative = inverted feedback (damping).
+ *  Knob FOCUS  : a RES spotlight (+0.6 at its centre, Gaussian σ 0.7 bands) swept through the bands by the
+ *                shaped knob: 7:30 = band 1, 12 = between bands 5 and 6, 4:30 = band 10. Band weighting is unused.
  *  Band fb     : loop gain at the centre G = fb / 0.87 up to the edge of self-oscillation (fb = 0.87, G = 1);
  *                above it G rises linearly to 1.15 + 0.03·Q at fb = 1 (Q-dependent so narrow, high-Q bands
  *                still start oscillating within a second or two). fb = 1 sustains a steady sine at the band
@@ -123,6 +125,9 @@ import {
   G,
   R_FIRST,
   RES_KNOB_FEEDBACK,
+  RES_KNOB_FOCUS,
+  resFocusShift,
+  resKnobMode,
   bandParamIndex,
   bandParamIndexR,
   dbToGain,
@@ -887,7 +892,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.fbOnTgt[1] = p[I_FBALLON_R] >= 0.5 ? 1 : 0;
     this.bypTgt = p[G.bypass] >= 0.5 ? 1 : 0;
     this.fbRoute = p[this.iRoute] >= 0.5 ? 1 : 0;
-    this.knobMode = p[this.iKnob] >= 0.5 ? RES_KNOB_FEEDBACK : 0;
+    this.knobMode = resKnobMode(p[this.iKnob]);
     this.knobCurve = clamp(Math.round(p[this.iCurve]), 0, 3);
     const w = clamp(Math.round(p[this.iWeight]), 0, 2);
     if (w !== this.knobWeight) {
@@ -965,20 +970,22 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private updateCoefs() {
     const fs = this.fs;
     const an = this.gCur[S_ANALOG];
-    // RESONANCE knob through its curve; per band weighted. RES mode shifts RES, FEEDBACK mode scales feedback.
+    // RESONANCE knob through its curve; per band weighted. RES mode shifts RES, FEEDBACK mode scales feedback,
+    // FOCUS sweeps a RES spotlight through the bands (no band weighting).
     const knob = resKnobShape(this.gCur[S_RESOFF], this.knobCurve);
-    const resMode = this.knobMode !== RES_KNOB_FEEDBACK;
-    this.fbAllFactor = resMode ? 1 : fbKnobFactor(knob);
+    const fbMode = this.knobMode === RES_KNOB_FEEDBACK;
+    const focus = this.knobMode === RES_KNOB_FOCUS;
+    this.fbAllFactor = fbMode ? fbKnobFactor(knob) : 1;
     const fMax = 0.45 * fs;
     const dt = SUB / fs;
     const driftSlew = 1 - Math.exp(-dt / 1.5);
     for (let b = 0; b < NB; b++) {
-      const kb = knob * this.kW[b];
-      this.bFbFactor[b] = resMode ? 1 : fbKnobFactor(kb);
+      const kb = focus ? resFocusShift(b, knob) : knob * this.kW[b];
+      this.bFbFactor[b] = fbMode ? fbKnobFactor(kb) : 1;
       for (let ch = 0; ch < 2; ch++) {
         const i = b * 2 + ch;
         // RES per channel (L/R per band): Q, loop excess, makeup and tap level per slot
-        let r = this.bResCur[i] + (resMode ? kb : 0);
+        let r = this.bResCur[i] + (fbMode ? 0 : kb);
         r = r < 0 ? 0 : r > 1 ? 1 : r;
         const qNom = Q_MIN * Math.exp(r * Q_RANGE_LN);
         this.bFbExcess[i] = 0.15 + 0.03 * qNom;

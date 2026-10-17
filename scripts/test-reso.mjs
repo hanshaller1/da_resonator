@@ -210,4 +210,18 @@ const f2 = (x) => x.toFixed(2);
   check('7 knob curve and band weighting', shapeOk && lowStill && highMoves && lowsMoves, `shapes ${shapes.map(f2).join(' ')}, S ${sOk}; HIGHS: band 1 still ${lowStill}, band 10 moves ${highMoves}; LOWS mirrored ${lowsMoves}`);
 }
 
+/* ---------- 8. FOCUS knob: a RES spotlight swept from band 1 (left) to band 10 (right) ---------- */
+{
+  const centre = (b, kv) => gainDb(impulse(setup({ res: 0.3, solo: b, analog: 0, knob: 2, kv })), F[b]);
+  const lowL = centre(0, -1), lowR = centre(0, 1), highL = centre(9, -1), highR = centre(9, 1);
+  const midC = centre(4, 0), midL = centre(4, -1);
+  const shift = [-1, 0, 1].map((kv) => [0, 4, 5, 9].map((b) => P.resFocusShift(b, kv)));
+  const shiftOk = shift[0][0] === P.FOCUS_DEPTH && shift[2][3] === P.FOCUS_DEPTH && shift[0][3] < 1e-6 && Math.abs(shift[1][1] - shift[1][2]) < 1e-12;
+  check(
+    '8 FOCUS knob sweeps a resonance spotlight',
+    shiftOk && lowL > lowR + 6 && highR > highL + 6 && midC > midL + 6,
+    `band 1 left/right ${f2(lowL)} / ${f2(lowR)} dB, band 10 ${f2(highL)} / ${f2(highR)} dB, band 5 centre/left ${f2(midC)} / ${f2(midL)} dB`,
+  );
+}
+
 console.table(results);
