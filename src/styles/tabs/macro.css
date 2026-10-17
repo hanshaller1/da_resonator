@@ -147,3 +147,12 @@
 
 /* knob captions in the control row: long names must not widen the slot */
 .mc .tp-knobs .knob-name { max-width: 92px; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+
+/* slot 9: A · MORPH knob · B side by side; slot 10: RND, SNAP and recall in a row */
+.mc-morph,
+.mc-keys { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); height: 100%; }
+.mc-morph .inst-btn,
+.mc-keys .inst-btn { justify-content: center; min-width: 26px; height: 22px; padding: 0 var(--sp-2); background: var(--c-well); box-shadow: var(--sh-well); }
+.mc-morph .inst-btn.is-selected,
+.mc-keys .inst-btn.is-selected { background: var(--c-raised); color: var(--c-text); box-shadow: var(--sh-raised); }
+.mc-keys .inst-btn[disabled] { opacity: 0.4; cursor: default; }

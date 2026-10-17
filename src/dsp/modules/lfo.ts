@@ -21,12 +21,56 @@ import type { BlockCtx, SourceDsp } from './types';
  * Random shapes step once per waveform cycle (where PHASE puts it); values come from a seeded
  * xorshift, reseeded by reset()/clock reset, so a patch replays the same random line.
  *
+ * STEPS quantises the shape to N levels (before SMOOTH, so SMOOTH can glide between the steps).
  * SMOOTH: one-pole slew on the shape, time constant smooth² × 1 s (0.1 → 10 ms, 1 → 1 s).
  * LEVEL scales, UNI maps -1..1 to 0..1 (after the slew).
+ * R PHASE: a second output for the R side of L/R targets (valueR), the same wave R PHASE degrees later;
+ * random shapes then lag by that part of a step. At 0° valueR is the L value.
  */
+/** the wave at position p (0..1) of its cycle; ra / rb = start / target of the random segment */
+function shapeAt(shape: number, p: number, morph: number, ra: number, rb: number): number {
+  let v: number;
+  switch (shape) {
+    case 0: // sine
+    case 1: { // triangle; both skewed by morph, q = 0 at the trough
+      const r = 0.5 - 0.48 * morph;
+      let q = p + 0.25;
+      if (q >= 1) q -= 1;
+      if (q < r) {
+        const u = q / r;
+        v = shape === 0 ? -Math.cos(Math.PI * u) : 2 * u - 1;
+      } else {
+        const u = (q - r) / (1 - r);
+        v = shape === 0 ? Math.cos(Math.PI * u) : 1 - 2 * u;
+      }
+      break;
+    }
+    case 2: { // saw up → triangle → ramp down
+      const r = 1 - morph;
+      v = p < r ? 2 * p / r - 1 : 1 - (2 * (p - r)) / (1 - r);
+      break;
+    }
+    case 3:
+      v = p < 0.5 - 0.48 * morph ? 1 : -1;
+      break;
+    case 4:
+      v = rb;
+      break;
+    default: // smooth random: cosine glide from ra to rb over the waveform cycle
+      v = ra + (rb - ra) * (0.5 - 0.5 * Math.cos(Math.PI * p));
+  }
+  return v >= -1 && v <= 1 ? v : v > 1 ? 1 : v < -1 ? -1 : 0; // also catches NaN
+}
+
+/** -1..1 quantised to n evenly spaced levels (n ≥ 2, both ends included) */
+function quantise(v: number, n: number): number {
+  return (Math.round(((v + 1) / 2) * (n - 1)) / (n - 1)) * 2 - 1;
+}
+
 export class LfoDsp implements SourceDsp {
   private iShape: number; private iRate: number; private iSync: number; private iDiv: number;
   private iPhase: number; private iMorph: number; private iSmooth: number; private iLevel: number; private iUni: number;
+  private iSteps: number; private iRPhase: number;
   private trigReset: number; private trigCycle: number;
   private readonly seed: number;
 
@@ -40,9 +84,14 @@ export class LfoDsp implements SourceDsp {
   /** random shapes: segment start / target value */
   private ra = 0;
   private rb = 0;
+  /** random shapes: the segment start before ra (R PHASE reads the previous segment) */
+  private rp = 0;
   /** last shape value before / after the slew */
   private raw = 0;
   private slewed = 0;
+  private slewedR = 0;
+  /** value for the R side of L/R targets (R PHASE), set by update() */
+  valueR = 0;
   /** reset() asks the next update to restart (fire `cycle`, draw a new random value) */
   private restart = true;
   private rng: number;
@@ -58,6 +107,8 @@ export class LfoDsp implements SourceDsp {
     this.iSmooth = paramIndex(`${m}.smooth`);
     this.iLevel = paramIndex(`${m}.level`);
     this.iUni = paramIndex(`${m}.uni`);
+    this.iSteps = paramIndex(`${m}.steps`);
+    this.iRPhase = paramIndex(`${m}.rphase`);
     this.trigReset = TRIGGER_IN_BY_ID[`${m}.reset`].index;
     this.trigCycle = TRIGGER_OUT_BY_ID[`${m}.cycle`].index;
     this.seed = (0x2545f491 ^ Math.imul(n, 0x9e3779b1)) >>> 0 || 1;
@@ -117,53 +168,45 @@ export class LfoDsp implements SourceDsp {
     if (restart || seg !== this.seg) {
       this.seg = seg;
       // Smooth glides on from where it is after a restart; S&H jumps
+      this.rp = this.ra;
       this.ra = restart ? this.raw : this.rb;
       if (this.rand01() >= morph) this.rb = this.rand01() * 2 - 1;
     }
 
-    let v: number;
-    switch (shape) {
-      case 0: // sine
-      case 1: { // triangle; both skewed by morph, q = 0 at the trough
-        const r = 0.5 - 0.48 * morph;
-        let q = p + 0.25;
-        if (q >= 1) q -= 1;
-        if (q < r) {
-          const u = q / r;
-          v = shape === 0 ? -Math.cos(Math.PI * u) : 2 * u - 1;
-        } else {
-          const u = (q - r) / (1 - r);
-          v = shape === 0 ? Math.cos(Math.PI * u) : 1 - 2 * u;
-        }
-        break;
-      }
-      case 2: { // saw up → triangle → ramp down
-        const r = 1 - morph;
-        v = p < r ? 2 * p / r - 1 : 1 - (2 * (p - r)) / (1 - r);
-        break;
-      }
-      case 3:
-        v = p < 0.5 - 0.48 * morph ? 1 : -1;
-        break;
-      case 4:
-        v = this.rb;
-        break;
-      default: // smooth random: cosine glide from ra to rb over the waveform cycle
-        v = this.ra + (this.rb - this.ra) * (0.5 - 0.5 * Math.cos(Math.PI * p));
-    }
-    if (!(v >= -1 && v <= 1)) v = v > 1 ? 1 : v < -1 ? -1 : 0; // also catches NaN
+    const steps = Math.round(e[this.iSteps]);
+    let v = shapeAt(shape, p, morph, this.ra, this.rb);
+    if (steps > 0) v = quantise(v, steps + 1);
     this.raw = v;
 
     const sm = e[this.iSmooth];
+    const slew = sm > 0 ? 1 - Math.exp(-ctx.dt / (sm * sm)) : 1;
     if (sm > 0) {
-      const tau = sm * sm;
-      this.slewed += (v - this.slewed) * (1 - Math.exp(-ctx.dt / tau));
+      this.slewed += (v - this.slewed) * slew;
       v = this.slewed;
     } else {
       this.slewed = v;
     }
-    if (e[this.iUni] >= 0.5) v = 0.5 + 0.5 * v;
-    return v * e[this.iLevel];
+
+    // R side: the same wave R PHASE later (random shapes: the previous segment until R reaches this one)
+    const rph = e[this.iRPhase] / 360;
+    let vR = v;
+    if (rph > 0) {
+      const xr = xs - rph;
+      const segR = Math.floor(xr);
+      const prev = segR < seg;
+      vR = shapeAt(shape, xr - segR, morph, prev ? this.rp : this.ra, prev ? this.ra : this.rb);
+      if (steps > 0) vR = quantise(vR, steps + 1);
+      if (sm > 0) {
+        this.slewedR += (vR - this.slewedR) * slew;
+        vR = this.slewedR;
+      } else this.slewedR = vR;
+    } else this.slewedR = v;
+
+    const uni = e[this.iUni] >= 0.5;
+    const lvl = e[this.iLevel];
+    this.valueR = (uni ? 0.5 + 0.5 * vR : vR) * lvl;
+    if (uni) v = 0.5 + 0.5 * v;
+    return v * lvl;
   }
 
   reset(): void {

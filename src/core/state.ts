@@ -41,7 +41,7 @@ export function migrateSnapshot(input: unknown): EngineSnapshot {
     return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
   };
   for (const p of PARAMS) {
-    if (p.twinOf !== undefined || p.members) continue;
+    if (p.twinOf !== undefined || p.members || p.transient) continue;
     const def = old && p.group === 'band' && p.id.endsWith('.res') ? RES_DEFAULT_V2 : p.def;
     params[p.id] = given(p.id) ?? def;
   }
@@ -61,10 +61,13 @@ export function migrateSnapshot(input: unknown): EngineSnapshot {
   }
   // after the L migrations, so an unlinked older preset converts both channels alike
   for (const p of PARAMS) if (p.twinOf !== undefined) params[p.id] = given(p.id) ?? params[PARAMS[p.twinOf].id];
+  // in index order, like ParamStore.getState (params added later sit after the R twins)
+  const ordered: Record<string, number> = {};
+  for (const p of PARAMS) if (p.id in params) ordered[p.id] = params[p.id];
   return {
     format: 'da-resonator',
     version: SNAPSHOT_VERSION,
-    params,
+    params: ordered,
     routes,
     triggers: Array.isArray(src.triggers) ? src.triggers.filter((t) => t && typeof t.source === 'string' && typeof t.target === 'string') : [],
     modules: src.modules && typeof src.modules === 'object' ? { ...src.modules } : {},

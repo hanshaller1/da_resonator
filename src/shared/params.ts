@@ -22,8 +22,12 @@ import {
   cmodParams,
   dynParams,
   efParams,
+  efParams2,
   filterParams,
+  filterParams2,
   lfoParams,
+  lfoParams2,
+  macroMorphParams,
   macroParams,
   resoParams,
   routeParams,
@@ -67,6 +71,8 @@ export interface ParamSpec {
   twinOf?: number;
   /** band group (BAND LOW / MID / HIGH / ALL): the L params a route onto it moves; it has no value of its own */
   members?: readonly number[];
+  /** not stored in the snapshot's params (a module provider keeps it) */
+  transient?: boolean;
 }
 
 type Def = Omit<ParamDef, 'id'> & { id: string };
@@ -164,6 +170,13 @@ for (const g of BAND_GROUPS) {
     members: g.bands.map((b) => NUM_GLOBAL + b * PARAMS_PER_BAND),
   });
 }
+
+/* ---------- params added on 2026-10-17, appended so every older index stays ----------
+ * They join their modules (same module id), so routes, modulation and the UI treat them like the rest. */
+for (const slot of FILTER_SLOTS) addModule(slot, 'filter', filterParams2(slot));
+for (let n = 1; n <= NUM_LFOS; n++) addModule(`lfo${n}`, 'lfo', lfoParams2(n));
+for (let n = 1; n <= NUM_EFS; n++) addModule(`ef${n}`, 'ef', efParams2(n));
+addModule('morph', 'macro', macroMorphParams());
 
 export const NUM_PARAMS = PARAMS.length;
 
@@ -300,6 +313,7 @@ export function formatValue(p: ParamSpec, v: number): string {
     case 'ms': return v >= 1000 ? `${(v / 1000).toFixed(2)} s` : v < 10 ? `${v.toFixed(1)} ms` : `${Math.round(v)} ms`;
     case 'BPM': return `${v.toFixed(1)} BPM`;
     case ':1': return v < 1 ? `1:${(1 / v).toFixed(1)}` : `${v.toFixed(1)}:1`;
+    case '°': return `${Math.round(v)}°`;
     case 'oct': return `${p.min < 0 && v >= 0.005 ? '+' : ''}${v.toFixed(2)} oct`;
     case 'dB/oct': return `${Math.round(v)} dB/oct`;
     default: return p.curve === 'toggle' ? (v >= 0.5 ? 'ON' : 'OFF') : v.toFixed(2);

@@ -21,9 +21,14 @@
  *                Switching on starts from a cleared state with the current settings snapped (no sweep).
  *  Safety      : non-finite filter state is cleared and non-finite samples of that block zeroed;
  *                state below −300 dB is flushed (silent input would otherwise end in denormals).
+ *  Key         : KEY Off = FREQ; Focus = the spot of the RESONANCE knob (FOCUS mode, shaped by its curve), glided
+ *                between the band centres; Band n = that band's centre. FREQ is then not used.
+ *  Env         : the filter's own follower on its input (block peak, 5 ms attack, ENV REL release); −48…0 dBFS
+ *                moves the cutoff by ENV AMT octaves (±4 at the stops).
+ *  Spread      : L cutoff −SPREAD/2, R +SPREAD/2 octaves (each channel its own coefficients when ≠ 0).
  */
-import type { FilterSlot } from '../../shared/paramdefs/modules';
-import { paramIndex } from '../../shared/params';
+import { FILTER_ENV_OCT, FILTER_KEY_BAND0, FILTER_KEY_FOCUS, FILTER_SPREAD_OCT, type FilterSlot } from '../../shared/paramdefs/modules';
+import { BAND_FREQS, NUM_BANDS, paramIndex, resKnobShape } from '../../shared/params';
 import type { AudioStage, BlockCtx } from './types';
 
 /* ---------- laws shared with the UI response overlay ---------- */
@@ -44,6 +49,16 @@ export function filterResToQ(res: number): number {
 export function filterStageQ(res: number, slope24: boolean): number {
   const q = filterResToQ(res);
   return slope24 ? Math.sqrt(q) : q;
+}
+
+/** cutoff after KEY: FREQ (key 0), the FOCUS spot of the shaped RESONANCE knob s (key 1), a band centre (key ≥ 2) */
+export function filterKeyCutoff(key: number, cutoff: number, s: number): number {
+  const k = Math.round(key);
+  if (k >= FILTER_KEY_BAND0) return BAND_FREQS[Math.min(NUM_BANDS - 1, k - FILTER_KEY_BAND0)];
+  if (k !== FILTER_KEY_FOCUS) return cutoff;
+  const x = ((Math.min(1, Math.max(-1, s)) + 1) / 2) * (NUM_BANDS - 1);
+  const i = Math.min(NUM_BANDS - 2, Math.floor(x));
+  return BAND_FREQS[i] * Math.pow(BAND_FREQS[i + 1] / BAND_FREQS[i], x - i);
 }
 
 /** highest cutoff at sample rate fs */
@@ -98,6 +113,10 @@ const LN_QMIN = Math.log(FILTER_Q_MIN);
 const LN_QSPAN = Math.log(FILTER_Q_MAX / FILTER_Q_MIN);
 /** state below this (−300 dB) is flushed to zero */
 const TINY = 1e-15;
+/** filter envelope: attack time, and the dB span (−48 … 0 dBFS) mapped to 0 … 1 */
+const ENV_ATK_SEC = 0.005;
+const ENV_SPAN_DB = 48;
+const HALF_LN2 = 0.5 * Math.LN2;
 
 /*
  * Output weights per type (FILTER_TYPES order) on hp = x − k·bp − lp:
@@ -145,6 +164,12 @@ export class FilterStage implements AudioStage {
   private readonly iRes: number;
   private readonly iDrive: number;
   private readonly iMix: number;
+  private readonly iKey: number;
+  private readonly iEnv: number;
+  private readonly iEnvRel: number;
+  private readonly iSpread: number;
+  private readonly iResKnob: number;
+  private readonly iResCurve: number;
 
   private fs = 0;
   private fMax = FILTER_F_MAX;
@@ -165,6 +190,10 @@ export class FilterStage implements AudioStage {
   private rsPrev = 0;
   private dv = 0; // drive dB
   private mx = 1;
+  /** L/R spread (octaves), smoothed */
+  private sp = 0;
+  /** envelope of the filter's input (linear peak) */
+  private env = 0;
   private fade = 0;
   private sl = 0; // 0 = 12 dB … 1 = 24 dB
   private cx = 0;
@@ -172,6 +201,7 @@ export class FilterStage implements AudioStage {
   private cl = 1;
   // coefficients reached at the end of the last sub-block
   private g = 0;
+  private gR = 0;
   private k = 1;
   private m = 0;
   private dg = 1;
@@ -185,6 +215,10 @@ export class FilterStage implements AudioStage {
   private readonly c1 = new Float64Array(MAX_N);
   private readonly c2 = new Float64Array(MAX_N);
   private readonly c3 = new Float64Array(MAX_N);
+  // R coefficients while SPREAD moves the channels apart
+  private readonly c1R = new Float64Array(MAX_N);
+  private readonly c2R = new Float64Array(MAX_N);
+  private readonly c3R = new Float64Array(MAX_N);
   private readonly kb = new Float64Array(MAX_N); // cb·k
   private readonly wx = new Float64Array(MAX_N); // cx
   private readonly wl = new Float64Array(MAX_N); // cl
@@ -202,6 +236,12 @@ export class FilterStage implements AudioStage {
     this.iRes = paramIndex(`${slot}.res`);
     this.iDrive = paramIndex(`${slot}.drive`);
     this.iMix = paramIndex(`${slot}.mix`);
+    this.iKey = paramIndex(`${slot}.key`);
+    this.iEnv = paramIndex(`${slot}.env`);
+    this.iEnvRel = paramIndex(`${slot}.envRel`);
+    this.iSpread = paramIndex(`${slot}.spread`);
+    this.iResKnob = paramIndex('resOffset');
+    this.iResCurve = paramIndex('reso.curve');
   }
 
   private setRate(fs: number): void {
@@ -221,7 +261,27 @@ export class FilterStage implements AudioStage {
     if (n > MAX_N) n = MAX_N;
 
     /* --- targets (effective values: base + modulation) --- */
-    let fc = e[this.iCut];
+    let fc = filterKeyCutoff(e[this.iKey], e[this.iCut], resKnobShape(e[this.iResKnob], Math.round(e[this.iResCurve])));
+    // the filter's own envelope on its input (block peak, one-pole per block)
+    let pk = 0;
+    for (let q = 0; q < n; q++) {
+      const a = l[q] < 0 ? -l[q] : l[q], b = r[q] < 0 ? -r[q] : r[q];
+      if (a > pk) pk = a;
+      if (b > pk) pk = b;
+    }
+    if (!(pk < 1e6)) pk = 0;
+    const relS = Math.max(0.001, e[this.iEnvRel] * 0.001);
+    this.env += (pk - this.env) * (1 - Math.exp(-n / ((pk > this.env ? ENV_ATK_SEC : relS) * ctx.fs)));
+    if (this.env < 1e-9) this.env = 0;
+    const envAmt = e[this.iEnv];
+    if (envAmt !== 0 && this.env > 0) {
+      let en = (20 * Math.log10(this.env) + ENV_SPAN_DB) / ENV_SPAN_DB;
+      en = en > 0 ? (en < 1 ? en : 1) : 0;
+      const oct = (envAmt > FILTER_ENV_OCT ? FILTER_ENV_OCT : envAmt < -FILTER_ENV_OCT ? -FILTER_ENV_OCT : envAmt) * en;
+      fc *= Math.pow(2, oct);
+    }
+    let spT = e[this.iSpread];
+    spT = spT >= -FILTER_SPREAD_OCT ? (spT <= FILTER_SPREAD_OCT ? spT : FILTER_SPREAD_OCT) : spT < 0 ? -FILTER_SPREAD_OCT : 0; // NaN → 0
     fc = fc >= FILTER_F_MIN ? (fc < this.fMax ? fc : this.fMax) : FILTER_F_MIN; // also catches NaN
     const lcT = Math.log(fc);
     let resT = e[this.iRes];
@@ -247,7 +307,9 @@ export class FilterStage implements AudioStage {
       this.sl = slT;
       this.cx = cxT; this.cb = cbT; this.cl = clT;
       this.fade = 0;
-      this.g = Math.tan(this.piFs * fc);
+      this.sp = spT;
+      this.g = this.gAt(lcT - spT * HALF_LN2);
+      this.gR = this.gAt(lcT + spT * HALF_LN2);
       this.k = Math.exp(-(1 - 0.5 * slT) * (LN_QMIN + resT * LN_QSPAN));
       this.m = 0;
       this.dg = Math.exp(dvT * DB_TO_LN);
@@ -262,11 +324,13 @@ export class FilterStage implements AudioStage {
     }
     const useB = this.bLive;
     const useDrive = this.dv > 1e-6 || dvT > 0;
+    // L and R get their own coefficients while SPREAD is (or glides) away from 0
+    const useR = this.sp !== 0 || spT !== 0 || this.gR !== this.g;
 
     /* --- per-sample coefficients: recomputed every SUB samples, linear in between --- */
-    let lc = this.lc, rs = this.rs, dv = this.dv, mx = this.mx, fade = this.fade, sl = this.sl;
+    let lc = this.lc, rs = this.rs, dv = this.dv, mx = this.mx, fade = this.fade, sl = this.sl, sp = this.sp;
     let cx = this.cx, cb = this.cb, cl = this.cl;
-    let g = this.g, k = this.k, m = this.m, dg = this.dg, dc = this.dc, dw = this.dw;
+    let g = this.g, gR = this.gR, k = this.k, m = this.m, dg = this.dg, dc = this.dc, dw = this.dw;
     const lcP = this.lcPrev, rsP = this.rsPrev, aF = this.aFreq, aL = this.aLevel, piFs = this.piFs;
     const c1 = this.c1, c2 = this.c2, c3 = this.c3, kb = this.kb, wx = this.wx, wl = this.wl, ws = this.ws, wm = this.wm;
     const nsub = Math.ceil(n / SUB);
@@ -282,6 +346,8 @@ export class FilterStage implements AudioStage {
       rs += (rsP + (resT - rsP) * frac - rs) * aF;
       dv += (dvT - dv) * aL;
       mx += (mxT - mx) * aL;
+      sp += (spT - sp) * aL;
+      if (spT === 0 && sp < 1e-4 && sp > -1e-4) sp = 0;
       const cx0 = cx, cb0 = cb, cl0 = cl, sl0 = sl;
       fade = toward(fade, onT, st);
       sl = toward(sl, slT, st);
@@ -289,10 +355,11 @@ export class FilterStage implements AudioStage {
       cb = toward(cb, cbT, st);
       cl = toward(cl, clT, st);
 
-      const g1 = Math.tan(piFs * Math.exp(lc));
+      const g1 = useR ? this.gAt(lc - sp * HALF_LN2) : Math.tan(piFs * Math.exp(lc));
       const k1 = Math.exp(-(1 - 0.5 * sl) * (LN_QMIN + rs * LN_QSPAN));
       const m1 = fade * mx;
       const gI = (g1 - g) * inv, kI = (k1 - k) * inv, mI = (m1 - m) * inv;
+      const k0 = k;
       const cxI = (cx - cx0) * inv, cbI = (cb - cb0) * inv, clI = (cl - cl0) * inv, slI = (sl - sl0) * inv;
       let cxS = cx0, cbS = cb0, clS = cl0, slS = sl0;
       for (; i < end; i++) {
@@ -302,8 +369,22 @@ export class FilterStage implements AudioStage {
         c1[i] = a; c2[i] = g * a; c3[i] = g * g * a;
         kb[i] = cbS * k; wx[i] = cxS; wl[i] = clS; ws[i] = slS; wm[i] = m;
       }
+      if (useR) {
+        // R: its own cutoff, same k (interpolated the same way)
+        const gR1 = this.gAt(lc + sp * HALF_LN2);
+        const gRI = (gR1 - gR) * inv;
+        let kq = k0;
+        for (let q = i0; q < end; q++) {
+          gR += gRI;
+          kq += kI;
+          const a = 1 / (1 + gR * (gR + kq));
+          this.c1R[q] = a; this.c2R[q] = gR * a; this.c3R[q] = gR * gR * a;
+        }
+        gR = gR1;
+      }
       // land exactly on the sub-block values (no drift from the increments)
       g = g1; k = k1; m = m1;
+      if (!useR) gR = g;
 
       if (useDrive) {
         const da = this.da, db = this.db, dgain = this.dgain;
@@ -320,8 +401,9 @@ export class FilterStage implements AudioStage {
     }
 
     /* --- audio --- */
-    this.runChannel(l, n, 0, useDrive, useB);
-    this.runChannel(r, n, 4, useDrive, useB);
+    this.runChannel(l, n, 0, useDrive, useB, this.c1, this.c2, this.c3);
+    if (useR) this.runChannel(r, n, 4, useDrive, useB, this.c1R, this.c2R, this.c3R);
+    else this.runChannel(r, n, 4, useDrive, useB, this.c1, this.c2, this.c3);
 
     const s = this.state;
     // non-finite state (NaN input, …): clear it and zero what this block produced
@@ -336,9 +418,9 @@ export class FilterStage implements AudioStage {
     // a decaying state on silent input ends in a denormal limit cycle (~10x slower math): flush it
     for (let q = 0; q < 8; q++) if (s[q] < TINY && s[q] > -TINY) s[q] = 0;
 
-    this.lc = lc; this.rs = rs; this.dv = dv; this.mx = mx; this.fade = fade; this.sl = sl;
+    this.lc = lc; this.rs = rs; this.dv = dv; this.mx = mx; this.fade = fade; this.sl = sl; this.sp = sp;
     this.cx = cx; this.cb = cb; this.cl = cl;
-    this.g = g; this.k = k; this.m = m; this.dg = dg; this.dc = dc; this.dw = dw;
+    this.g = g; this.gR = gR; this.k = k; this.m = m; this.dg = dg; this.dc = dc; this.dw = dw;
     this.lcPrev = lcT; this.rsPrev = resT;
     if (sl <= 0 && slT === 0) this.bLive = false;
     if (fade <= 0 && onT === 0) this.active = false; // the last samples were exactly dry: next block passes through
@@ -346,8 +428,8 @@ export class FilterStage implements AudioStage {
   }
 
   /** one channel in place: drive ─► stage A ─► [stage B] ─► dry/wet; state at state[off … off+3] */
-  private runChannel(buf: Float32Array, n: number, off: number, useDrive: boolean, useB: boolean): void {
-    const c1 = this.c1, c2 = this.c2, c3 = this.c3, kb = this.kb, wx = this.wx, wl = this.wl, ws = this.ws, wm = this.wm;
+  private runChannel(buf: Float32Array, n: number, off: number, useDrive: boolean, useB: boolean, c1: Float64Array, c2: Float64Array, c3: Float64Array): void {
+    const kb = this.kb, wx = this.wx, wl = this.wl, ws = this.ws, wm = this.wm;
     const da = this.da, db = this.db, dgain = this.dgain, s = this.state;
     let a1 = s[off], a2 = s[off + 1], b1 = s[off + 2], b2 = s[off + 3];
     for (let i = 0; i < n; i++) {
@@ -374,7 +456,15 @@ export class FilterStage implements AudioStage {
     s[off] = a1; s[off + 1] = a2; s[off + 2] = b1; s[off + 3] = b2;
   }
 
+  /** TPT g of the cutoff e^lc, kept inside 20 Hz … fMax */
+  private gAt(lc: number): number {
+    let f = Math.exp(lc);
+    f = f >= FILTER_F_MIN ? (f < this.fMax ? f : this.fMax) : FILTER_F_MIN;
+    return Math.tan(this.piFs * f);
+  }
+
   reset(): void {
     this.state.fill(0);
+    this.env = 0;
   }
 }

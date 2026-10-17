@@ -2,7 +2,8 @@
  * FILTER tab: pre filter (before the resonator), post filter (after it) and the band filter (a filter
  * curve read at the band centres, on top of the faders; docs/hardware-modi-und-pools-2026-10-16.md).
  * Status line = what the selected filter does + a summary of all three, PRE / POST / BAND selector and on.
- * Control row = the selected filter: PRE / POST TYPE, SLOPE, FREQ, RES, DRIVE, MIX (slots 1–6);
+ * Control row = the selected filter: PRE / POST TYPE, SLOPE, FREQ, RES, DRIVE, MIX, KEY, ENV AMT, ENV REL,
+ * SPREAD (slots 1–10);
  * BAND TYPE, SLOPE, FREQ, WIDTH, DEPTH, OFFSET, R OFS (slots 1–7).
  * Visualisation = the responses over the spectrum with a cutoff handle, and per band the level
  * after resonator × pre × post + band filter; with BAND the locks along the foot (see filter/viz.ts).
@@ -26,11 +27,18 @@ const WHERE: Record<FilterInst, string> = {
 const NAME: Record<FilterInst, string> = { filterPre: 'Pre filter', filterPost: 'Post filter', filterBand: 'Band filter' };
 /** controls of each filter, slot by slot (select = stepper, knob otherwise) */
 const CONTROLS: Record<FilterInst, readonly string[]> = {
-  filterPre: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix'],
-  filterPost: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix'],
+  filterPre: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix', 'key', 'env', 'envRel', 'spread'],
+  filterPost: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix', 'key', 'env', 'envRel', 'spread'],
   filterBand: ['type', 'slope', 'cutoff', 'width', 'depth', 'offset', 'rofs'],
 };
+const PP_TITLES: Record<string, string> = {
+  key: 'Where the cutoff comes from: FREQ (Off), the FOCUS spot of the RESONANCE knob, or the centre of one band',
+  env: 'The filter follows its own input: louder moves the cutoff up (right) or down (left), up to 4 octaves',
+  envRel: 'How fast the envelope falls back after a peak',
+  spread: 'Moves the cutoff of L down and R up (right) or the other way round (left), up to 2 octaves apart',
+};
 const TITLES: Record<string, string> = {
+  ...Object.fromEntries(['filterPre', 'filterPost'].flatMap((s) => Object.entries(PP_TITLES).map(([k, t]) => [`${s}.${k}`, t]))),
   'filterBand.width': 'Width of the passband (BP) or of the cut (Notch) in octaves',
   'filterBand.depth': 'How far the stopped bands go down; at the right stop they are silent',
   'filterBand.offset': 'Level of the passband, on top of the faders',
@@ -99,6 +107,21 @@ registerTab({
       syncOn(p.get(`${slot}.on`));
       p.subscribe(`${slot}.on`, syncOn);
       return cells;
+    });
+    // pre / post: FREQ is not used while KEY sets the cutoff; ENV REL only counts with ENV AMT
+    (['filterPre', 'filterPost'] as const).forEach((slot, k) => {
+      const keys = CONTROLS[slot];
+      const cut = sets[k][keys.indexOf('cutoff')];
+      const rel = sets[k][keys.indexOf('envRel')];
+      const sync = () => {
+        const keyed = Math.round(p.get(`${slot}.key`)) !== 0;
+        toggleClass(cut, 'is-dim', keyed);
+        cut.title = keyed ? 'Not in use: KEY sets the cutoff' : '';
+        toggleClass(rel, 'is-dim', Math.abs(p.get(`${slot}.env`)) < 0.005);
+      };
+      sync();
+      p.subscribe(`${slot}.key`, sync);
+      p.subscribe(`${slot}.env`, sync);
     });
     // band filter: WIDTH only counts for BP and Notch
     const width = sets[2][CONTROLS.filterBand.indexOf('width')];

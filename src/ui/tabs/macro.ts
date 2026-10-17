@@ -3,6 +3,9 @@
  * per macro above its knob: editable name, value bar, ASSIGN chip and its targets (click shows the
  * control, drag the depth, ✕ removes, "+ target" adds); slots 9–10 carry a short how-to.
  * Names are saved in snapshots under modules.macros.
+ * Slot 9 = MORPH: glides all eight macros from set A (left) to set B (right); A / B store the current
+ * macros. Slot 10 = RND (all eight at random), SNAP (remember them) and ↺ (back to the snapshot).
+ * Sets, snapshot and the MORPH position are saved under modules.macroMorph.
  */
 import '../../styles/tabs/macro.css';
 import type { EngineAPI, RouteInfo } from '../../core/types';
@@ -12,7 +15,7 @@ import { newRouteChannel } from '../channel';
 import { Knob } from '../components/knob';
 import { ParamField } from '../components/paramField';
 import { SourceChip } from '../components/sourceChip';
-import { h } from '../dom';
+import { h, toggleClass } from '../dom';
 import { showBubble } from '../mod/feedback';
 import { routeChannelButton } from '../mod/routeChannel';
 import { MACRO_NAME_MAX, defaultMacroName, formatDepth, parseMacroNames, setSourceName, targetGroups, targetLabel } from '../mod/labels';
@@ -216,6 +219,83 @@ registerTab({
     };
     mod.onChange(syncRoutes);
     syncRoutes();
+
+    /* ---------- slot 9: MORPH A ↔ B, slot 10: RND · SNAP · recall ---------- */
+    const ids = Array.from({ length: NUM_MACROS }, (_, i) => `macro${i + 1}.value`);
+    const current = () => ids.map((id) => params.get(id));
+    let setA: number[] | null = null;
+    let setB: number[] | null = null;
+    let snap: number[] | null = null;
+    /** MORPH set by a load or a store: move the knob only, not the macros */
+    let quiet = false;
+    const writeAll = (vals: number[]) => {
+      ids.forEach((id) => params.beginGesture(id));
+      ids.forEach((id, i) => params.set(id, vals[i]));
+      ids.forEach((id) => params.endGesture(id));
+    };
+    const setMorph = (v: number) => {
+      quiet = true;
+      params.set('macros.morph', v);
+      quiet = false;
+    };
+    params.subscribe('macros.morph', (m) => {
+      if (quiet) return;
+      // a missing set starts where the macros are, so the first turn does not jump
+      setA ??= current();
+      setB ??= current();
+      const a = setA, b = setB;
+      ids.forEach((id, i) => params.set(id, a[i] + (b[i] - a[i]) * m));
+      syncKeys();
+    });
+    const morph = new Knob(params, 'macros.morph', { size: 'md', label: 'MORPH', ariaLabel: 'Macro morph A to B' });
+    morph.el.title = 'Glides all eight macros from set A (left) to set B (right)';
+    const key = (label: string, title: string, run: () => void) => {
+      const b = h('button', { type: 'button', class: 'inst-btn', title }, label);
+      b.addEventListener('click', run);
+      return b;
+    };
+    const keyA = key('A', 'Store the macros as set A (MORPH left)', () => {
+      setA = current();
+      setMorph(0);
+      syncKeys();
+      showBubble(keyA, 'Set A stored', 'mod', 1200);
+    });
+    const keyB = key('B', 'Store the macros as set B (MORPH right)', () => {
+      setB = current();
+      setMorph(1);
+      syncKeys();
+      showBubble(keyB, 'Set B stored', 'mod', 1200);
+    });
+    const rnd = key('RND', 'All eight macros at random', () => writeAll(ids.map(() => Math.random())));
+    const keySnap = key('SNAP', 'Remember the eight macros', () => {
+      snap = current();
+      syncKeys();
+      showBubble(keySnap, 'Macros remembered', 'mod', 1200);
+    });
+    const recall = key('↺', 'Back to the remembered macros', () => snap && writeAll(snap));
+    recall.setAttribute('aria-label', 'Recall the remembered macros');
+    const syncKeys = () => {
+      toggleClass(keyA, 'is-selected', !!setA);
+      toggleClass(keyB, 'is-selected', !!setB);
+      toggleClass(keySnap, 'is-selected', !!snap);
+      recall.toggleAttribute('disabled', !snap);
+    };
+    syncKeys();
+    tab.slots[NUM_MACROS].append(h('div', { class: 'mc-morph', role: 'group', 'aria-label': 'Macro morph' }, keyA, morph.el, keyB));
+    tab.slots[NUM_MACROS + 1].append(h('div', { class: 'mc-keys', role: 'group', 'aria-label': 'Random and snapshot of the macros' }, rnd, keySnap, recall));
+    const parseSet = (v: unknown): number[] | null =>
+      Array.isArray(v) && v.length === NUM_MACROS && v.every((x) => typeof x === 'number' && Number.isFinite(x)) ? v.map((x) => Math.min(1, Math.max(0, x))) : null;
+    engine.registerStateProvider('macroMorph', {
+      getState: () => ({ a: setA, b: setB, snap, pos: params.get('macros.morph') }),
+      setState: (s) => {
+        const o = (s && typeof s === 'object' ? s : {}) as Record<string, unknown>;
+        setA = parseSet(o.a);
+        setB = parseSet(o.b);
+        snap = parseSet(o.snap);
+        setMorph(typeof o.pos === 'number' && Number.isFinite(o.pos) ? o.pos : 0);
+        syncKeys();
+      },
+    });
 
     engine.registerStateProvider('macros', {
       getState: () => ({ names: [...names] }),

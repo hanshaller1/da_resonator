@@ -114,6 +114,14 @@ export function scanParams(): ParamDef[] {
 
 /* ---------- pre / post filter ---------- */
 export const FILTER_TYPES = ['LP', 'BP', 'HP', 'Notch'] as const;
+/** KEY: the cutoff comes from FREQ, from the FOCUS spot of the RESONANCE knob, or from a band's centre */
+export const FILTER_KEYS = ['Off', 'Focus', ...Array.from({ length: NUM_BANDS }, (_, b) => `Band ${b + 1}`)] as const;
+export const FILTER_KEY_FOCUS = 1;
+export const FILTER_KEY_BAND0 = 2;
+/** ENV AMT: octaves the filter's own envelope moves the cutoff at full level */
+export const FILTER_ENV_OCT = 4;
+/** SPREAD: octaves between L and R cutoff at the stops (L down, R up by half each) */
+export const FILTER_SPREAD_OCT = 2;
 export function filterParams(slot: FilterSlot): ParamDef[] {
   const pre = slot === 'filterPre';
   const name = pre ? 'Pre Filter' : 'Post Filter';
@@ -125,6 +133,16 @@ export function filterParams(slot: FilterSlot): ParamDef[] {
     cont(`${slot}.res`, `${name} Resonance`, 'RES', 0, 1, 0.1, '%'),
     cont(`${slot}.drive`, `${name} Drive`, 'DRIVE', 0, 24, 0, 'dB'),
     cont(`${slot}.mix`, `${name} Mix`, 'MIX', 0, 1, 1, '%'),
+  ];
+}
+/** KEY, ENV and SPREAD of the pre / post filter (2026-10-17; appended after the older params, see shared/params.ts) */
+export function filterParams2(slot: FilterSlot): ParamDef[] {
+  const name = slot === 'filterPre' ? 'Pre Filter' : 'Post Filter';
+  return [
+    discrete(`${slot}.key`, `${name} Key`, 'KEY', FILTER_KEYS, 0),
+    cont(`${slot}.env`, `${name} Env Amount`, 'ENV AMT', -FILTER_ENV_OCT, FILTER_ENV_OCT, 0, 'oct'),
+    cont(`${slot}.envRel`, `${name} Env Release`, 'ENV REL', 10, 2000, 150, 'ms', 'exp'),
+    cont(`${slot}.spread`, `${name} L/R Spread`, 'SPREAD', -FILTER_SPREAD_OCT, FILTER_SPREAD_OCT, 0, 'oct'),
   ];
 }
 
@@ -146,6 +164,8 @@ export function followsMidi(wantMidi: boolean, intOn: boolean, midiOn: boolean):
 
 /* ---------- LFOs ---------- */
 export const LFO_SHAPES = ['Sine', 'Triangle', 'Saw', 'Square', 'S&H', 'Smooth'] as const;
+/** STEPS: the wave quantised to this many levels (Off = smooth) */
+export const LFO_STEPS = ['Off', ...intRange(2, 16)] as const;
 export function lfoParams(n: number): ParamDef[] {
   const m = `lfo${n}`;
   const L = `LFO ${n}`;
@@ -161,6 +181,15 @@ export function lfoParams(n: number): ParamDef[] {
     cont(`${m}.smooth`, `${L} Smooth`, 'SMTH', 0, 1, 0, '%'),
     cont(`${m}.level`, `${L} Level`, 'LEVEL', 0, 1, 1, '%'),
     toggle(`${m}.uni`, `${L} Unipolar`, 'UNI'),
+  ];
+}
+/** STEPS and R PHASE of an LFO (2026-10-17; appended after the older params) */
+export function lfoParams2(n: number): ParamDef[] {
+  const m = `lfo${n}`;
+  const L = `LFO ${n}`;
+  return [
+    discrete(`${m}.steps`, `${L} Steps`, 'STEPS', LFO_STEPS, 0),
+    cont(`${m}.rphase`, `${L} R Phase`, 'R PHASE', 0, 180, 0, '°'),
   ];
 }
 
@@ -199,6 +228,8 @@ export const NUM_TAPS = 3 + NUM_BANDS;
 export const EF_CHANNELS = ['L+R', 'L', 'R'] as const;
 /** delay before the follower reacts (hardware: delay before the attack) */
 export const EF_DELAY_MAX_MS = 2000;
+/** hold before the release starts */
+export const EF_HOLD_MAX_MS = 1000;
 export function efParams(n: number): ParamDef[] {
   const m = `ef${n}`;
   const L = `Env Follower ${n}`;
@@ -215,10 +246,26 @@ export function efParams(n: number): ParamDef[] {
     cont(`${m}.delay`, `${L} Delay`, 'DLY', 0, EF_DELAY_MAX_MS, 0, 'ms'),
   ];
 }
+/** HOLD of an envelope follower (2026-10-17; appended after the older params) */
+export function efParams2(n: number): ParamDef[] {
+  const m = `ef${n}`;
+  const L = `Env Follower ${n}`;
+  return [
+    cont(`${m}.hold`, `${L} Hold`, 'HOLD', 0, EF_HOLD_MAX_MS, 0, 'ms'),
+  ];
+}
 
 /* ---------- macros ---------- */
 export function macroParams(n: number): ParamDef[] {
   return [{ ...cont(`macro${n}.value`, `Macro ${n}`, `M${n}`, 0, 1, 0, '%'), modulatable: false }];
+}
+/**
+ * MORPH: glides all eight macros between the two stored sets A (left) and B (right). The sets and the MORPH
+ * position live in the snapshot's modules.macroMorph (the param is transient); turning MORPH writes the
+ * macro values (UI side, like a hand on 8 knobs).
+ */
+export function macroMorphParams(): ParamDef[] {
+  return [{ ...cont('macros.morph', 'Macro Morph', 'MORPH', 0, 1, 0, '%'), modulatable: false, transient: true }];
 }
 
 /* ---------- internal clock ---------- */

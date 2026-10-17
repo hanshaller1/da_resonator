@@ -7,8 +7,8 @@
  * Curves follow the effective (modulated) settings.
  */
 import { bandFilterDb } from '../../../dsp/modules/bandFilter';
-import { filterMagnitude } from '../../../dsp/modules/filter';
-import { BAND_FREQS, NUM_BANDS, formatValue, fromNorm } from '../../../shared/params';
+import { filterKeyCutoff, filterMagnitude } from '../../../dsp/modules/filter';
+import { BAND_FREQS, NUM_BANDS, formatValue, fromNorm, resKnobShape } from '../../../shared/params';
 import { LockRow, toggleLock } from '../../components/lockRow';
 import { readModel, responseAt, type ResponseModel } from '../../response';
 import { colCenter, colLeft, freqOfX, xOfFreq } from '../../shell/bandAxis';
@@ -145,6 +145,9 @@ export function buildFilterViz(tab: TabContext, selected: () => number, select: 
     return dbOf(filterMagnitude(v[0], v[1] >= 0.5, v[2], v[3], v[4], f, fs));
   }
 
+  /** KEY of a pre / post filter (0 = Off) */
+  const k0 = (c: Curve) => Math.round(effective(`${c.inst}.key`));
+
   /** recompute curves whose on state, effective settings or locks changed; true if any did */
   function updateCurves(): boolean {
     const fs = engine.sampleRate || 48000;
@@ -156,8 +159,10 @@ export function buildFilterViz(tab: TabContext, selected: () => number, select: 
         changed = true;
       }
       let same = true;
+      // pre / post: KEY may set the cutoff (a band centre or the FOCUS spot)
+      const keyed = !c.band && k0(c) !== 0;
       for (let k = 0; k < c.ids.length; k++) {
-        const v = effective(c.ids[k]);
+        const v = keyed && k === CUT ? filterKeyCutoff(effective(`${c.inst}.key`), effective(c.ids[k]), resKnobShape(effective('resOffset'), Math.round(p.get('reso.curve')))) : effective(c.ids[k]);
         if (v !== c.vals[k]) {
           c.vals[k] = v;
           same = false;

@@ -7,7 +7,7 @@
  */
 
 export type ParamCurve = 'lin' | 'exp' | 'fader' | 'toggle' | 'discrete';
-export type ParamUnit = '' | 'dB' | 'Hz' | '%' | 'ms' | 'BPM' | ':1' | 'oct' | 'dB/oct';
+export type ParamUnit = '' | 'dB' | 'Hz' | '%' | 'ms' | 'BPM' | ':1' | 'oct' | 'dB/oct' | '°';
 
 /**
  * Which kind of module a parameter belongs to. The modulation rules
@@ -29,6 +29,8 @@ export interface ParamDef {
   modulatable: boolean;
   /** labels for curve 'discrete' (value = option index, min 0, max options.length - 1) */
   options?: readonly string[];
+  /** not stored in the snapshot's params (a module provider keeps it), so loads and preset morphs leave it alone */
+  transient?: boolean;
 }
 
 export function cont(

@@ -101,6 +101,12 @@ registerTab({
     st.slot(5, knob('smooth', 'SMOOTH'));
     st.slot(6, knob('level'));
     st.slot(7, (i, m) => new ParamToggle(p, `${m}.uni`, { label: 'UNI', tone: 'neutral', ariaLabel: `${L(i)} unipolar` }).el);
+    st.slot(8, (i, m) => new ParamSelect(p, `${m}.steps`, { label: 'STEPS', ariaLabel: `${L(i)} steps` }).el).forEach(
+      (el) => (el.title = 'Quantises the wave into this many levels: rhythmic stairs (SMOOTH glides between them)'),
+    );
+    st.slot(9, knob('rphase', 'R PHASE')).forEach(
+      (el) => (el.title = 'The R side of L/R targets (band levels, RES, FB) gets the same wave this many degrees later'),
+    );
 
     const syncView = () => {
       for (let i = 0; i < NUM_LFOS; i++) {
@@ -141,17 +147,19 @@ registerTab({
       const smooth = e('smooth');
       const level = e('level');
       const uni = e('uni') >= 0.5;
+      const steps = Math.round(e('steps'));
+      const q = (v: number) => (steps > 0 ? (Math.round(((v + 1) / 2) * steps) / steps) * 2 - 1 : v);
       const sync = e('sync') >= 0.5;
       const cycleS = sync ? ((DIVISIONS[Math.round(e('div'))]?.beats ?? 1) * 60) / Math.max(1, clockView(engine, followedClock(engine, m)).bpm || p.get('clock.bpm')) : 1 / Math.max(1e-3, e('rate'));
-      const key = [shape, morphV, phase, smooth, level, uni, cycleS].map((x) => (typeof x === 'number' ? x.toFixed(4) : x)).join('/');
+      const key = [shape, morphV, phase, smooth, level, uni, cycleS, steps].map((x) => (typeof x === 'number' ? x.toFixed(4) : x)).join('/');
       if (key === previewKey) return false;
       previewKey = key;
       const dt = (cycleS * CYCLES) / PREVIEW_PTS;
       const a = smooth > 0 ? 1 - Math.exp(-dt / (smooth * smooth)) : 1;
-      let y = shapeAt(shape, morphV, phase);
+      let y = q(shapeAt(shape, morphV, phase));
       for (let pass = 0; pass < 2; pass++) {
         for (let k = 0; k < PREVIEW_PTS; k++) {
-          const raw = shapeAt(shape, morphV, (k / PREVIEW_PTS) * CYCLES + phase);
+          const raw = q(shapeAt(shape, morphV, (k / PREVIEW_PTS) * CYCLES + phase));
           y += (raw - y) * a;
           if (pass) preview[k] = (uni ? 0.5 + 0.5 * y : y) * level;
         }

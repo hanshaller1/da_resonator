@@ -114,6 +114,14 @@ Stand nach dem DSP-Durchgang vom 16.10.2026, siehe `docs/dsp-durchgang-2026-10-1
   Ältere Presets werden beim Laden umgerechnet und klingen gleich.
 - Die vier Einstellungen werden im Preset gespeichert und nicht moduliert.
 
+### Pre- und Post-Filter: KEY, ENV, SPREAD
+
+- **KEY:** Off = FREQ, Focus = der Spot des RESONANCE-Knopfs (FOCUS, durch seine Kurve), Band 1–10 = die
+  Mittenfrequenz dieses Bandes. FREQ ist dann ohne Wirkung. KEY ist ein Stufenwert (Makros, Clock-Mods).
+- **ENV AMT** (±4 Oktaven) und **ENV REL** (10–2000 ms): eingebauter Hüllkurvenfolger auf dem Eingang des
+  Filters (5 ms Attack), −48…0 dBFS verschieben den Cutoff um ENV AMT, also Auto-Wah ohne Route.
+- **SPREAD** (±2 Oktaven): L-Cutoff um die Hälfte nach unten, R nach oben (links andersherum).
+
 ### L/R pro Band
 
 Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
@@ -328,7 +336,14 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
 - Quellen: 8 Makros, 4 LFOs, 2 Clock-Mods, 4 Envelope Follower, 10 Gain-Reduction-Werte der Banddynamik.
 - Envelope Follower: INPUT wählt den Abgriff (In, Band 1–10, Res Out, Out), **CH** den Kanal (L+R, L, R; so
   ergeben sich auch L IN, R IN, L OUT, R OUT der Hardware). **DLY** (0–2000 ms) verzögert Hüllkurve und Gate,
-  der Follower reagiert also so viel später.
+  der Follower reagiert also so viel später. **HOLD** (0–1000 ms) hält den Spitzenwert so lange, bevor das
+  Release beginnt (kein Flattern bei Drums, Gate-artige Stufen).
+- LFO: **STEPS** quantisiert die Welle in 2–16 Stufen (SMOOTH gleitet zwischen ihnen). **R PHASE** (0–180°)
+  gibt der R-Seite von L/R-Zielen (Bandpegel, RES, FB, FB ALL, Bandgruppen) dieselbe Welle so viel später;
+  Ziele ohne L/R bekommen den L-Wert.
+- Makros: **MORPH** (Feld 9) fährt alle acht Makros von Satz A (links) nach Satz B (rechts); **A** und **B**
+  speichern die Makros, wie sie gerade stehen. **RND** würfelt alle acht, **SNAP** merkt sie, **↺** holt sie
+  zurück (Feld 10). A, B, SNAP und die MORPH-Stellung werden im Preset gespeichert (`modules.macroMorph`).
 - Ziele: jeder modulierbare Parameter, auch Parameter anderer Quellen und die Tiefe jeder Route.
 - Regeln (siehe `docs/plan-modulation-und-module.md`, Abschnitt 4): Makros werden nie moduliert, Schalter nie,
   Stufenwerte nur von Makros und Clock-Mods, Tempo nur von Makros, keine Zyklen.

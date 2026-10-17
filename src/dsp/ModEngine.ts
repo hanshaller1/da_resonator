@@ -52,6 +52,8 @@ export class ModEngine {
   /** 1 if any route targets the param */
   readonly modulated = new Uint8Array(NUM_PARAMS);
   readonly srcVals = new Float32Array(NUM_SOURCES);
+  /** the R side of each source for the R twins of L/R targets (differs only with an LFO's R PHASE) */
+  readonly srcValsR = new Float32Array(NUM_SOURCES);
   /** true when any resonator param (index < 40) is modulated or a base value changed */
   baseVersion = 0;
 
@@ -204,7 +206,7 @@ export class ModEngine {
         const vi = paramIndex(`${node}.value`);
         const si = SOURCE_BY_ID[node].index;
         steps.push(() => {
-          this.srcVals[si] = this.eff[vi];
+          this.srcVals[si] = this.srcValsR[si] = this.eff[vi];
         });
       } else if (this.sources.has(node)) {
         const s = this.sources.get(node)!;
@@ -215,7 +217,9 @@ export class ModEngine {
           if (on && !s.wasOn) s.dsp.reset();
           s.wasOn = on;
           this.ctx.clock = this.usesMidi(s.clkIdx) ? this.midiClock : this.clock;
-          this.srcVals[s.srcIdx] = on ? s.dsp.update(this.ctx) : 0;
+          const v = on ? s.dsp.update(this.ctx) : 0;
+          this.srcVals[s.srcIdx] = v;
+          this.srcValsR[s.srcIdx] = on ? (s.dsp.valueR ?? v) : 0;
         });
       } else if (node.startsWith('route')) {
         const slot = +node.slice(5);
@@ -228,20 +232,24 @@ export class ModEngine {
           // one param or one L/R pair (the common case, kept as it was)
           const [dL, sL] = dests[0] ?? [-1, 1];
           const [dR, sR] = dests[1] ?? [-1, 1];
+          const lIsR = dL >= 0 && PARAMS[dL].twinOf !== undefined;
           steps.push(() => {
             resolve?.();
-            const v = this.srcVals[src] * this.eff[di];
-            if (dL >= 0) this.offset[dL] += sL * v;
-            if (dR >= 0) this.offset[dR] += sR * v;
+            const d = this.eff[di];
+            // a lone param or the L side takes the source value, an R twin the source's R side
+            if (dL >= 0) this.offset[dL] += sL * d * (lIsR ? this.srcValsR[src] : this.srcVals[src]);
+            if (dR >= 0) this.offset[dR] += sR * d * this.srcValsR[src];
           });
         } else {
           // band group: the same offset on every band of the group
           const idx = Int32Array.from(dests.map((d) => d[0]));
           const sgn = Float32Array.from(dests.map((d) => d[1]));
+          const isR = dests.map((d) => PARAMS[d[0]].twinOf !== undefined);
           steps.push(() => {
             resolve?.();
             const v = this.srcVals[src] * this.eff[di];
-            for (let k = 0; k < idx.length; k++) this.offset[idx[k]] += sgn[k] * v;
+            const vR = this.srcValsR[src] * this.eff[di];
+            for (let k = 0; k < idx.length; k++) this.offset[idx[k]] += sgn[k] * (isR[k] ? vR : v);
           });
         }
       } else if (resolve) {

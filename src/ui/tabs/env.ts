@@ -90,6 +90,8 @@ registerTab({
     // hardware: delay before the attack, and the sources L IN, R IN, L OUT, R OUT (= INPUT + CH)
     st.slot(7, knob('delay', 'DLY'));
     st.slot(8, (i, m) => new ParamSelect(p, `${m}.ch`, { label: 'CH', ariaLabel: `${L(i)} channel` }).el);
+    // HOLD: the envelope stays at its peak this long before the release starts
+    st.slot(9, knob('hold', 'HOLD')).forEach((el) => (el.title = 'Holds the peak this long before the release starts: no flutter on drums, gate-like steps'));
 
     /* ---------- feedback warning (in the picture, top right) ---------- */
     const badge = h('span', { class: 'env-fb', title: FEEDBACK_HINT, role: 'note' }, icon('panic', 'env-fb-icon'), 'FEEDBACK');

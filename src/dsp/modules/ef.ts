@@ -27,14 +27,18 @@ const MIN_BLOCK = 128;
  *   × `level`.
  * Trigger out `efN.gate` fires when the envelope rises above the threshold; it re-arms after the
  * envelope fell 3 dB below it (hysteresis, so a level hovering at the threshold fires once).
+ * HOLD keeps the envelope at its last peak this long before the release starts (re-armed by every rise),
+ * so drums do not flutter and the envelope steps like a gate.
  * DLY (delay before the attack) holds the envelope and the gate back by up to 2 s, block by block
  * (2.7 ms steps at 48 kHz): the follower reacts that much later, as if its input were delayed.
  */
 export class EnvFollowerDsp implements SourceDsp {
   private iTap: number; private iAtk: number; private iRel: number; private iGain: number;
-  private iThr: number; private iCurve: number; private iLevel: number; private iCh: number; private iDelay: number;
+  private iThr: number; private iCurve: number; private iLevel: number; private iCh: number; private iDelay: number; private iHold: number;
   private trigGate: number;
   private env = 0;
+  /** samples left before the release may start (HOLD) */
+  private hold = 0;
   /** the envelope update() reads: env, or env DLY ago */
   private envOut = 0;
   // delay line, one entry per block: envelope and whether the gate fired (sized on the first block)
@@ -57,6 +61,7 @@ export class EnvFollowerDsp implements SourceDsp {
     this.iLevel = paramIndex(`${m}.level`);
     this.iCh = paramIndex(`${m}.ch`);
     this.iDelay = paramIndex(`${m}.delay`);
+    this.iHold = paramIndex(`${m}.hold`);
     this.trigGate = TRIGGER_OUT_BY_ID[`${m}.gate`].index;
   }
 
@@ -98,10 +103,16 @@ export class EnvFollowerDsp implements SourceDsp {
     let env = this.env;
     let armed = this.armed;
     let fire = false;
+    const holdN = Math.round(Math.max(0, ctx.eff[this.iHold]) * 0.001 * ctx.fs);
+    let hold = this.hold;
     for (let i = 0; i < n; i++) {
       let x = buf[i] * g;
       if (x < 0) x = -x;
-      env += (x - env) * (x > env ? atkC : relC);
+      if (x > env) {
+        env += (x - env) * atkC;
+        hold = holdN;
+      } else if (hold > 0) hold--;
+      else env += (x - env) * relC;
       if (armed) {
         if (env > thrLin) {
           armed = false;
@@ -113,6 +124,7 @@ export class EnvFollowerDsp implements SourceDsp {
     if (!(env < 1e6)) env = 0;
     else if (env < ENV_FLOOR) env = ENV_FLOOR;
     this.env = env;
+    this.hold = hold;
     this.armed = armed;
     // delay before the attack: the envelope and the gate of DLY ago
     const dly = ctx.eff[this.iDelay];
@@ -151,6 +163,7 @@ export class EnvFollowerDsp implements SourceDsp {
 
   reset(): void {
     this.env = 0;
+    this.hold = 0;
     this.envOut = 0;
     this.armed = true;
     this.dEnv?.fill(0);

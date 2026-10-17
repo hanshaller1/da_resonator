@@ -50,6 +50,11 @@ export interface SourceDsp {
    * bipolar -1..1 or unipolar 0..1 (already scaled by the module's level).
    */
   update(ctx: BlockCtx): number;
+  /**
+   * optional: the value for the R side of L/R targets, valid after update() (LFO R PHASE);
+   * without it the R side gets the same value as L
+   */
+  readonly valueR?: number;
   /** optional: called after the audio pass of every block (analysers read ctx.taps here) */
   analyse?(ctx: BlockCtx): void;
   /** panic / clock reset */
