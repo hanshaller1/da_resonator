@@ -119,13 +119,17 @@ export function newSeed(): number {
   return (Math.random() * 0xffffffff) >>> 0;
 }
 
-/** build the theme of `seed` (the same seed always gives the same theme) */
-export function generateTheme(seed: number): GeneratedTheme {
+/**
+ * build the theme of `seed` (the same seed and mode always give the same theme); without `mode`
+ * the seed picks dark or light too
+ */
+export function generateTheme(seed: number, mode?: ThemeMode): GeneratedTheme {
   const r = rng(seed);
   const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)];
   const range = (a: number, b: number) => a + (b - a) * r();
 
-  const mode: ThemeMode = r() < 0.7 ? 'dark' : 'light';
+  const seedMode: ThemeMode = r() < 0.7 ? 'dark' : 'light';
+  mode ??= seedMode;
   const dark = mode === 'dark';
 
   /* signal hues */

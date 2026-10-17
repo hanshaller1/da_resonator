@@ -1,11 +1,15 @@
 import { generateTheme, newSeed, type GeneratedTheme } from './themeGen';
 
-/** 'auto' = a generated theme (ui/themeGen.ts), new every time AUTO is picked */
+/**
+ * 'auto' = a generated theme (ui/themeGen.ts), new every time AUTO is picked: light (brighter) when
+ * picked from DARK, dark when picked from LIGHT, the same brightness when picked again from AUTO
+ */
 export type ThemePref = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
 const KEY = 'resonator.theme';
 const SEED_KEY = 'resonator.themeSeed';
+const MODE_KEY = 'resonator.themeMode';
 
 function read(key: string): string | null {
   try {
@@ -41,7 +45,7 @@ export class ThemeController {
     // 'auto' used to mean "follow the system"; without a stored seed it falls back to dark
     else if (p === 'auto' && read(SEED_KEY) !== null && Number.isFinite(seed)) {
       this.pref = 'auto';
-      this.generated = generateTheme(seed >>> 0);
+      this.generated = generateTheme(seed >>> 0, read(MODE_KEY) === 'light' ? 'light' : 'dark');
     }
     this.apply();
   }
@@ -50,18 +54,23 @@ export class ThemeController {
     return this.pref === 'auto' && this.generated ? this.generated.mode : this.pref === 'light' ? 'light' : 'dark';
   }
 
+  /** header button: DARK → AUTO (light) → LIGHT → AUTO (dark) → DARK */
   cycle(): void {
-    const order: ThemePref[] = ['dark', 'light', 'auto'];
-    this.set(order[(order.indexOf(this.pref) + 1) % order.length]);
+    if (this.pref !== 'auto') this.set('auto');
+    else this.set(this.resolved);
   }
 
   /** picking 'auto' always makes a new theme, also when it is already selected */
   set(p: ThemePref): void {
+    // from DARK brighter, from LIGHT darker, from AUTO the same brightness again
+    const from = this.resolved;
+    const flip = this.pref !== 'auto';
     this.pref = p;
     write(KEY, p);
     if (p === 'auto') {
-      this.generated = generateTheme(newSeed());
+      this.generated = generateTheme(newSeed(), flip ? (from === 'dark' ? 'light' : 'dark') : from);
       write(SEED_KEY, String(this.generated.seed));
+      write(MODE_KEY, this.generated.mode);
     } else this.generated = null;
     this.apply();
   }

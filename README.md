@@ -61,9 +61,10 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
   Audio-Eingang unter LOAD FILE, Clock (nur Anzeige) mit Spread und Display (eine Zeile) darunter, Resonance mit
   der Karte Wobble · Dice darunter, Help.
 - **Theme** (CONFIG → Display und Knopf rechts im Kopf): DARK (Standard), LIGHT, AUTO. AUTO erzeugt bei jedem
-  Klick ein neues Farbschema (`src/ui/themeGen.ts`): Flächen mit leichter Tönung, Akzent, Feedback und Modulation
+  Klick ein neues Farbschema (`src/ui/themeGen.ts`), hell wenn vorher DARK aktiv war, dunkel nach LIGHT, nach
+  AUTO in derselben Helligkeit. Der Kopf-Knopf läuft DARK → AUTO (hell) → LIGHT → AUTO (dunkel). Das Schema: Flächen mit leichter Tönung, Akzent, Feedback und Modulation
   nach einem Farbkreis-Schema (triadisch, split, square …), Kontrast geprüft. Es bleibt nach einem Neuladen
-  erhalten (`localStorage` `resonator.theme`, `resonator.themeSeed`); der Tooltip nennt Schema und Grundton.
+  erhalten (`localStorage` `resonator.theme`, `resonator.themeSeed`, `resonator.themeMode`); der Tooltip nennt Schema und Grundton.
   Der Audio-Zustand steht im Kopf.
 - **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder Clock-Mod und jeder LFO wählt
   seinen Takt selbst (Clock-Mod INT · MIDI, LFO RATE · INT · MIDI; Parameter `cmodN.clk`, `lfoN.clk` und
