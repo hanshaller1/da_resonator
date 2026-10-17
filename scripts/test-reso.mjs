@@ -144,25 +144,28 @@ const f2 = (x) => x.toFixed(2);
   check('4 COMMON, everything at full: finite, ≤ 1', L.every(Number.isFinite) && R.every(Number.isFinite) && pk <= 1, `peak ${pk.toFixed(3)}`);
 }
 
-/* ---------- 5. FEEDBACK knob: centre = as set, right more, left inverted ---------- */
+/* ---------- 5. FEEDBACK knob (hardware attenuverter): centre = none, right more, left inverted ---------- */
 {
   const fb = (knob, kv) => (a) => {
     const v = setup({ res: 0.45, knob, kv, solo: 5 });
     v[idx('band5.fb')] = a;
     return v;
   };
-  // centre: identical to the RES knob at 0
+  // centre: no feedback, identical to all FB at 0
   const x = (n) => 0.2 * Math.sin((2 * Math.PI * 500 * n) / FS) + 0.05 * rnd();
-  const mk = (knob) => {
-    const v = setup({ res: 0.45, knob, kv: 0 });
-    v[idx('band5.fb')] = 0.6;
-    v[idx('fbAllOn')] = 1;
+  const mk = (fbv) => {
+    const v = setup({ res: 0.45, knob: 1, kv: 0 });
+    v[idx('band5.fb')] = fbv;
+    v[idx('fbAllOn')] = fbv > 0 ? 1 : 0;
     seed = 99;
     return render(v, 0.5, x).L;
   };
-  const a = mk(0), b = mk(1);
+  const a = mk(0), b = mk(0.6);
   const same = a.every((s, i) => s === b[i]);
   const right = onset(fb(1, 1));
+  // FB 1: rings from 3 o'clock (knob 2/3 on the 270° sweep), not at 2 o'clock
+  const at3 = (kv) => sustains(fb(1, kv)(1));
+  const three = !at3(0.6) && at3(0.72);
   // left: inverted feedback damps the band (its centre drops), and never rings
   const centre = (kv, a2) => {
     const v = setup({ res: 0.45, knob: 1, kv, solo: 5, analog: 0 });
@@ -172,9 +175,9 @@ const f2 = (x) => x.toFixed(2);
   const plain = centre(0, 0), inverted = centre(-1, 0.5);
   const left = sustains(fb(1, -1)(1));
   check(
-    '5 FEEDBACK knob: centre = as set, right ×2, left inverted',
-    same && right > 0.38 && right < 0.5 && inverted < plain - 3 && !left,
-    `centre identical ${same}; right onset ${f2(right)} (0.87 / 2); FB 0.5 at full left: centre ${f2(inverted)} dB vs ${f2(plain)} dB, FB 1 rings ${left}`,
+    '5 FEEDBACK knob: centre = none, right ×1.3 (FB 1 rings from 3 o\'clock), left inverted',
+    same && right > 0.6 && right < 0.73 && three && inverted < plain - 3 && !left,
+    `centre = no feedback ${same}; right onset ${f2(right)} (0.87 / 1.3); FB 1 at 2:30 / 3:15 rings ${!three ? 'wrong' : 'no / yes'}; FB 0.5 at full left: centre ${f2(inverted)} dB vs ${f2(plain)} dB, FB 1 rings ${left}`,
   );
 }
 
@@ -187,7 +190,7 @@ const f2 = (x) => x.toFixed(2);
     return v;
   };
   const o = onset(fa);
-  check('6 FEEDBACK knob scales Feedback All', o > 0.3 && o < 0.45, `onset at full right ${f2(o)} (≈ 0.75 / 2)`);
+  check('6 FEEDBACK knob scales Feedback All', o > 0.5 && o < 0.65, `onset at full right ${f2(o)} (≈ 0.75 / 1.3)`);
 }
 
 /* ---------- 7. RES knob: curve and band weighting ---------- */

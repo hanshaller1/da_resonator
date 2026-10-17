@@ -101,8 +101,9 @@ Stand nach dem DSP-Durchgang vom 16.10.2026, siehe `docs/dsp-durchgang-2026-10-1
     Ein hochgezogener Fader lässt sein Band klingeln, und die Bänder regen sich gegenseitig an.
 - **RESONANCE-Knopf**, Einstellung KNOB:
   - RES (Standard): verschiebt RES der Bänder.
-  - FEEDBACK: skaliert alles Feedback (FB pro Band und FB ALL). In der Mitte wirkt es wie eingestellt,
-    rechts bis zum Doppelten, links über null bis invertiert (negatives Feedback dämpft).
+  - FEEDBACK: regelt alles Feedback (FB pro Band und FB ALL) wie der Attenuverter der Hardware. In der Mitte
+    kein Feedback, rechts mehr (bis ×1,3), links invertiert (negatives Feedback dämpft). Ein Band mit FB 1
+    schwingt ab 3 Uhr selbst; FB pro Band wirkt hier wie der Schalter der Hardware.
   - CURVE: Drehweg LIN, LOG (schnell, dann fein), EXP (fein, dann schnell) oder S, die S-Kurve „balanced“
     (fein um die Mitte und an den Anschlägen, schnell dazwischen).
   - BANDS: Der Knopf wirkt auf alle Bänder gleich (ALL), zu den Höhen ansteigend (HIGHS) oder zu den Tiefen ansteigend (LOWS).

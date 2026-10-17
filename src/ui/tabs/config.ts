@@ -197,7 +197,7 @@ registerTab({
       const fb = p.get('reso.knob') >= 0.5;
       resoNote.textContent = [
         common ? 'Bands feed back after their faders into the shared input.' : 'Each band feeds back into itself.',
-        fb ? 'RESONANCE scales all feedback, left inverts.' : 'RESONANCE shifts RES.',
+        fb ? 'RESONANCE sets all feedback: centre none, right more, left inverted.' : 'RESONANCE shifts RES.',
       ].join(' ');
     };
     syncReso();
@@ -213,7 +213,7 @@ registerTab({
       ], 'Feedback route')),
       row('KNOB', paramButtons(p, 'reso.knob', [
         ['RES', 'RESONANCE shifts RES of the bands'],
-        ['FEEDBACK', 'RESONANCE scales all feedback, left of centre inverted (hardware)'],
+        ['FEEDBACK', 'RESONANCE sets all feedback like the hardware: centre none, right more, left inverted'],
       ], 'What the RESONANCE knob does')),
       row('CURVE', paramButtons(p, 'reso.curve', [
         ['LIN', 'Even travel'],

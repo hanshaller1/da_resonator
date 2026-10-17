@@ -41,8 +41,9 @@
  *                the band output; output normalisation keeps the nominal k). Like a soft-limiting integrator stage it
  *                barely touches low-Q bands but makes loud high-Q ringing compress and decay faster at first,
  *                independent of the band's frequency.
- *  Knob FEEDBACK: per band factor 1 + s (s ≥ 0, up to ×2) or 1 + 2s (s < 0, through 0 to ×−1) on fb, s = shaped,
- *                weighted knob; Feedback All gets the unweighted factor. Negative = inverted feedback (damping).
+ *  Knob FEEDBACK: per band factor 1.3·s on fb (hardware attenuverter: centre no feedback, right up to ×1.3,
+ *                FB 1 rings from 3 o'clock; left inverted), s = shaped, weighted knob; Feedback All gets the
+ *                unweighted factor. Negative = inverted feedback (damping).
  *  Band fb     : loop gain at the centre G = fb / 0.87 up to the edge of self-oscillation (fb = 0.87, G = 1);
  *                above it G rises linearly to 1.15 + 0.03·Q at fb = 1 (Q-dependent so narrow, high-Q bands
  *                still start oscillating within a second or two). fb = 1 sustains a steady sine at the band

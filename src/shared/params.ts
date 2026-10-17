@@ -371,7 +371,12 @@ export function resKnobWeight(b: number, weight: number): number {
   if (weight === 2) return (NUM_BANDS - 1 - b) / (NUM_BANDS - 1);
   return 1;
 }
-/** FEEDBACK knob: factor on the feedback from the shaped knob value: centre ×1 (as set), right ×2, left through 0 to ×−1 */
+/**
+ * FEEDBACK knob, like the hardware attenuverter: factor on the feedback from the shaped knob value.
+ * Centre = no feedback, right up to ×1.3, left inverted. With a band's FB at 1 it starts to self-oscillate
+ * at 3 o'clock (0.87 / 1.3 ≈ 0.67 on the linear curve); the band's FB acts like the hardware's on/off switch.
+ */
+export const FB_KNOB_SCALE = 1.3;
 export function fbKnobFactor(s: number): number {
-  return s >= 0 ? 1 + s : 1 + 2 * s;
+  return FB_KNOB_SCALE * s;
 }
