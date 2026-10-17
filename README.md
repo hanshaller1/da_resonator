@@ -87,6 +87,15 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
   und R zusammen (die bisherige Ansicht). Das erste ist grau, das zweite orange. XY zeigt die Lissajous-Figur
   desselben Paars (erstes auf X, zweites auf Y, Maßstab folgt dem Pegel). HOLD schaltet die Spitzenhaltung, daneben
   stellst du ein, wie schnell die Spitzen nach 1,5 s fallen (3 bis 192 dB/s, Standard 24). Gespeichert im Browser.
+  Analyse (Stand 17.10.2026): **BANDS** zeigt unten in jeder Bandspalte IN, OUT und die Differenz Δ in dB
+  (Mittel der Leistung in der Spalte; bei IN·OUT, L IN·OUT und R IN·OUT aus dem gewählten Paar, bei OUT L·R und
+  IN L·R aus IN·OUT). Die **Feedback-Warnung** ist immer an: liegt OUT in einem Band ab +12 dB über IN (voll ab
+  +24 dB) und ist OUT lauter als −60 dBFS, leuchtet die Spalte rot, ab halber Stärke steht `FB! band n` in der
+  Zeile unter der Legende. **DIFF** zeichnet die Kurve zweites − erstes (grün, auf der Skala der RESP-Kurve, 0 dB
+  gepunktet). **WFALL** zeigt im unteren Teil den Wasserfall des zweiten Signals (6,4 s, neuestes oben).
+  **MARKS** beschriftet die drei lautesten Spitzen des zweiten Signals mit Frequenz, Note und Cent. Die lauteste
+  Frequenz steht jetzt in der Zeile unter der Legende statt in der Statuszeile. Code: `src/ui/tabs/spectr/`
+  (Bänder, Spitzen), `src/ui/viz/waterfall.ts`, Test `scripts/test-spectr.mjs`.
 
 ### Resonanz und Feedback (CONFIG → Resonance)
 

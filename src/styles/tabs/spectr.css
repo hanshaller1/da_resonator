@@ -1,7 +1,5 @@
 /* SPECTR tab (ui/tabs/spectr.ts) */
 .tab-panel--spectr .tp-status { gap: var(--sp-4); }
-.sp-st { color: var(--c-text-3); }
-.sp-peak { color: var(--c-accent); font: var(--fw-medium) var(--fs-xs) / 1 var(--font-mono); font-variant-numeric: tabular-nums; margin-left: var(--sp-2); }
 .sp-body { position: relative; }
 .sp-body > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
 .sp-drop .cfg-step-val { min-width: 58px; }
