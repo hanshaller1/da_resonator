@@ -4,3 +4,7 @@
 .sp-body > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
 .sp-drop .cfg-step-val { min-width: 58px; }
 .sp-drop.is-off .cfg-step-val { color: var(--c-text-4); }
+.sp-desc { color: var(--c-text-2); }
+/* the drop stepper sits flat inside the HOLD group, so HOLD lines up with the other buttons */
+.tab-panel--spectr .tp-status .inst { align-items: center; }
+.sp-drop { padding: 0; background: none; box-shadow: none; }
