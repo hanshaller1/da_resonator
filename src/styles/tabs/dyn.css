@@ -51,3 +51,9 @@
 .dyn-src { padding-left: var(--sp-3); box-shadow: -1px 0 0 var(--c-line-strong); }
 .dyn-src .pfield.is-dim { opacity: 0.38; }
 .is-dyn-off .dyn-src { opacity: 0.45; filter: saturate(0.15); }
+
+/* the status line holds 13 fields + the readout: tighter spacing so the GR readout is never cut off */
+.tab-panel--dyn .tp-status { gap: var(--sp-3); padding-right: var(--sp-3); }
+.tab-panel--dyn .tp-status .pfield { gap: 4px; padding: 0 5px; }
+.tab-panel--dyn .dyn-live { flex: none; }
+.tab-panel--dyn .dyn-readout { display: inline-block; min-width: 11ch; text-align: right; }
