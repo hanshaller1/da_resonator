@@ -6,7 +6,7 @@
  * and a crosshair readout. Analysis: IN / OUT / difference per band with a feedback warning, the
  * difference curve of the pair (second − first), a waterfall of the second trace and marks on its
  * loudest peaks (frequency and note). Loudest frequency of the second trace and the feedback
- * warning (a line under the legend); status line = pair and display switches.
+ * warning follow the legend; status line = short description, pair and display switches.
  */
 import '../../styles/tabs/spectr.css';
 import type { ChannelAnalysers, EngineAPI } from '../../core/types';
@@ -150,6 +150,7 @@ registerTab({
     const wfallBtn = btn('WFALL', 'Waterfall of the second trace: the last seconds, newest on top');
     const marksBtn = btn('MARKS', 'Mark the loudest peaks of the second trace with frequency and note');
     tab.status.append(
+      h('span', { class: 'sp-desc' }, 'Analyser · spectra on the band axis'),
       h('span', { class: 'tp-spacer' }),
       h('span', { class: 'inst', role: 'group', 'aria-label': 'Spectrum pair' }, ...PAIR_ORDER.map((k) => pairs[k])),
       h('span', { class: 'inst', role: 'group', 'aria-label': 'Peak hold' }, holdBtn, drop.el),
@@ -256,6 +257,8 @@ registerTab({
 
     /** height of the spectrum area (the waterfall takes the rest of the plot) */
     const specH = () => (set.wfall ? Math.round((viz.h - 18) * (1 - WFALL_SHARE)) : viz.h - 18);
+    /** side of the Lissajous figure (above the band readouts when they are on) */
+    const xySize = (sh: number) => Math.min(170, sh - 16 - (set.bands ? BandLevels.CHIP_SPACE : 0));
     const ySpec = (db: number) => Math.min(1, (SPEC_TOP - db) / (SPEC_TOP - SPEC_BOT)) * specH();
     const yResp = (db: number) => ((RESP_TOP - db) / (RESP_TOP - RESP_BOT)) * specH();
     const respDbAt = (f: number) => (model ? 20 * Math.log10(Math.max(1e-6, responseAt(model, f))) : 0);
@@ -447,7 +450,7 @@ registerTab({
       }
 
       if (running && set.bands) levels.drawChips(g, w, sh, pal, PAIRS[set.pair].inOut ? [pd.a, pd.b] : ['IN', 'OUT']);
-      if (running && set.marks) drawPeaks(g, peaks, spec.colPx, w, ySpec, 38, pal);
+      if (running && set.marks) drawPeaks(g, peaks, spec.colPx, w, ySpec, 24, pal);
 
       // legend
       g.font = monoFont(pal, 9);
@@ -477,27 +480,28 @@ registerTab({
       if (running && set.bands && !pd.inOut) item(pal.text4, 'BANDS: IN·OUT');
       if (frozen) item(pal.mod, 'FROZEN');
 
-      // readout: loudest frequency of trace B, feedback warning
+      // readout after the legend: loudest frequency of trace B, feedback warning
       if (running) {
-        g.font = monoFont(pal, 9);
-        g.textBaseline = 'middle';
-        const head = `LOUDEST ${pd.b}  `;
+        // up to the Lissajous figure: leave out the heading when it would not fit
+        const limit = set.xy ? w - xySize(sh) - 54 : w - 60;
+        const tail = g.measureText(peakText).width + (warnText ? 14 + g.measureText(warnText).width : 0);
+        let head = `LOUDEST ${pd.b} `;
+        if (lx + 6 + g.measureText(head).width + tail > limit) head = '';
         g.fillStyle = pal.text3;
-        g.fillText(head, 10, 28);
-        let rx = 10 + g.measureText(head).width;
+        g.fillText(head, lx + 6, 13);
+        let rx = lx + 6 + g.measureText(head).width;
         g.fillStyle = pal.accent;
-        g.fillText(peakText, rx, 28);
+        g.fillText(peakText, rx, 13);
         rx += g.measureText(peakText).width + 14;
         if (warnText) {
           g.fillStyle = pal.fb;
-          g.fillText(warnText, rx, 28);
+          g.fillText(warnText, rx, 13);
         }
       }
 
       // Lissajous figure of the pair, top right
       if (running && set.xy) {
-        // above the band readouts when they are on
-        const size = Math.min(170, sh - 16 - (set.bands ? BandLevels.CHIP_SPACE : 0));
+        const size = xySize(sh);
         xy.draw(g, w - size - 46, 8, size, pal, pd.a, pd.b);
       }
 
