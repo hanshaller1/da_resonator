@@ -158,6 +158,8 @@ function preset(
     params[`route${slot}.depth`] = depth;
     return { slot, source, target };
   });
+  // written for ODD/EVEN: presets that use SPREAD keep it now that CLASSIC is the default
+  if ((params.spread ?? 0) !== 0 || routes.some((r) => r.target === 'spread')) params['reso.spread'] ??= 0;
   const names = Array.from({ length: 8 }, (_, i) => d.macros?.[i] ?? `Macro ${i + 1}`);
   return {
     name,

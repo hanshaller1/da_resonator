@@ -18,6 +18,7 @@ export function isSnapshot(s: unknown): s is EngineSnapshot {
  * v3: before L/R per band (2026-10-16): no R values.
  * v4: before SPREAD became bipolar (2026-10-16): spread ran 0..1, now −1..1 with the old values right
  *     of centre. Its value stays; the depth of routes onto it is halved so they swing as far as before.
+ *     Their spread was ODD/EVEN, so a missing function stays ODD/EVEN (the default is CLASSIC since 2026-10-17).
  * v5: before the hardware modes (2026-10-16): no band filter, band scanner or DYN source. Their defaults
  *     are off / neutral, so nothing needs converting.
  * Params missing from the input fall back to the defaults of its version; a missing R value takes
@@ -56,6 +57,7 @@ export function migrateSnapshot(input: unknown): EngineSnapshot {
       const id = `route${r.slot}.depth`;
       if (r.target === 'spread' && typeof params[id] === 'number') params[id] *= 0.5;
     }
+    params['reso.spread'] = given('reso.spread') ?? 0;
   }
   // after the L migrations, so an unlinked older preset converts both channels alike
   for (const p of PARAMS) if (p.twinOf !== undefined) params[p.id] = given(p.id) ?? params[PARAMS[p.twinOf].id];

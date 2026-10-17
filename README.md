@@ -146,11 +146,13 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
 Stand 16.10.2026: SPREAD ist bipolar, die Mitte (12 Uhr, CC 64) lässt das Stereobild unverändert.
 CONFIG → GENERAL → Spread wählt, was er tut (Parameter `reso.spread`, im Preset gespeichert):
 
-- **ODD/EVEN** (Standard): Rechts der Mitte wandern die ungeraden Bänder nach links und die geraden nach rechts,
+- **ODD/EVEN**: Rechts der Mitte wandern die ungeraden Bänder nach links und die geraden nach rechts,
   links der Mitte umgekehrt. Am Anschlag liegt jedes Band ganz auf einer Seite (+3 dB, gleiche Leistung).
-- **CLASSIC** (wie die Hardware im FB-Modus): Rechts der Mitte wird R lauter und L leiser, links umgekehrt,
+- **CLASSIC** (Standard seit 17.10.2026, wie die Hardware im FB-Modus): Rechts der Mitte wird R lauter und L leiser, links umgekehrt,
   am Anschlag ±6 dB. Der Wert ist eine Annahme, das Handbuch nennt keinen.
 - Der Wechsel zwischen beiden blendet weich über.
+- Gespeicherte Presets behalten ihre Funktion. Presets von vor dem bipolaren SPREAD (v4) und Werks-Presets,
+  die SPREAD benutzen, bleiben auf ODD/EVEN.
 - Preset-Format 5: Alte Werte (0 bis 100 %) liegen jetzt rechts der Mitte und klingen gleich. Routen auf SPREAD
   haben halbe Tiefe, damit sie gleich weit ausschlagen. Ein LFO, der früher an der 0 stehen blieb, schwingt jetzt
   in die Gegenrichtung weiter (Werks-Presets Breathing Bands und Singing Drone).

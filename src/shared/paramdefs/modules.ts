@@ -238,7 +238,8 @@ export const RES_WEIGHTS = ['All', 'Highs', 'Lows'] as const;
 /**
  * what SPREAD does (centre = neutral): ODD/EVEN pans odd bands to one side and even bands to the other
  * (right of centre odd → L, left of centre odd → R); CLASSIC raises one channel and lowers the other
- * (right of centre R up, L down; ±SPREAD_CLASSIC_DB at the stops)
+ * (right of centre R up, L down; ±SPREAD_CLASSIC_DB at the stops). Default CLASSIC since 2026-10-17;
+ * older snapshots and factory presets that use SPREAD keep ODD/EVEN.
  */
 export const SPREAD_MODES = ['Odd/Even', 'Classic'] as const;
 export const SPREAD_CLASSIC_DB = 6;
@@ -249,7 +250,7 @@ export function resoParams(): ParamDef[] {
     fixed(discrete('reso.knob', 'Resonance Knob', 'KNOB', RES_KNOB_MODES, 0)),
     fixed(discrete('reso.curve', 'Resonance Curve', 'CURVE', RES_CURVES, 0)),
     fixed(discrete('reso.weight', 'Resonance Bands', 'BANDS', RES_WEIGHTS, 0)),
-    fixed(discrete('reso.spread', 'Spread Function', 'SPRD', SPREAD_MODES, 0)),
+    fixed(discrete('reso.spread', 'Spread Function', 'SPRD', SPREAD_MODES, 1)),
   ];
 }
 

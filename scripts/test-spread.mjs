@@ -118,6 +118,11 @@ const level = (band, spread, classic) => {
   check('4a v4 preset: spread value kept (right of centre)', s.params.spread === 0.4 && s.version === S.SNAPSHOT_VERSION);
   check('4b v4 preset: route onto spread at half depth, others unchanged', s.params['route0.depth'] === 0.3 && s.params['route1.depth'] === 0.5);
   check('4c v4 preset: function ODD/EVEN', s.params['reso.spread'] === 0);
+  check('4f default function CLASSIC; a v6 preset without it takes CLASSIC', P.PARAM_BY_ID['reso.spread'].def === 1 && S.migrateSnapshot({ format: 'da-resonator', version: 6, params: {} }).params['reso.spread'] === 1);
+  const F = importTs('src/presets/factory.ts');
+  const list = F.FACTORY_PRESETS;
+  const uses = (d) => (d.params?.spread ?? 0) !== 0 || d.routes?.some((r) => r.target === 'spread');
+  check('4g factory presets that use SPREAD keep ODD/EVEN, the others take the default', list.length > 0 && list.every((d) => (uses(d) ? d.params?.['reso.spread'] === 0 : d.params?.['reso.spread'] === undefined)), `${list.filter(uses).length} of ${list.length} use SPREAD`);
   const again = S.migrateSnapshot(s);
   check('4d v5 preset: loads unchanged', again.params['route0.depth'] === 0.3);
   // the same LFO swing: norm offset × range
@@ -129,10 +134,10 @@ const level = (band, spread, classic) => {
 {
   const store = (set) => ({ get: (id) => (id in set ? set[id] : P.PARAM_BY_ID[id].def) });
   const c = R.readModel(store({}), undefined, 0);
-  const l = R.readModel(store({ spread: 1 }), undefined, 0);
-  const r = R.readModel(store({ spread: 1 }), undefined, 1);
-  const both0 = R.readModel(store({}), undefined, 'both');
-  const both = R.readModel(store({ spread: 1 }), undefined, 'both');
+  const l = R.readModel(store({ spread: 1, 'reso.spread': 0 }), undefined, 0);
+  const r = R.readModel(store({ spread: 1, 'reso.spread': 0 }), undefined, 1);
+  const both0 = R.readModel(store({ 'reso.spread': 0 }), undefined, 'both');
+  const both = R.readModel(store({ spread: 1, 'reso.spread': 0 }), undefined, 'both');
   const near = (a, b) => Math.abs(a - b) < 1e-9;
   check('5a ODD/EVEN right stop: L has the odd bands (+3 dB), R the even ones', near(l.gains[0], Math.SQRT2 * c.gains[0]) && near(l.gains[1], 0) && near(r.gains[0], 0) && near(r.gains[1], Math.SQRT2 * c.gains[1]));
   check('5b ODD/EVEN: the L+R average keeps its level', both.gains.every((g, i) => near(g, both0.gains[i])));
