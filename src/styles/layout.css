@@ -483,13 +483,6 @@ select {
   margin-right: calc(var(--ls-brand) * -1);
 }
 
-.brand-sub {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: 0.24em;
-  color: var(--c-text-3);
-}
-
 .hdr-transport {
   display: flex;
   align-items: center;

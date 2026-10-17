@@ -416,7 +416,7 @@ export function buildHeader(engine: EngineAPI, theme: ThemeController, notify: N
       'div',
       { class: 'brand' },
       brandMark(),
-      h('div', { class: 'brand-text' }, h('span', { class: 'brand-name' }, 'RESONATOR'), h('span', { class: 'brand-sub' }, 'filterbank')),
+      h('div', { class: 'brand-text' }, h('span', { class: 'brand-name' }, 'DA RESONATOR')),
     ),
     presets,
     h('div', { class: 'hdr-transport' }, power, h('div', { class: 'hdr-source' }, source, play, levelWrap), t.fileInput),
