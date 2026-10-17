@@ -9,6 +9,8 @@
  *            Notch |H|² = 1 − BP (so its centre always reaches the floor).
  *  Depth   : the curve never goes below −DEPTH; at the stop (60 dB) the floor is silence.
  *  Offset  : added on top: the level of the passband.
+ *  Peak    : PEAK dB lifted at the cutoff, a bell over ±PEAK_SIGMA octaves (2026-10-17); not on silent bands.
+ *  Res     : bandFilterOpen = how open a band is (1 passband … 0 at RES_SPAN_DB down), for RES AMT.
  *  Stereo  : R reads the curve at cutoff · 2^R OFS.
  */
 import { BAND_FREQS, NUM_BANDS } from '../../shared/params';
@@ -31,16 +33,32 @@ export function bandFilterPower(type: number, cutoff: number, slope: number, wid
   return type === TYPE_BP ? p : Math.max(0, 1 - p);
 }
 
+const PEAK_SIGMA = 0.5; // octaves
+const RES_SPAN_DB = 24;
+
 /** level the band filter gives a band at f (dB, −Infinity = silent) */
-export function bandFilterDb(type: number, cutoff: number, slope: number, width: number, depth: number, offset: number, f: number): number {
+export function bandFilterDb(type: number, cutoff: number, slope: number, width: number, depth: number, offset: number, f: number, peak = 0): number {
   const p = bandFilterPower(type, cutoff, slope, width, f);
   const db = p > 1e-12 ? 10 * Math.log10(p) : -120;
   if (db <= -depth) return depth >= BAND_FILTER_MUTE_DB ? -Infinity : offset - depth;
+  if (peak > 0) {
+    const o = Math.log2(f / Math.max(1, cutoff)) / PEAK_SIGMA;
+    return db + offset + peak * Math.exp(-0.5 * o * o);
+  }
   return db + offset;
 }
 
+/** how open the curve is at f: 1 in the passband, falling to 0 at RES_SPAN_DB down (or at DEPTH if less) */
+export function bandFilterOpen(type: number, cutoff: number, slope: number, width: number, depth: number, f: number): number {
+  const span = Math.min(RES_SPAN_DB, depth);
+  if (span <= 0) return 1;
+  const p = bandFilterPower(type, cutoff, slope, width, f);
+  const db = p > 1e-12 ? 10 * Math.log10(p) : -120;
+  return db >= 0 ? 1 : db <= -span ? 0 : 1 + db / span;
+}
+
 /** the curve at every band centre for one channel (rOfs = octaves the cutoff moves, R OFS on R) */
-export function bandFilterLevels(out: Float64Array | Float32Array, type: number, cutoff: number, slope: number, width: number, depth: number, offset: number, rOfs = 0): void {
+export function bandFilterLevels(out: Float64Array | Float32Array, type: number, cutoff: number, slope: number, width: number, depth: number, offset: number, rOfs = 0, peak = 0): void {
   const fc = rOfs ? cutoff * Math.pow(2, rOfs) : cutoff;
-  for (let b = 0; b < NUM_BANDS; b++) out[b] = bandFilterDb(type, fc, slope, width, depth, offset, BAND_FREQS[b]);
+  for (let b = 0; b < NUM_BANDS; b++) out[b] = bandFilterDb(type, fc, slope, width, depth, offset, BAND_FREQS[b], peak);
 }

@@ -184,6 +184,10 @@ export interface MidiAPI {
   onNotice(cb: (msg: string, tone: 'info' | 'error') => void): Unsubscribe;
   /** Program Change n (0–127) on a listened channel */
   onProgram(cb: (n: number) => void): Unsubscribe;
+  /** note on (0–127) on a listened channel that is not a trigger's (band filter KEY Note) */
+  onNote(cb: (note: number) => void): Unsubscribe;
+  /** the last such note, null before the first */
+  readonly lastNote: number | null;
   onLearn(cb: (id: string, cc: number) => void): Unsubscribe;
   /**
    * Triggers: a learned note or CC presses a named trigger ('pool': the running pool advances,

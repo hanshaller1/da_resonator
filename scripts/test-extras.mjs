@@ -1,4 +1,5 @@
-// Offline tests for the controls added on 2026-10-17: filter KEY / ENV / SPREAD, EF HOLD, LFO STEPS / R PHASE.
+// Offline tests for the controls added on 2026-10-17: filter KEY / ENV / SPREAD, EF HOLD, LFO STEPS / R PHASE,
+// band filter KEY / ENV / PEAK / RES AMT.
 // Run: node scripts/test-extras.mjs
 import { BLOCK, FS, check, importTs, loadProcessor, results } from './testkit.mjs';
 
@@ -118,6 +119,48 @@ function blocks(proc, n, input = () => 0, each) {
   };
   const h100 = after(300, 100), h400 = after(300, 450), h0 = after(0, 100);
   check('6 EF HOLD keeps the peak, then releases', h100 > h0 + 0.2 && h400 < h100 - 0.2, `HOLD 300 ms: 100 ms after the burst ${f2(h100)}, 450 ms after ${f2(h400)}; HOLD 0: ${f2(h0)}`);
+}
+
+/* ---------- band filter KEY, ENV, PEAK, RES AMT (layers inside the worklet) ---------- */
+const BF = { 'filterBand.on': 1, 'filterBand.type': 0, 'filterBand.slope': 24, 'filterBand.depth': 60, 'filterBand.cutoff': 8000 };
+const layer = (proc, b) => proc.lyrDb[b * 2];
+
+/* 7. KEY: band 6 / last MIDI note set the cutoff */
+{
+  const off = setup(BF), band6 = setup({ ...BF, 'filterBand.key': 7 }), note = setup({ ...BF, 'filterBand.key': 12 });
+  note.port.onmessage({ data: { type: 'note', note: 57 } }); // A3 = 220 Hz
+  for (const p of [off, band6, note]) blocks(p, 4);
+  const a = layer(off, 5), b = layer(band6, 5), c = layer(band6, 7), d = layer(note, 3), e = layer(note, 5);
+  check('7 band filter KEY: band / MIDI note', a > -0.1 && Math.abs(b + 3.01) < 0.1 && c < -20 && Math.abs(d + 2.9) < 0.3 && e < -10,
+    `band 6 (777 Hz): KEY off ${f2(a)} dB, KEY band 6 ${f2(b)} dB (band 8 ${f2(c)}); KEY note A3: band 4 ${f2(d)}, band 6 ${f2(e)} dB`);
+}
+
+/* 8. ENV: a loud input opens an LP at 100 Hz */
+{
+  const set = { ...BF, 'filterBand.cutoff': 100, 'filterBand.env': 4, 'filterBand.envRel': 500 };
+  const loud = setup(set), quiet = setup(set);
+  const sine = (amp) => (n) => amp * Math.sin((2 * Math.PI * 300 * n) / FS);
+  blocks(loud, 40, sine(0.5));
+  blocks(quiet, 40, sine(0.005));
+  const l = layer(loud, 5), q = layer(quiet, 5);
+  check('8 band filter ENV opens with the level', l > q + 20, `band 6 with LP 100 Hz, ENV +4: loud input ${f2(l)} dB, quiet ${f2(q)} dB`);
+}
+
+/* 9. PEAK: +12 dB bell at the cutoff */
+{
+  const p = setup({ ...BF, 'filterBand.key': 7, 'filterBand.peak': 12 });
+  blocks(p, 4);
+  const b = layer(p, 5), n = layer(p, 4);
+  check('9 band filter PEAK lifts the cutoff band', Math.abs(b - 8.99) < 0.1 && n < b - 6, `band 6 at the cutoff ${f2(b)} dB (−3 + 12), band 5 ${f2(n)} dB`);
+}
+
+/* 10. RES AMT: open bands up, closed ones down; 0 leaves RES alone */
+{
+  const p = setup({ ...BF, 'filterBand.cutoff': 1000, 'filterBand.resAmt': 1 }), z = setup({ ...BF, 'filterBand.cutoff': 1000 });
+  blocks(p, 200);
+  blocks(z, 200);
+  const lo = p.lyrResCur[0], hi = p.lyrResCur[18], zero = Math.max(...z.lyrResCur.map(Math.abs));
+  check('10 band filter RES AMT shifts RES with the curve', lo > 0.45 && hi < -0.45 && zero === 0, `band 1 ${f2(lo)}, band 10 ${f2(hi)} (RES AMT 0: ${zero})`);
 }
 
 console.table(results);

@@ -217,6 +217,15 @@ Stand 16.10.2026, Entscheidungen in `docs/hardware-modi-und-pools-2026-10-16.md`
     DEPTH (wie tief der Sperrbereich geht, 60 dB = stumm), OFFSET (Pegel im Durchlassbereich).
   - Jedes Band bekommt den Wert der Kurve an seiner Mitte. Ein Sweep wandert so hörbar von Band zu Band.
   - **R OFS** versetzt den Cutoff von R um bis zu ±2 Oktaven (gestrichelte Kurve).
+  - **KEY** (seit 17.10.2026): Off = FREQ, Focus = der Spot des RESONANCE-Knopfs, Band 1–10 = dessen Mitte,
+    Note = die zuletzt gespielte MIDI-Note (Note On auf einem gehörten Kanal, die kein Trigger ist; vor der ersten
+    Note gilt FREQ).
+  - **ENV** (±4 Oktaven) mit **REL** (10–2000 ms): Hüllkurvenfolger auf dem Eingang (5 ms Attack), −48…0 dBFS
+    verschieben den Cutoff um ENV.
+  - **PEAK** (0 bis +12 dB): hebt die Bänder am Cutoff an (Glocke, ±0,5 Oktaven), wie die Resonanz eines Filters.
+  - **RES AMT** (±100 %): Die Kurve verschiebt auch RES, offene Bänder um bis zu +0,5, gesperrte (ab 24 dB
+    unter dem Durchlass) um bis zu −0,5. Links andersherum. Gesperrte Bänder per Schloss bleiben unberührt.
+  - ENV + REL und PEAK + RES AMT teilen sich je einen Platz. Tests: `scripts/test-extras.mjs` 7–10.
   - Griff ziehen: seitlich FREQ, hoch und runter OFFSET. Die stetigen Werte lassen sich modulieren, die
     Bandpegel folgen dann schnell (3 ms).
 - **CLK MOD → SCAN** (Band-Scanner): Bei jedem Schritt wird ein Wert abgetastet und ins nächste Band geschrieben.

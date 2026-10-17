@@ -152,7 +152,10 @@ import {
   DYN_GATE_DB,
   DYN_GATE_FADE_DB,
   DYN_RDLY_MAX_MS,
+  BAND_FILTER_KEY_NOTE,
+  BAND_FILTER_RES_SHIFT,
   DYN_SRC_BAND,
+  FILTER_ENV_OCT,
   DYN_SRC_IN,
   SPREAD_CLASSIC_DB,
   TAP_BAND0,
@@ -160,7 +163,8 @@ import {
   TAP_OUT,
   TAP_RES_OUT,
 } from '../shared/paramdefs/modules';
-import { bandFilterLevels } from './modules/bandFilter';
+import { bandFilterLevels, bandFilterOpen } from './modules/bandFilter';
+import { filterKeyCutoff } from './modules/filter';
 import type { ModConfig } from '../shared/mod/rules';
 import { SRC_DYN0 } from '../shared/mod/sources';
 import { MAX_BLOCK, ModEngine } from './ModEngine';
@@ -222,6 +226,8 @@ const DYN_ANA_Q = 1.5; // analysis bandpass per band for the IN / OUT sources (a
 const DYN_FILT_Q = 2; // input filter before the analysis
 const DB_PER_LN_POW = 10 / Math.LN10; // ln(power ratio) → dB
 const LN_GAIN_PER_DB = Math.LN10 / 20; // dB → ln(amplitude ratio)
+const BF_ENV_ATK_SEC = 0.005; // band filter envelope: attack, and −48 … 0 dBFS is the travel of ENV
+const BF_ENV_SPAN_DB = 48;
 const DYN_GATE_P = Math.exp(-DYN_GATE_DB / DB_PER_LN_POW); // BOOST gate below the threshold, as an A² factor
 
 function fastTanh(x: number): number {
@@ -320,6 +326,16 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private iBfDepth = paramIndex('filterBand.depth');
   private iBfOffset = paramIndex('filterBand.offset');
   private iBfRofs = paramIndex('filterBand.rofs');
+  private iBfKey = paramIndex('filterBand.key');
+  private iBfEnv = paramIndex('filterBand.env');
+  private iBfEnvRel = paramIndex('filterBand.envRel');
+  private iBfPeak = paramIndex('filterBand.peak');
+  private iBfResAmt = paramIndex('filterBand.resAmt');
+  private bfEnv = 0; // band filter envelope on the input (peak, 5 ms attack, REL release)
+  private bfNote = -1; // last MIDI note (KEY Note), −1 = none yet: FREQ
+  private lyrRes = new Float64Array(NS); // band filter RES AMT: RES shift per slot (target)
+  private lyrResCur = new Float64Array(NS); // … smoothed at the coefficient rate
+  private lyrResA = 0;
   private iBfLock: number[] = [];
   private bfModulated = false;
   // resonance setup (CONFIG): feedback route, knob mode, curve, band weights
@@ -532,7 +548,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'ready' });
   }
 
-  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; int?: boolean; midi?: boolean; ev?: number; t?: number; band?: number; ch?: number; on?: boolean; depth?: number }) {
+  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; int?: boolean; midi?: boolean; ev?: number; t?: number; band?: number; ch?: number; on?: boolean; depth?: number; note?: number }) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'params':
@@ -569,6 +585,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         break;
       case 'clockOn':
         this.mod.setClockOn(msg.int !== false, msg.midi === true);
+        break;
+      case 'note':
+        // KEY Note of the band filter: the last MIDI note played
+        if (typeof msg.note === 'number' && msg.note >= 0 && msg.note <= 127) this.bfNote = msg.note;
         break;
       case 'midiClock':
         if (typeof msg.ev === 'number' && typeof msg.t === 'number') this.mod.pushClock(msg.ev, msg.t);
@@ -609,7 +629,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const fastDyn = 1 - Math.exp(-DYN_SUB / (TAU_FAST * fs));
     this.dSmA = m[this.iDynThr] || m[this.iDynRatio] || m[this.iDynRange] ? fastDyn : slowDyn;
     for (let b = 0; b < NB; b++) this.dAmtA[b] = m[this.iDynAmt[b]] ? fastDyn : slowDyn;
-    this.bfModulated = [this.iBfType, this.iBfCut, this.iBfSlope, this.iBfWidth, this.iBfDepth, this.iBfOffset, this.iBfRofs].some((i) => m[i] === 1);
+    this.bfModulated = [this.iBfType, this.iBfCut, this.iBfSlope, this.iBfWidth, this.iBfDepth, this.iBfOffset, this.iBfRofs, this.iBfKey, this.iBfPeak, this.iBfResAmt].some((i) => m[i] === 1);
+    this.lyrResA = fastSub;
   }
 
   /** FB function keys: fade every slot's wobble depth towards held / released; true while one moves */
@@ -635,27 +656,65 @@ class ResonatorProcessor extends AudioWorkletProcessor {
    * The FB function keys add the wobble of a held band: its fader position ± depth · sin, one cycle
    * per beat of the master clock (in phase with its beats while it runs, at its TEMPO while it stands).
    */
-  private applyLayers(p: Float32Array) {
+  private applyLayers(p: Float32Array, inL: Float32Array | null, inR: Float32Array | null, n: number) {
     const fOn = p[this.iBfOn] >= 0.5;
     const scan = this.mod.scan;
     const wob = this.wobbleStep(this.mod.ctx.dt);
     if (!fOn && !scan.on && !wob && !this.lyrLive) return;
     const ly = this.lyrDb;
+    let envOn = false;
     if (fOn) {
       const type = Math.round(p[this.iBfType]);
-      const fc = clamp(p[this.iBfCut], 20, 20000);
+      // KEY: FREQ, the FOCUS spot, a band centre or the last MIDI note; then the envelope on the input
+      const key = Math.round(p[this.iBfKey]);
+      let fc = key === BAND_FILTER_KEY_NOTE
+        ? this.bfNote >= 0 ? 440 * Math.pow(2, (this.bfNote - 69) / 12) : p[this.iBfCut]
+        : filterKeyCutoff(key, p[this.iBfCut], resKnobShape(p[G.resOffset], this.knobCurve));
+      const envAmt = clamp(p[this.iBfEnv], -FILTER_ENV_OCT, FILTER_ENV_OCT);
+      if (envAmt !== 0) {
+        envOn = true;
+        let pk = 0;
+        if (inL) for (let q = 0; q < n; q++) { const a = inL[q] < 0 ? -inL[q] : inL[q]; if (a > pk) pk = a; }
+        if (inR && inR !== inL) for (let q = 0; q < n; q++) { const a = inR[q] < 0 ? -inR[q] : inR[q]; if (a > pk) pk = a; }
+        if (!(pk < 1e6)) pk = 0;
+        const relS = clamp(p[this.iBfEnvRel], 10, 2000) * 0.001;
+        this.bfEnv += (pk - this.bfEnv) * (1 - Math.exp(-n / ((pk > this.bfEnv ? BF_ENV_ATK_SEC : relS) * this.fs)));
+        if (this.bfEnv < 1e-9) this.bfEnv = 0;
+        if (this.bfEnv > 0) {
+          let en = (20 * Math.log10(this.bfEnv) + BF_ENV_SPAN_DB) / BF_ENV_SPAN_DB;
+          en = en > 0 ? (en < 1 ? en : 1) : 0;
+          fc *= Math.pow(2, envAmt * en);
+        }
+      } else this.bfEnv = 0;
+      fc = clamp(fc, 20, 20000);
       const slope = clamp(p[this.iBfSlope], 6, 48);
       const width = clamp(p[this.iBfWidth], 0.25, 8);
       const depth = clamp(p[this.iBfDepth], 0, 60);
       const off = clamp(p[this.iBfOffset], -24, 12);
-      bandFilterLevels(this.bfL, type, fc, slope, width, depth, off, 0);
-      bandFilterLevels(this.bfR, type, fc, slope, width, depth, off, clamp(p[this.iBfRofs], -2, 2));
+      const peak = clamp(p[this.iBfPeak], 0, 12);
+      const rOfs = clamp(p[this.iBfRofs], -2, 2);
+      bandFilterLevels(this.bfL, type, fc, slope, width, depth, off, 0, peak);
+      bandFilterLevels(this.bfR, type, fc, slope, width, depth, off, rOfs, peak);
+      // RES AMT: open bands up to +shift, closed ones down to −shift
+      const ra = clamp(p[this.iBfResAmt], -1, 1) * BAND_FILTER_RES_SHIFT;
+      const fcR = rOfs ? fc * Math.pow(2, rOfs) : fc;
       for (let b = 0; b < NB; b++) {
         const open = p[this.iBfLock[b]] < 0.5;
         ly[b * 2] = open ? this.bfL[b] : 0;
         ly[b * 2 + 1] = open ? this.bfR[b] : 0;
+        if (ra !== 0 && open) {
+          this.lyrRes[b * 2] = ra * (2 * bandFilterOpen(type, fc, slope, width, depth, BAND_FREQS[b]) - 1);
+          this.lyrRes[b * 2 + 1] = ra * (2 * bandFilterOpen(type, fcR, slope, width, depth, BAND_FREQS[b]) - 1);
+        } else {
+          this.lyrRes[b * 2] = 0;
+          this.lyrRes[b * 2 + 1] = 0;
+        }
       }
-    } else ly.fill(0);
+    } else {
+      ly.fill(0);
+      this.lyrRes.fill(0);
+      this.bfEnv = 0;
+    }
     if (scan.on) for (let i = 0; i < NS; i++) ly[i] += scan.layerDb[i];
     if (wob) {
       const c = this.mod.masterClock;
@@ -673,7 +732,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     // all off: this last pass set the targets back to the bare faders
     this.lyrLive = fOn || scan.on || wob;
     for (let i = 0; i < NS; i++) this.bGainTgt[i] = dbToGain(this.bFaderDb[i] + ly[i]);
-    const fast = scan.on || (fOn && this.bfModulated) || wob;
+    const fast = scan.on || (fOn && (this.bfModulated || envOn || Math.round(p[this.iBfKey]) !== 0)) || wob;
     if (fast !== this.lyrFast) {
       this.lyrFast = fast;
       this.updateSmoothing();
@@ -1032,7 +1091,9 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       for (let ch = 0; ch < 2; ch++) {
         const i = b * 2 + ch;
         // RES per channel (L/R per band): Q, loop excess, makeup and tap level per slot
-        let r = this.bResCur[i] + (fbMode ? 0 : kb);
+        // band filter RES AMT (0 unless used, so the sum is unchanged then)
+        const lr = (this.lyrResCur[i] += (this.lyrRes[i] - this.lyrResCur[i]) * this.lyrResA);
+        let r = this.bResCur[i] + (fbMode ? 0 : kb) + lr;
         r = r < 0 ? 0 : r > 1 ? 1 : r;
         const qNom = Q_MIN * Math.exp(r * Q_RANGE_LN);
         this.bFbExcess[i] = 0.15 + 0.03 * qNom;
@@ -1129,7 +1190,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.applyParams(mod.eff, false);
     }
     this.applyDyn(mod.eff);
-    this.applyLayers(mod.eff);
+    this.applyLayers(mod.eff, rawL, rawR, n);
 
     /* --- pre filter (on a copy: never write into the input buffers) --- */
     const preL = this.preL, preR = this.preR;

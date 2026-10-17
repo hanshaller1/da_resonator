@@ -4,7 +4,8 @@
  * Status line = what the selected filter does + a summary of all three, PRE / POST / BAND selector and on.
  * Control row = the selected filter: PRE / POST TYPE, SLOPE, FREQ, RES, DRIVE, MIX, KEY, ENV AMT, ENV REL,
  * SPREAD (slots 1–10);
- * BAND TYPE, SLOPE, FREQ, WIDTH, DEPTH, OFFSET, R OFS (slots 1–7).
+ * BAND TYPE, SLOPE, FREQ, WIDTH, DEPTH, OFFSET, R OFS, KEY, ENV + REL, PEAK + RES AMT (slots 1–10; a + puts
+ * two small knobs into one slot).
  * Visualisation = the responses over the spectrum with a cutoff handle, and per band the level
  * after resonator × pre × post + band filter; with BAND the locks along the foot (see filter/viz.ts).
  */
@@ -29,7 +30,7 @@ const NAME: Record<FilterInst, string> = { filterPre: 'Pre filter', filterPost: 
 const CONTROLS: Record<FilterInst, readonly string[]> = {
   filterPre: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix', 'key', 'env', 'envRel', 'spread'],
   filterPost: ['type', 'slope', 'cutoff', 'res', 'drive', 'mix', 'key', 'env', 'envRel', 'spread'],
-  filterBand: ['type', 'slope', 'cutoff', 'width', 'depth', 'offset', 'rofs'],
+  filterBand: ['type', 'slope', 'cutoff', 'width', 'depth', 'offset', 'rofs', 'key', 'env+envRel', 'peak+resAmt'],
 };
 const PP_TITLES: Record<string, string> = {
   key: 'Where the cutoff comes from: FREQ (Off), the FOCUS spot of the RESONANCE knob, or the centre of one band',
@@ -43,6 +44,11 @@ const TITLES: Record<string, string> = {
   'filterBand.depth': 'How far the stopped bands go down; at the right stop they are silent',
   'filterBand.offset': 'Level of the passband, on top of the faders',
   'filterBand.rofs': 'R reads the curve with its cutoff moved by this many octaves',
+  'filterBand.key': 'Where the cutoff comes from: FREQ (Off), the FOCUS spot of the RESONANCE knob, the centre of one band, or the last MIDI note played',
+  'filterBand.env': 'The curve follows the input: louder moves the cutoff up (right) or down (left), up to 4 octaves',
+  'filterBand.envRel': 'How fast the envelope falls back after a peak',
+  'filterBand.peak': 'Lifts the bands at the cutoff, like the resonance of a filter',
+  'filterBand.resAmt': 'The curve also moves RES: open bands ring longer and closed ones get broader (right), or the other way round (left)',
 };
 
 let inst: InstanceSelect | null = null;
@@ -92,13 +98,16 @@ registerTab({
 
     /* ---------- control row: one set per filter, the unselected ones hidden ---------- */
     const sets = FILTER_INSTANCES.map((slot) => {
-      const ctls = CONTROLS[slot].map((key) => {
+      const one = (key: string, size: 'md' | 'sm') => {
         const id = `${slot}.${key}`;
         const spec = p.spec(id);
-        const el = spec.curve === 'discrete' ? new ParamSelect(p, id).el : new Knob(p, id, { size: 'md', ariaLabel: `${NAME[slot]} ${spec.short.toLowerCase()}` }).el;
+        const el = spec.curve === 'discrete' ? new ParamSelect(p, id).el : new Knob(p, id, { size, ariaLabel: `${NAME[slot]} ${spec.short.toLowerCase()}` }).el;
         if (TITLES[id]) el.title = TITLES[id];
         return el;
-      });
+      };
+      const ctls = CONTROLS[slot].map((key) =>
+        key.includes('+') ? h('div', { class: 'flt-pair' }, ...key.split('+').map((k) => one(k, 'sm'))) : one(key, 'md'),
+      );
       const cells = ctls.map((c, k) => {
         const cell = h('div', { class: 'flt-cell' }, c);
         tab.slots[k].append(cell);
@@ -124,14 +133,21 @@ registerTab({
       p.subscribe(`${slot}.key`, sync);
       p.subscribe(`${slot}.env`, sync);
     });
-    // band filter: WIDTH only counts for BP and Notch
-    const width = sets[2][CONTROLS.filterBand.indexOf('width')];
-    const syncWidth = () => {
+    // band filter: WIDTH only counts for BP and Notch, FREQ not while KEY sets the cutoff, REL only with ENV
+    const bk = CONTROLS.filterBand;
+    const width = sets[2][bk.indexOf('width')];
+    const bCut = sets[2][bk.indexOf('cutoff')];
+    const bRel = sets[2][bk.indexOf('env+envRel')].firstElementChild?.children[1] as HTMLElement | undefined;
+    const syncBand = () => {
       const t = Math.round(p.get('filterBand.type'));
       toggleClass(width, 'is-dim', t === 0 || t === 2);
+      const keyed = Math.round(p.get('filterBand.key')) !== 0;
+      toggleClass(bCut, 'is-dim', keyed);
+      bCut.title = keyed ? 'Not in use: KEY sets the cutoff (KEY Note: until the first note)' : '';
+      if (bRel) toggleClass(bRel, 'is-dim', Math.abs(p.get('filterBand.env')) < 0.005);
     };
-    syncWidth();
-    p.subscribe('filterBand.type', syncWidth);
+    syncBand();
+    for (const k of ['type', 'key', 'env']) p.subscribe(`filterBand.${k}`, syncBand);
 
     const viz = buildFilterViz(tab, () => select.current, (i) => select.select(i));
 

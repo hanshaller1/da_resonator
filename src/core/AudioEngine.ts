@@ -143,6 +143,8 @@ export class AudioEngine implements EngineAPI {
     this.input.onArrive((devices) => void this.inputsArrived(devices));
     // ON of the internal and the MIDI clock (CONFIG → CLOCK)
     this.midi.onChange(() => this.postClockOn(false));
+    // band filter KEY Note: the last note played
+    this.midi.onNote((note) => this.post({ type: 'note', note }));
     this.input.onChange(() => {
       if (this.inNode && this.routed !== this.routeMode()) this.routeInput();
     });

@@ -44,3 +44,7 @@
 
 /* visualisation: the cutoff handle is dragged on the canvas */
 .flt-viz { touch-action: none; }
+
+/* two small knobs in one slot (band filter ENV + REL, PEAK + RES AMT) */
+.flt-pair { display: flex; align-items: center; gap: var(--sp-3); }
+.flt-pair > .is-dim { opacity: 0.38; filter: saturate(0.2); }

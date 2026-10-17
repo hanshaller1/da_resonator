@@ -172,6 +172,28 @@ export function filterParams2(slot: FilterSlot): ParamDef[] {
   ];
 }
 
+/** KEY of the band filter: like PRE / POST, plus the last MIDI note played */
+export const BAND_FILTER_KEYS = [...FILTER_KEYS, 'Note'] as const;
+export const BAND_FILTER_KEY_NOTE = FILTER_KEYS.length;
+/** PEAK: largest lift at the cutoff; RES AMT: largest RES shift of a fully open / closed band */
+export const BAND_FILTER_PEAK_MAX = 12;
+export const BAND_FILTER_RES_SHIFT = 0.5;
+/**
+ * KEY, ENV, PEAK and RES AMT of the band filter (2026-10-17; appended after the older params, see shared/params.ts):
+ * the cutoff from the FOCUS spot, a band or the last MIDI note; an envelope on the input moves it; a lift at the
+ * cutoff; the curve also shifts RES (open bands ring longer, closed ones get broader).
+ */
+export function bandFilterParams2(): ParamDef[] {
+  const L = 'Band Filter';
+  return [
+    discrete('filterBand.key', `${L} Key`, 'KEY', BAND_FILTER_KEYS, 0),
+    cont('filterBand.env', `${L} Env Amount`, 'ENV', -FILTER_ENV_OCT, FILTER_ENV_OCT, 0, 'oct'),
+    cont('filterBand.envRel', `${L} Env Release`, 'REL', 10, 2000, 150, 'ms', 'exp'),
+    cont('filterBand.peak', `${L} Peak`, 'PEAK', 0, BAND_FILTER_PEAK_MAX, 0, 'dB'),
+    cont('filterBand.resAmt', `${L} Res Amount`, 'RES AMT', -1, 1, 0, '%'),
+  ];
+}
+
 /* ---------- clock choice of the LFOs and clock mods ---------- */
 /** the clock an LFO (on DIV) or a clock mod follows: the internal clock or the MIDI clock */
 export const CLOCK_SOURCES = ['INT', 'MIDI'] as const;

@@ -12,6 +12,7 @@ export type ToWorklet =
   | { type: 'meterRate'; hz: number } // meter frames per second (default 30)
   | { type: 'clockOn'; int: boolean; midi: boolean } // which clocks are on (a clock that is off stands still)
   | { type: 'midiClock'; ev: number; t: number } // MIDI clock event (dsp/extClock.ts MIDI_TICK …) at AudioContext time t
+  | { type: 'note'; note: number } // MIDI note on (band filter KEY Note)
   | { type: 'wobble'; band: number; ch: 0 | 1 | 2; on: boolean; depth?: number }; // FB function key held / let go (ch 0 = L and R, 1 = L, 2 = R; depth = ± fader travel 0..0.5)
 
 /** One meter frame. All values linear amplitude (not dB). */

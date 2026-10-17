@@ -33,6 +33,7 @@ import {
   resoParams,
   routeParams,
   bandFilterParams,
+  bandFilterParams2,
   scanParams,
 } from './paramdefs/modules';
 
@@ -179,6 +180,7 @@ for (let n = 1; n <= NUM_LFOS; n++) addModule(`lfo${n}`, 'lfo', lfoParams2(n));
 for (let n = 1; n <= NUM_EFS; n++) addModule(`ef${n}`, 'ef', efParams2(n));
 addModule('morph', 'macro', macroMorphParams());
 addModule('dyn', 'dyn', dynParams2());
+addModule('filterBand', 'filter', bandFilterParams2());
 
 export const NUM_PARAMS = PARAMS.length;
 

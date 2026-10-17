@@ -8,6 +8,7 @@
  */
 import { bandFilterDb } from '../../../dsp/modules/bandFilter';
 import { filterKeyCutoff, filterMagnitude } from '../../../dsp/modules/filter';
+import { BAND_FILTER_KEY_NOTE } from '../../../shared/paramdefs/modules';
 import { BAND_FREQS, NUM_BANDS, formatValue, fromNorm, resKnobShape } from '../../../shared/params';
 import { LockRow, toggleLock } from '../../components/lockRow';
 import { readModel, responseAt, type ResponseModel } from '../../response';
@@ -36,8 +37,9 @@ export const SLOT_NAME: Record<FilterInst, string> = { filterPre: 'PRE', filterP
 const KEYS: Record<FilterInst, readonly string[]> = {
   filterPre: ['type', 'slope', 'cutoff', 'res', 'mix'],
   filterPost: ['type', 'slope', 'cutoff', 'res', 'mix'],
-  filterBand: ['type', 'slope', 'cutoff', 'width', 'depth', 'offset', 'rofs'],
+  filterBand: ['type', 'slope', 'cutoff', 'width', 'depth', 'offset', 'rofs', 'peak'],
 };
+const B_PEAK = 7;
 const CUT = 2; // index of cutoff in KEYS
 const VERT = 3; // index of the vertical handle value on PRE / POST (res)
 const B_OFFSET = 5; // index of offset in the band filter KEYS
@@ -140,7 +142,7 @@ export function buildFilterViz(tab: TabContext, selected: () => number, select: 
     const v = c.vals;
     if (c.band) {
       const fc = rOfs ? v[CUT] * Math.pow(2, v[B_ROFS]) : v[CUT];
-      return Math.max(-200, bandFilterDb(Math.round(v[0]), fc, v[1], v[3], v[4], v[5], f));
+      return Math.max(-200, bandFilterDb(Math.round(v[0]), fc, v[1], v[3], v[4], v[5], f, v[B_PEAK]));
     }
     return dbOf(filterMagnitude(v[0], v[1] >= 0.5, v[2], v[3], v[4], f, fs));
   }
@@ -159,10 +161,14 @@ export function buildFilterViz(tab: TabContext, selected: () => number, select: 
         changed = true;
       }
       let same = true;
-      // pre / post: KEY may set the cutoff (a band centre or the FOCUS spot)
-      const keyed = !c.band && k0(c) !== 0;
+      // KEY may set the cutoff (a band centre or the FOCUS spot; the band filter also the last MIDI note)
+      const key = k0(c);
+      const note = c.band && key === BAND_FILTER_KEY_NOTE ? engine.midi.lastNote : null;
+      const keyed = key !== 0 && (key !== BAND_FILTER_KEY_NOTE || !c.band || note !== null);
       for (let k = 0; k < c.ids.length; k++) {
-        const v = keyed && k === CUT ? filterKeyCutoff(effective(`${c.inst}.key`), effective(c.ids[k]), resKnobShape(effective('resOffset'), Math.round(p.get('reso.curve')))) : effective(c.ids[k]);
+        const v = keyed && k === CUT
+          ? note !== null ? 440 * Math.pow(2, (note - 69) / 12) : filterKeyCutoff(key, effective(c.ids[k]), resKnobShape(effective('resOffset'), Math.round(p.get('reso.curve'))))
+          : effective(c.ids[k]);
         if (v !== c.vals[k]) {
           c.vals[k] = v;
           same = false;
@@ -178,7 +184,7 @@ export function buildFilterViz(tab: TabContext, selected: () => number, select: 
         for (let i = 0; i < c.dbR.length; i++) c.dbR[i] = curveDb(c, spec.freqAt(i), fs, true);
       } else if (c.dbR.length) c.dbR = new Float32Array(0);
       for (let b = 0; b < NUM_BANDS; b++) {
-        c.bandDb[b] = c.band ? (locked(b) ? 0 : bandFilterDb(Math.round(c.vals[0]), c.vals[CUT], c.vals[1], c.vals[3], c.vals[4], c.vals[5], BAND_FREQS[b])) : curveDb(c, BAND_FREQS[b], fs);
+        c.bandDb[b] = c.band ? (locked(b) ? 0 : bandFilterDb(Math.round(c.vals[0]), c.vals[CUT], c.vals[1], c.vals[3], c.vals[4], c.vals[5], BAND_FREQS[b], c.vals[B_PEAK])) : curveDb(c, BAND_FREQS[b], fs);
       }
     }
     return changed;

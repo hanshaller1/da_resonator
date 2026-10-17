@@ -195,6 +195,8 @@ export class MidiService implements MidiAPI {
   private changeE = new Emitter<[]>();
   private noticeE = new Emitter<[string, 'info' | 'error']>();
   private programE = new Emitter<[number]>();
+  private noteE = new Emitter<[number]>();
+  private _lastNote: number | null = null;
   private learnE = new Emitter<[string, number]>();
   private triggerE = new Emitter<[string, boolean]>();
   private triggerLearnE = new Emitter<[string, MidiTrigger]>();
@@ -262,6 +264,8 @@ export class MidiService implements MidiAPI {
   onNotice(cb: (msg: string, tone: 'info' | 'error') => void): Unsubscribe { return this.noticeE.on(cb); }
   /** Program Change n (0–127) on a listened channel */
   onProgram(cb: (n: number) => void): Unsubscribe { return this.programE.on(cb); }
+  onNote(cb: (note: number) => void): Unsubscribe { return this.noteE.on(cb); }
+  get lastNote() { return this._lastNote; }
   /** MIDI learn mapped a CC */
   onLearn(cb: (id: string, cc: number) => void): Unsubscribe { return this.learnE.on(cb); }
   /** a trigger was pressed (true) or released (false) */
@@ -652,7 +656,11 @@ export class MidiService implements MidiAPI {
     if (kind === 0x90 || kind === 0x80) {
       // notes only press triggers (note on with velocity 0 is a note off)
       if (d.length < 3) return;
-      this.trigger('note', d[1] & 0x7f, kind === 0x90 && (d[2] & 0x7f) > 0);
+      const on = kind === 0x90 && (d[2] & 0x7f) > 0;
+      if (!this.trigger('note', d[1] & 0x7f, on) && on) {
+        this._lastNote = d[1] & 0x7f;
+        this.noteE.emit(this._lastNote);
+      }
       return;
     }
     if (kind === 0xc0) {
