@@ -300,6 +300,8 @@ select {
 }
 
 .fcol-meter {
+  display: flex;
+  gap: 2px;
   justify-self: start;
   height: 100%;
   padding: calc(var(--thumb-h) / 2) 0;

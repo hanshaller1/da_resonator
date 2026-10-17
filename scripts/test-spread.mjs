@@ -1,5 +1,6 @@
 // Offline tests for the bipolar SPREAD (2026-10-16): centre neutral, ODD/EVEN both ways, CLASSIC ±6 dB,
-// the crossfade when the function switches, the v4 → v5 preset migration and the response picture.
+// the crossfade when the function switches, the v4 → v5 preset migration, the response picture and the
+// L/R band meters beside the faders.
 // Run: node scripts/test-spread.mjs
 import { BLOCK, FS, check, importTs, loadProcessor, results, run } from './testkit.mjs';
 
@@ -138,6 +139,34 @@ const level = (band, spread, classic) => {
   const cl = R.readModel(store({ spread: -1, 'reso.spread': 1 }), undefined, 0);
   const cr = R.readModel(store({ spread: -1, 'reso.spread': 1 }), undefined, 1);
   check('5c CLASSIC left stop: L +6 dB, R −6 dB on every band', cl.gains.every((g, i) => Math.abs(20 * Math.log10(g / c.gains[i]) - 6) < 1e-6) && cr.gains.every((g, i) => Math.abs(20 * Math.log10(g / c.gains[i]) + 6) < 1e-6));
+}
+
+/* ---------- 6. L/R band meters beside the faders (after the fader and SPREAD) ---------- */
+{
+  /** mean square of a band's L and R meter frames after the settling time, and of the output */
+  const meters = (band, set) => {
+    seed = 777;
+    const v = values(band, 0);
+    for (const [k, x] of Object.entries(set)) v[idx(k)] = x;
+    const proc = loadProcessor({ linkR: false });
+    proc.port.onmessage({ data: { type: 'params', values: v } });
+    const o = run(proc, Math.round(FS / BLOCK), noise);
+    const frames = proc.port.sent.filter((m) => m.type === 'meters').slice(10);
+    const msOf = (key) => frames.reduce((a, f) => a + f[key][band] ** 2, 0) / frames.length;
+    return { L: msOf('bandsL'), R: msOf('bandsR'), both: msOf('bands'), outL: ms(o.L, skip), outR: ms(o.R, skip) };
+  };
+  const c = meters(4, {});
+  check('6a centre: L and R meters equal the combined band meter', Math.abs(db(c.L, c.both)) < 0.01 && Math.abs(db(c.R, c.both)) < 0.01, `L ${db(c.L, c.both).toFixed(3)} dB, R ${db(c.R, c.both).toFixed(3)} dB`);
+  const oe = meters(4, { spread: 1 });
+  check('6b ODD/EVEN right stop: odd band 5 shows +3 dB in L, nothing in R', Math.abs(db(oe.L, c.L) - 3.01) < 0.1 && db(oe.L, oe.R) > 40, `L ${db(oe.L, c.L).toFixed(2)} dB, L−R ${db(oe.L, oe.R).toFixed(1)} dB`);
+  const ev = meters(5, { spread: 1 });
+  check('6c ODD/EVEN right stop: even band 6 shows in R only', db(ev.R, ev.L) > 40, `R−L ${db(ev.R, ev.L).toFixed(1)} dB`);
+  const cl = meters(4, { spread: 1, 'reso.spread': 1 });
+  check('6d CLASSIC right stop: R +6 dB, L −6 dB', Math.abs(db(cl.R, c.R) - 6) < 0.05 && Math.abs(db(cl.L, c.L) + 6) < 0.05, `R ${db(cl.R, c.R).toFixed(2)} dB, L ${db(cl.L, c.L).toFixed(2)} dB`);
+  const f = meters(4, { 'band4.gainR': -10 });
+  check('6e R fader 10 dB lower: the R meter is 10 dB lower', Math.abs(db(f.L, f.R) - 10) < 0.05, `L−R ${db(f.L, f.R).toFixed(2)} dB`);
+  const half = meters(4, { spread: 0.5 });
+  check('6f the meters match what band 5 alone sends to L and R', Math.abs(db(half.L, half.outL)) < 0.3 && Math.abs(db(half.R, half.outR)) < 0.3, `L ${db(half.L, half.outL).toFixed(2)} dB, R ${db(half.R, half.outR).toFixed(2)} dB`);
 }
 
 console.table(results);

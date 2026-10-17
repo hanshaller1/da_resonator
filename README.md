@@ -52,6 +52,8 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - Darunter immer die 10 Band-Fader (Pegel), rechts die Global-Spalte: INPUT mit ANALOG darunter, RESONANCE,
   SPREAD mit der Kanalwahl, die Befehle für alle Bänder unter RESET (R = L, FADER, RES/BAND, FB/BAND), FB ALL, DRY/WET,
   OUTPUT.
+- Neben jedem Fader zwei Pegelanzeigen nebeneinander: links L, rechts R, gemessen nach Fader und SPREAD (was das
+  Band auf diese Seite schickt).
 - **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
   ist; PLAY/LOAD und CONFIG haben keine.
 - **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK · FOOT (rechts in der Statuszeile). GENERAL: Source mit dem

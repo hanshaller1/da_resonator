@@ -19,6 +19,9 @@ export interface MeterFrame {
   outPeak: [number, number];
   /** per band RMS after the fader (L/R combined), length NUM_BANDS */
   bands: Float32Array;
+  /** per band RMS in L and in R after the fader and SPREAD (what each band sends to that side), length NUM_BANDS */
+  bandsL: Float32Array;
+  bandsR: Float32Array;
   /**
    * per band gain change of the band dynamics in dB since the last frame (largest magnitude),
    * length NUM_BANDS: positive = gain reduction, negative = boost (upward expansion), 0 while off

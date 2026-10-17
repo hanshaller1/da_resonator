@@ -1,7 +1,8 @@
 /**
  * Fader block: the 10 band level faders, always visible under every tab (they never change
- * role). Each column: scale, fader, LED meter (with the band dynamics' gain change while it is
- * on), the dB readout and the band frequency. The faders follow the L/R channel switch
+ * role). Each column: scale, fader, two LED meters side by side, L and R of the band after the
+ * fader and SPREAD (with the band dynamics' gain change while it is on), the dB readout and the
+ * band frequency. The faders follow the L/R channel switch
  * (ui/channel.ts); the readout shows "L|R" while the channels differ.
  */
 import type { EngineAPI } from '../../core/types';
@@ -18,7 +19,8 @@ export function freqText(fc: number): { value: string; unit: string } {
 
 interface Column {
   el: HTMLElement;
-  meter: LevelMeter;
+  meterL: LevelMeter;
+  meterR: LevelMeter;
   hot: boolean;
 }
 
@@ -29,7 +31,8 @@ function buildColumn(engine: EngineAPI, i: number): Column {
   const f = freqText(BAND_FREQS[i]);
   const name = `Band ${i + 1} (${f.value} ${f.unit})`;
   const fader = new Fader(p, id, { ariaLabel: `${name} level` });
-  const meter = new LevelMeter({ law: faderDbToNorm });
+  const meterL = new LevelMeter({ law: faderDbToNorm });
+  const meterR = new LevelMeter({ law: faderDbToNorm });
   // one value, or L over R while the channels differ (two short lines keep the foot's width)
   const one = h('span', { class: 'fcol-ro-one' });
   const lineL = h('span', { class: 'fcol-ro-line' });
@@ -58,7 +61,7 @@ function buildColumn(engine: EngineAPI, i: number): Column {
   const el = h(
     'div',
     { class: 'fcol', role: 'group', 'aria-label': name, style: `--band:${i}` },
-    h('div', { class: 'fcol-fader' }, faderScale(p, id), fader.el, h('div', { class: 'fcol-meter' }, meter.el)),
+    h('div', { class: 'fcol-fader' }, faderScale(p, id), fader.el, h('div', { class: 'fcol-meter', title: 'L | R after the fader and SPREAD' }, meterL.el, meterR.el)),
     h(
       'div',
       { class: 'fcol-foot' },
@@ -66,7 +69,7 @@ function buildColumn(engine: EngineAPI, i: number): Column {
       readout,
     ),
   );
-  return { el, meter, hot: false };
+  return { el, meterL, meterR, hot: false };
 }
 
 export function buildFaders(engine: EngineAPI): HTMLElement {
@@ -85,9 +88,15 @@ export function buildFaders(engine: EngineAPI): HTMLElement {
     const dyn = p.get('dyn.on') >= 0.5;
     for (let i = 0; i < NUM_BANDS; i++) {
       const c = cols[i];
-      c.meter.push(f && running ? f.bands[i] ?? 0 : 0);
-      c.meter.setGainChange(dyn ? (f && running ? f.dynGR?.[i] ?? 0 : 0) : null);
-      c.meter.tick(dt);
+      const live = !!f && running;
+      // the band dynamics are stereo-linked: the same gain change on both sides
+      const gr = dyn ? (live ? f.dynGR?.[i] ?? 0 : 0) : null;
+      c.meterL.push(live ? f.bandsL?.[i] ?? f.bands[i] ?? 0 : 0);
+      c.meterR.push(live ? f.bandsR?.[i] ?? f.bands[i] ?? 0 : 0);
+      c.meterL.setGainChange(gr);
+      c.meterR.setGainChange(gr);
+      c.meterL.tick(dt);
+      c.meterR.tick(dt);
       const hot = !!(f?.hot && running && (fbAll || p.get(bandParamId(i, 'fb')) > 0.02 || p.get(bandParamIdR(i, 'fb')) > 0.02));
       if (hot !== c.hot) {
         c.hot = hot;

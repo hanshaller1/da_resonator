@@ -12,6 +12,7 @@ import type { EngineAPI, EngineState, MeterBusAPI, SourceInfo, SourceKind, Unsub
 import type { MeterFrame } from '../shared/messages';
 import type { ModConfig } from '../shared/mod/rules';
 import { MAX_BLOCK, ModEngine } from '../dsp/ModEngine';
+import { SPREAD_CLASSIC_DB } from '../shared/paramdefs/modules';
 import { NUM_BANDS, bandParamId, bandParamIdR, dbToGain } from '../shared/params';
 import { bandResFb } from './response';
 
@@ -153,6 +154,15 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
     let outSum = 0;
     let hot = false;
     const bands = new Float32Array(NUM_BANDS);
+    const bandsL = new Float32Array(NUM_BANDS);
+    const bandsR = new Float32Array(NUM_BANDS);
+    // SPREAD per band and side, as in the worklet (ODD/EVEN pans, CLASSIC tilts by ±6 dB)
+    const spr = params.get('spread');
+    const classic = params.get('reso.spread') >= 0.5;
+    const th = Math.abs(spr) * Math.PI / 4;
+    const near = Math.SQRT2 * Math.cos(Math.PI / 4 - th);
+    const far = Math.SQRT2 * Math.sin(Math.PI / 4 - th);
+    const cg = dbToGain(SPREAD_CLASSIC_DB * spr);
     for (let i = 0; i < NUM_BANDS; i++) {
       let e: number;
       switch (source) {
@@ -170,9 +180,17 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       const rf = bandResFb(params, i);
       const res = Math.min(1, Math.max(0, rf.res));
       const fb = Math.max(0, rf.fb);
-      const lvl = env[i] * inGain * dbToGain(params.get(bandParamId(i, 'gain'))) * (0.55 + 1.3 * res) * (1 + 2.6 * fb * fb);
+      const gL = dbToGain(params.get(bandParamId(i, 'gain')));
+      const gR = dbToGain(params.get(bandParamIdR(i, 'gain')));
+      const gA = 0.5 * (gL + gR);
+      const lvl = env[i] * inGain * gA * (0.55 + 1.3 * res) * (1 + 2.6 * fb * fb);
       smooth[i] = lvl > smooth[i] ? lvl : smooth[i] * 0.9 + lvl * 0.1;
       bands[i] = smooth[i] * 0.6;
+      const toL = (i & 1) === 0 ? spr >= 0 : spr < 0; // odd band (1-based) goes L right of centre
+      const sL = gA > 0 ? gL / gA : 0;
+      const sR = gA > 0 ? gR / gA : 0;
+      bandsL[i] = bands[i] * sL * (classic ? 1 / cg : toL ? near : far);
+      bandsR[i] = bands[i] * sR * (classic ? cg : toL ? far : near);
       if (fb > 0.8 && smooth[i] > 0.3) hot = true;
       inSum += env[i] * inGain * 0.35;
       outSum += bands[i] * 0.35;
@@ -199,6 +217,8 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       inPeak: [inS, inS * (0.94 + 0.06 * Math.random())],
       outPeak: [outS * (1 - spread * 0.2), outS * (1 - spread * 0.05) * (0.95 + 0.05 * Math.random())],
       bands,
+      bandsL,
+      bandsR,
       dynGR,
       dynLvl: bands,
       scanDb: new Float32Array(NUM_BANDS * 2),

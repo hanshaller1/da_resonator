@@ -375,8 +375,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private mInPk = new Float64Array(2);
   private mOutPk = new Float64Array(2);
   private mBandSq = new Float64Array(NB);
+  // per band and channel after the fader and SPREAD (the L/R meters beside the faders)
+  private mBandSqL = new Float64Array(NB);
+  private mBandSqR = new Float64Array(NB);
   private mHot = false;
-  private meterBands = new Float32Array(NB);
 
   // band dynamics (see header). Param indices, looked up once.
   private iDynOn = paramIndex('dyn.on');
@@ -1035,7 +1037,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const ic1 = this.ic1, ic2 = this.ic2, yPrev = this.yPrev, env = this.env;
     const envRel = this.envRel;
     const faLp = this.faLp, faDcX = this.faDcX, faDcY = this.faDcY, faRet = this.faRet;
-    const mBandSq = this.mBandSq;
+    const mBandSq = this.mBandSq, mBandSqL = this.mBandSqL, mBandSqR = this.mBandSqR;
     const dcR = this.dcR;
     // hot scalars live in locals for the loop (written back at the end / before meter posts)
     const fbOnTgt0 = this.fbOnTgt[0], fbOnTgt1 = this.fbOnTgt[1], bypTgt = this.bypTgt;
@@ -1138,6 +1140,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       const gOddR = spr < 0 ? gNear : gFar;
       const sideG = 1 - sprA;
       const nlDamp = NL_DAMP * an;
+      // CLASSIC spread (crossfaded while the function switches): R × cg, L / cg
+      const cl = gCur[S_CLASSIC];
+      const cg = cl > 1e-6 ? Math.exp(spr * CLASSIC_K) : 1;
+      const icg = 1 / cg;
 
       let wetL = 0, wetR = 0;
       let sumL = 0, sumR = 0; // band sums without ODD/EVEN panning (for CLASSIC)
@@ -1339,19 +1345,25 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         // ODD/EVEN spread: mid panned, side faded
         const m = 0.5 * (yL + yR);
         const d = 0.5 * (yL - yR) * sideG;
+        let oL: number, oR: number;
         if ((b & 1) === 0) {
           // odd band (1-based)
-          wetL += gOddL * m + d;
-          wetR += gOddR * m - d;
+          oL = gOddL * m + d;
+          oR = gOddR * m - d;
         } else {
-          wetL += gOddR * m + d;
-          wetR += gOddL * m - d;
+          oL = gOddR * m + d;
+          oR = gOddL * m - d;
         }
+        wetL += oL;
+        wetR += oR;
+        // meters: the band in L and R as it leaves, with the CLASSIC share mixed in like below
+        oL += (yL * icg - oL) * cl;
+        oR += (yR * cg - oR) * cl;
+        mBandSqL[b] += oL * oL;
+        mBandSqR[b] += oR * oR;
       }
       // CLASSIC spread: R up and L down right of centre (crossfaded while the function switches)
-      const cl = gCur[S_CLASSIC];
       if (cl > 1e-6) {
-        const cg = Math.exp(spr * CLASSIC_K);
         wetL += (sumL / cg - wetL) * cl;
         wetR += (sumR * cg - wetR) * cl;
       }
@@ -1448,12 +1460,14 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   }
 
   private postMeters(cnt: number, hot: boolean) {
-    const bands = this.meterBands;
+    // copied (not reused) so every frame keeps its own values, also in offline tests
+    const bands = new Float32Array(NB), bandsL = new Float32Array(NB), bandsR = new Float32Array(NB);
     for (let b = 0; b < NB; b++) {
       bands[b] = Math.sqrt(this.mBandSq[b] / cnt);
-      this.mBandSq[b] = 0;
+      bandsL[b] = Math.sqrt(this.mBandSqL[b] / cnt);
+      bandsR[b] = Math.sqrt(this.mBandSqR[b] / cnt);
+      this.mBandSq[b] = this.mBandSqL[b] = this.mBandSqR[b] = 0;
     }
-    // copied (not reused) so every frame keeps its own values, also in offline tests
     const dynGR = new Float32Array(this.mGr);
     this.mGr.fill(0);
     const dynLvl = new Float32Array(NB);
@@ -1465,6 +1479,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       inPeak: [this.mInPk[0], this.mInPk[1]],
       outPeak: [this.mOutPk[0], this.mOutPk[1]],
       bands,
+      bandsL,
+      bandsR,
       dynGR,
       dynLvl,
       scanDb: new Float32Array(scan.layerDb),
