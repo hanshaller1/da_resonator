@@ -7,6 +7,7 @@
  */
 import type { ParamStoreAPI } from '../../../core/types';
 import { NUM_BANDS, fromNorm } from '../../../shared/params';
+import { DYN_MODES, dynGainChange } from '../../../shared/paramdefs/modules';
 import { colCenter } from '../../shell/bandAxis';
 import type { TabContext } from '../../shell/tabs';
 import { drawBandGrid, monoFont, type Palette } from '../../viz/draw';
@@ -24,18 +25,16 @@ const LEVEL_FALL = 36; // dB / s: display release of the band bars
 const GR_FALL = 48; // dB / s: display release of the gain-change caps
 const PEAK_HOLD = 1200; // ms
 const INSET_MS = 1600; // transfer curve inset stays this long after the last change
-const CURVE_IDS = ['dyn.threshold', 'dyn.ratio', 'dyn.range'] as const;
+const CURVE_IDS = ['dyn.threshold', 'dyn.ratio', 'dyn.range', 'dyn.mode'] as const;
 
 /** effective (modulated) plain value, so the picture follows LFOs on threshold / ratio / range */
 export function effective(p: ParamStoreAPI, id: string): number {
   return p.isModulated(id) ? fromNorm(p.spec(id), p.getEffectiveNorm(id)) : p.get(id);
 }
 
-/** static curve of the worklet: gain change c = (L − T)(1 − 1/R) above T, clamped to ±range */
-function outputDb(inDb: number, thr: number, ratio: number, range: number): number {
-  if (inDb <= thr) return inDb;
-  const c = Math.max(-range, Math.min(range, (inDb - thr) * (1 - 1 / ratio)));
-  return inDb - c;
+/** static curve of the worklet (shared dynGainChange: CUT above T, BOOST below T down to the gate, BALANCE both) */
+function outputDb(inDb: number, thr: number, ratio: number, range: number, mode: number): number {
+  return inDb - dynGainChange(inDb - thr, 1 - 1 / ratio, range, mode);
 }
 
 const fmtDb = (db: number) => `${db > 0.05 ? '+' : db < -0.05 ? '−' : ''}${Math.abs(db).toFixed(1)}`;
@@ -280,6 +279,7 @@ export function buildDynViz(tab: TabContext): DynViz {
     const thr = effective(p, 'dyn.threshold');
     const ratio = effective(p, 'dyn.ratio');
     const range = effective(p, 'dyn.range');
+    const dynMode = Math.round(p.get('dyn.mode'));
     const px = (db: number) => x0 + ((db + 60) / 60) * S;
     const py = (db: number) => y0 + S - ((db + 60) / 60) * S;
     g.save();
@@ -319,7 +319,7 @@ export function buildDynViz(tab: TabContext): DynViz {
     g.beginPath();
     for (let i = 0; i <= 60; i++) {
       const inDb = -60 + i;
-      const out = Math.max(-60, Math.min(0, outputDb(inDb, thr, ratio, range)));
+      const out = Math.max(-60, Math.min(0, outputDb(inDb, thr, ratio, range, dynMode)));
       if (i) g.lineTo(px(inDb), py(out));
       else g.moveTo(px(inDb), py(out));
     }
@@ -328,11 +328,10 @@ export function buildDynViz(tab: TabContext): DynViz {
     g.fillStyle = pal.text2;
     g.textAlign = 'left';
     g.textBaseline = 'top';
-    const mode = ratio > 1.02 ? 'COMP' : ratio < 0.98 ? 'EXP' : '1:1';
-    g.fillText(mode, x0, y0 + S + 6);
+    g.fillText((DYN_MODES[dynMode] ?? 'Cut').toUpperCase(), x0, y0 + S + 6);
     g.textAlign = 'right';
     g.fillStyle = pal.text3;
-    g.fillText(`±${range.toFixed(0)} dB`, x0 + S, y0 + S + 6);
+    g.fillText(`${ratio.toFixed(1)}:1 ±${range.toFixed(0)}`, x0 + S, y0 + S + 6);
     g.restore();
   }
 

@@ -97,10 +97,15 @@
  *                read from the stored states every DYN_DET samples, outside the hot filter loop. Level =
  *                louder channel, peak dBFS of the band signal (a sine of peak 0.1 reads −20 dB).
  *                Gain computer every DYN_SUB samples (0.33 ms) on the detector peak of that step: gain change
- *                c = (L − T)·(1 − 1/ratio) above the threshold, clamped to ±range (ratio > 1 cuts, < 1 boosts),
- *                smoothed in dB (attack while |c| grows, else release), scaled by the band's amount and the
- *                on/off ramp (10 ms), then the linear gain is interpolated per sample (no zipper).
- *                Off = no per-sample work and bit-identical output. GR/range → mod sources dyn1..10.
+ *                c = (L − T)·(1 − 1/ratio), clamped to range. MODE CUT: only above the threshold (cut, the
+ *                hardware); BOOST: only below it (boost, upward compression); BALANCE: both, every band is
+ *                pulled towards the threshold. Below the threshold a gate stops the boost DYN_GATE_DB under it
+ *                (faded in over DYN_GATE_FADE_DB), so silence and the noise floor stay down. Smoothed in dB
+ *                (attack while the gain goes down, release while it comes back up), scaled by the band's
+ *                amount and the on/off ramp (10 ms), then the linear gain is interpolated per sample (no zipper).
+ *                BOOST adds a level correction on all bands: the power the boosts add (detector level ×
+ *                fader × makeup per band, ≈ 150 ms smoothing), at most range. Off = no per-sample work and bit-identical output.
+ *                |change|/range → mod sources dyn1..10.
  *  Modulation  : runs in this worklet (ModEngine): once per block the modulation graph computes effective
  *                values (base + routes) for every param; the resonator smooths towards them. Modulated params
  *                use τ = 3 ms instead of 20 ms so fast LFOs are not dulled.
@@ -141,7 +146,11 @@ import {
   resonanceMakeup,
 } from '../shared/params';
 import {
+  DYN_BOOST,
+  DYN_CUT,
   DYN_DELAY_MAX_MS,
+  DYN_GATE_DB,
+  DYN_GATE_FADE_DB,
   DYN_RDLY_MAX_MS,
   DYN_SRC_BAND,
   DYN_SRC_IN,
@@ -213,6 +222,7 @@ const DYN_ANA_Q = 1.5; // analysis bandpass per band for the IN / OUT sources (a
 const DYN_FILT_Q = 2; // input filter before the analysis
 const DB_PER_LN_POW = 10 / Math.LN10; // ln(power ratio) → dB
 const LN_GAIN_PER_DB = Math.LN10 / 20; // dB → ln(amplitude ratio)
+const DYN_GATE_P = Math.exp(-DYN_GATE_DB / DB_PER_LN_POW); // BOOST gate below the threshold, as an A² factor
 
 function fastTanh(x: number): number {
   if (x > 3) return 1;
@@ -405,6 +415,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private iDynAtk = paramIndex('dyn.attack');
   private iDynRel = paramIndex('dyn.release');
   private iDynRange = paramIndex('dyn.range');
+  private iDynMode = paramIndex('dyn.mode');
+  private dMode = DYN_CUT;
+  private dCorr = 0; // BOOST level correction (dB, + = cut on every band)
+  private dCorrA = 0;
   private iDynAmt: number[] = [];
   /** true while the dynamics run (on, or ramping out); false = no per-sample work at all */
   private dynLive = false;
@@ -672,7 +686,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.dynOnTgt = on ? 1 : 0;
     if (!on && !this.dynLive) return;
     this.dThrTgt = clamp(p[this.iDynThr], -60, 0);
-    this.dSlopeTgt = 1 - 1 / clamp(p[this.iDynRatio], 0.5, 20);
+    this.dSlopeTgt = 1 - 1 / clamp(p[this.iDynRatio], 1, 20);
+    this.dMode = clamp(Math.round(p[this.iDynMode]), 0, 2);
     this.dRangeTgt = clamp(p[this.iDynRange], 0, 36);
     for (let b = 0; b < NB; b++) this.dAmtTgt[b] = clamp(p[this.iDynAmt[b]], 0, 1);
     const atk = clamp(p[this.iDynAtk], 0.1, 200);
@@ -717,6 +732,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.dPk.fill(0);
       this.dGr.fill(0);
       this.dGc.fill(0);
+      this.dCorr = 0;
+      this.dCorrA = 1 - Math.exp(-DYN_SUB / (0.15 * this.fs));
       this.dG.fill(1);
       this.dGTgt.fill(1);
       this.dGStep.fill(0);
@@ -810,6 +827,11 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.dRangeCur += (this.dRangeTgt - this.dRangeCur) * sa;
     const thrDb = this.dThrCur, slope = this.dSlopeCur, range = this.dRangeCur;
     const thrP = Math.exp(thrDb / DB_PER_LN_POW); // threshold as A²
+    const mode = this.dMode, cut = mode !== DYN_BOOST, boost = mode !== DYN_CUT;
+    const gateP = thrP * DYN_GATE_P; // no boost below this A²
+    const corr = this.dCorr;
+    let sP = 0, sB = 0; // BOOST: output power of the bands without / with the boosts
+    const bGain = this.bGainCur, bMk = this.bMakeupCur;
     const atkA = this.dAtkA, relA = this.dRelA;
     const dPk = this.dPk, dGr = this.dGr, dGc = this.dGc, dG = this.dG, dGTgt = this.dGTgt, dGStep = this.dGStep;
     const dGR = this.dGR, dGRTgt = this.dGRTgt, dGRStep = this.dGRStep;
@@ -825,16 +847,32 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       if (pk > mLvl[b]) mLvl[b] = pk;
       let tgt = 0;
       if (pk > thrP) {
-        tgt = DB_PER_LN_POW * Math.log(pk / thrP) * slope;
+        if (cut) {
+          tgt = DB_PER_LN_POW * Math.log(pk / thrP) * slope;
+          if (tgt > range) tgt = range;
+        }
+      } else if (boost && pk > gateP) {
+        const under = DB_PER_LN_POW * Math.log(thrP / pk); // dB below the threshold, < DYN_GATE_DB
+        tgt = under * slope;
         if (tgt > range) tgt = range;
-        else if (tgt < -range) tgt = -range;
+        const fade = (DYN_GATE_DB - under) * (1 / DYN_GATE_FADE_DB);
+        tgt = fade < 1 ? -tgt * fade : -tgt;
       }
+      // attack while the gain goes down (more cut, less boost), release while it comes back up
       let gr = dGr[b];
-      gr += (tgt - gr) * (tgt * tgt > gr * gr ? atkA : relA);
+      gr += (tgt - gr) * (tgt > gr ? atkA : relA);
       if (gr < 1e-9 && gr > -1e-9) gr = 0;
       dGr[b] = gr;
       const amt = (amtCur[b] += (amtTgt[b] - amtCur[b]) * amtA[b]);
-      const gcNow = gr * amt * onRamp;
+      let gcNow = gr * amt * onRamp;
+      if (mode === DYN_BOOST) {
+        // what the band adds to the output: its level × fader × makeup (both channels)
+        const gL = bGain[b * 2] * bMk[b * 2], gR = bGain[b * 2 + 1] * bMk[b * 2 + 1];
+        const w = pk * (gL * gL + gR * gR);
+        sP += w;
+        sB += gcNow < 0 ? w * Math.exp(-2 * gcNow * LN_GAIN_PER_DB) : w;
+      }
+      gcNow += corr; // 0 outside BOOST (after its short fade when leaving BOOST)
       ring[pos * NB + b] = gcNow;
       const gc = dl ? ring[rowL + b] : gcNow;
       const gcR = dr ? ring[rowR + b] : gcNow;
@@ -852,6 +890,15 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       dGRTgt[b] = r1;
       dGRStep[b] = (r1 - r0) * (1 / DYN_SUB);
     }
+    // BOOST level correction: cut every band by the power the boosts added (follows the next step)
+    let cTgt = 0;
+    if (sB > sP && sP > 1e-30) {
+      cTgt = DB_PER_LN_POW * Math.log(sB / sP);
+      if (cTgt > range) cTgt = range;
+    }
+    let c = corr + (cTgt - corr) * this.dCorrA;
+    if (c < 1e-9) c = 0;
+    this.dCorr = c;
   }
 
   /** end of block: GR → mod sources (0..1 of the range); drop to idle once ramped out */

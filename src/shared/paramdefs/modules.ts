@@ -19,7 +19,7 @@ export function dynParams(): ParamDef[] {
   const out: ParamDef[] = [
     toggle('dyn.on', 'Band Dynamics', 'DYN'),
     cont('dyn.threshold', 'Dyn Threshold', 'THR', -60, 0, -18, 'dB'),
-    cont('dyn.ratio', 'Dyn Ratio', 'RATIO', 0.5, 20, 4, ':1', 'exp'),
+    cont('dyn.ratio', 'Dyn Ratio', 'RATIO', 1, 20, 4, ':1', 'exp'),
     cont('dyn.attack', 'Dyn Attack', 'ATK', 0.1, 200, 5, 'ms', 'exp'),
     cont('dyn.release', 'Dyn Release', 'REL', 5, 2000, 120, 'ms', 'exp'),
     cont('dyn.range', 'Dyn Range', 'RANGE', 0, 36, 24, 'dB'),
@@ -44,6 +44,32 @@ export const DYN_SRC_OUT = 2;
 /** input filter before the IN / OUT analysis: off or a bandpass at dyn.filterFreq */
 export const DYN_FILTERS = ['Off', 'BP'] as const;
 export const DYN_DELAY_MAX_MS = 2000;
+/**
+ * DYN EQ mode (2026-10-17): CUT lowers bands above the threshold (the hardware), BOOST raises bands below it
+ * (upward compression), BALANCE pulls every band towards the threshold from both sides. Appended after the band
+ * groups (shared/params.ts), so every older index stays; default CUT, older presets sound the same.
+ */
+export function dynParams2(): ParamDef[] {
+  return [fixedDef(discrete('dyn.mode', 'Dyn Mode', 'MODE', DYN_MODES, 0))];
+}
+export const DYN_MODES = ['Cut', 'Boost', 'Balance'] as const;
+export const DYN_CUT = 0;
+export const DYN_BOOST = 1;
+export const DYN_BALANCE = 2;
+/** BOOST / BALANCE gate: no boost this far below the threshold, faded in over the DYN_GATE_FADE_DB above */
+export const DYN_GATE_DB = 40;
+export const DYN_GATE_FADE_DB = 12;
+
+/**
+ * Static gain change (dB, + = cut, − = boost) of a band whose level is overDb above (− below) the threshold;
+ * slope = 1 − 1/ratio. The worklet computes the same in dynStep (inline, on A²).
+ */
+export function dynGainChange(overDb: number, slope: number, range: number, mode: number): number {
+  if (overDb > 0) return mode === DYN_BOOST ? 0 : Math.min(range, overDb * slope);
+  if (mode === DYN_CUT || overDb <= -DYN_GATE_DB) return 0;
+  const fade = Math.min(1, (DYN_GATE_DB + overDb) / DYN_GATE_FADE_DB);
+  return -Math.min(range, -overDb * slope) * fade;
+}
 export const DYN_RDLY_MAX_MS = 1000;
 
 /** a param that is stored with the sound but never modulated (switches, setup choices) */

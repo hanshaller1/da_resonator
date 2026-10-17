@@ -1,6 +1,6 @@
 /* DYN EQ tab (ui/tabs/dyn.ts, ui/tabs/dyn/viz.ts) */
 
-/* status line: on, the five settings, mode, live gain change (20 px high) */
+/* status line: on, mode + the five settings, live gain change (20 px high) */
 .tab-panel--dyn .tp-status .toggle {
   height: 20px;
   padding: 0 var(--sp-4);
@@ -10,11 +10,6 @@
 }
 .tab-panel--dyn .tp-status .toggle .led { width: 5px; height: 5px; }
 .dyn-fields { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.dyn-mode {
-  color: var(--c-text-3);
-  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
-  letter-spacing: var(--ls-label);
-}
 .dyn-live {
   font-size: var(--fs-2xs);
   font-weight: var(--fw-medium);
@@ -44,7 +39,6 @@
 .dyn-fields,
 .dyn-cell .knob { transition: opacity var(--dur-med) var(--ease-out), filter var(--dur-med) var(--ease-out); }
 .is-dyn-off .dyn-fields,
-.is-dyn-off .dyn-mode,
 .is-dyn-off .dyn-cell .knob {
   opacity: 0.45;
   filter: saturate(0.15);

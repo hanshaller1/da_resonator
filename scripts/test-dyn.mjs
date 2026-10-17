@@ -4,6 +4,7 @@ import { BLOCK, FS, check, importTs, loadProcessor, results, run } from './testk
 
 const P = importTs('src/shared/params.ts');
 const S = importTs('src/shared/mod/sources.ts');
+const M = importTs('src/shared/paramdefs/modules.ts');
 const idx = (id) => P.paramIndex(id);
 const NB = P.NUM_BANDS;
 const FREQS = P.BAND_FREQS;
@@ -20,8 +21,9 @@ function soloSetup(b, dyn = {}) {
   }
   return setDyn(v, dyn);
 }
-function setDyn(v, { on = 1, thr, ratio, atk, rel, range, amt } = {}) {
+function setDyn(v, { on = 1, mode, thr, ratio, atk, rel, range, amt } = {}) {
   v[idx('dyn.on')] = on;
+  if (mode !== undefined) v[idx('dyn.mode')] = mode;
   if (thr !== undefined) v[idx('dyn.threshold')] = thr;
   if (ratio !== undefined) v[idx('dyn.ratio')] = ratio;
   if (atk !== undefined) v[idx('dyn.attack')] = atk;
@@ -116,27 +118,73 @@ function envelope(x, win) {
   check('1 compression curve ±0.5 dB (4:1 @ -20 dB)', ok, rows.map((r) => `${r['band level dB']}→${r['out dB']}`).join(' '));
 }
 
-/* ---------- 2. upward expansion (ratio < 1) limited by range ---------- */
+/* ---------- 2. modes BALANCE (cut above, boost below, gate) and BOOST (level correction) ---------- */
 {
-  const b = 6, T = -40, R = 0.5, range = 12;
+  const b = 6, T = -20, R = 4, range = 12;
   const rows = [];
   let ok = true;
-  for (const inDb of [-46, -34, -20]) {
+  // −10: cut · −30: boost 7.5 · −40: boost capped at range · −52: gate fade-in · −64: under the gate
+  for (const inDb of [-10, -30, -40, -52, -64]) {
     const input = sine(FREQS[b], 10 ** (inDb / 20));
-    const off = render(soloSetup(b, { on: 0 }), 0.8, input);
-    const on = render(soloSetup(b, { thr: T, ratio: R, range }), 0.8, input);
-    const a = 0.5 * FS;
+    const off = render(soloSetup(b, { on: 0 }), 1, input);
+    const on = render(soloSetup(b, { mode: M.DYN_BALANCE, thr: T, ratio: R, range }), 1, input);
+    const a = 0.6 * FS;
     const L = dbOf(peak(off.L, a));
     const got = dbOf(peak(on.L, a));
-    const boost = L > T ? Math.min(range, (L - T) * (1 / R - 1)) : 0;
-    const want = L + boost;
+    const want = L - M.dynGainChange(L - T, 1 - 1 / R, range, M.DYN_BALANCE);
     const pass = Math.abs(got - want) <= 0.5;
     ok &&= pass;
-    rows.push({ 'band level dB': L.toFixed(2), 'out dB': got.toFixed(2), 'theory dB': want.toFixed(2), 'boost dB': (got - L).toFixed(2), ok: pass });
+    rows.push({ 'band level dB': L.toFixed(2), 'out dB': got.toFixed(2), 'theory dB': want.toFixed(2), 'change dB': (got - L).toFixed(2), ok: pass });
   }
-  console.log('\n2. Upward expansion, band 7 (1.5 kHz), ratio 1:2, threshold -40 dB, range 12 dB');
+  console.log('\n2a. BALANCE, band 7 (1.5 kHz), ratio 4:1, threshold -20 dB, range 12 dB, gate 40 dB under');
   console.table(rows);
-  check('2 expansion (ratio 0.5) limited by range', ok, rows.map((r) => `${r['band level dB']}→+${r['boost dB']}`).join(' '));
+  check('2a BALANCE curve: cut above, boost below, range, gate', ok, rows.map((r) => `${r['band level dB']}→${r['change dB']}`).join(' '));
+
+  // noise, the bands mostly under the threshold: BALANCE lifts the output, BOOST corrects the level back
+  const v0 = () => {
+    const v = P.defaultValues();
+    v[idx('analog')] = 0;
+    return v;
+  };
+  seed = 99;
+  const noise = () => rnd() * 0.05;
+  const lvl = (dyn) => {
+    seed = 99;
+    const r = render(setDyn(v0(), dyn), 2, noise);
+    return dbOf(rms(r.L, 1.2 * FS));
+  };
+  const dOff = lvl({ on: 0 });
+  const dBal = lvl({ mode: M.DYN_BALANCE, thr: -12, ratio: 20, range: 12 }) - dOff;
+  const dBoost = lvl({ mode: M.DYN_BOOST, thr: -12, ratio: 20, range: 12 }) - dOff;
+  const dCut = lvl({ mode: M.DYN_CUT, thr: 0, ratio: 20, range: 12 }) - dOff;
+  check(
+    '2b BOOST level correction (BALANCE without)',
+    dBal > 3 && Math.abs(dBoost) < 1 && Math.abs(dCut) < 0.01,
+    `vs off: BALANCE ${f1(dBal)} dB, BOOST ${dBoost.toFixed(2)} dB, CUT ${dCut.toFixed(3)} dB (noise, bands under the threshold)`,
+  );
+  // two tones: the loud band stays, the quiet one comes up (the correction follows the power, so it is small)
+  {
+    const bl = 3, bq = 7;
+    const two = (n) => 10 ** (-10 / 20) * Math.sin((2 * Math.PI * FREQS[bl] * n) / FS) + 10 ** (-40 / 20) * Math.sin((2 * Math.PI * FREQS[bq] * n) / FS);
+    const setup = (dyn) => {
+      const v = soloSetup(bl, dyn);
+      v[idx(`band${bq}.gain`)] = 0;
+      return v;
+    };
+    const tone = (x, f, a) => {
+      let re = 0, im = 0;
+      for (let i = a; i < x.length; i++) {
+        re += x[i] * Math.cos((2 * Math.PI * f * i) / FS);
+        im += x[i] * Math.sin((2 * Math.PI * f * i) / FS);
+      }
+      return dbOf((2 * Math.hypot(re, im)) / (x.length - a));
+    };
+    const off = render(setup({ on: 0 }), 1.2, two), on = render(setup({ mode: M.DYN_BOOST, thr: -20, ratio: 4, range: 12 }), 1.2, two);
+    const a = 0.7 * FS;
+    const dLoud = tone(on.L, FREQS[bl], a) - tone(off.L, FREQS[bl], a);
+    const dQuiet = tone(on.L, FREQS[bq], a) - tone(off.L, FREQS[bq], a);
+    check('2c BOOST lifts the quiet band, the loud one stays', Math.abs(dLoud) < 0.5 && dQuiet > 8, `loud band ${dLoud.toFixed(2)} dB, quiet band +${f1(dQuiet)} dB (≤ 12: its detector also hears the loud tone)`);
+  }
 }
 
 /* ---------- 3. attack / release times ---------- */
@@ -214,13 +262,13 @@ function envelope(x, win) {
   const input = (n) => (n < burst ? rnd() * 0.5 : 0);
   const off = render(mk({ on: 0 }), 5.2, input);
   const on = render(mk({ thr: -24, ratio: 6 }), 5.2, input);
-  const exp = render(mk({ thr: -40, ratio: 0.5, range: 36 }), 5.2, input);
+  const exp = render(mk({ mode: M.DYN_BALANCE, thr: -20, ratio: 20, range: 36 }), 5.2, input);
   const pk = Math.max(peak(on.L), peak(on.R), peak(exp.L), peak(exp.R));
   const tOff = dbOf(rms(off.L, 4.2 * FS)), tOn = dbOf(rms(on.L, 4.2 * FS)), tExp = dbOf(rms(exp.L, 4.2 * FS));
   check(
     '6 FB All = 1 bounded with dynamics',
     allFinite(on.L, on.R, exp.L, exp.R) && pk <= 1.05 && tOn < tOff,
-    `peak ${pk.toFixed(3)}; tail RMS off ${f1(tOff)} / compressing ${f1(tOn)} / expanding +36 dB ${f1(tExp)} dBFS`,
+    `peak ${pk.toFixed(3)}; tail RMS off ${f1(tOff)} / compressing ${f1(tOn)} / BALANCE ±36 dB ${f1(tExp)} dBFS`,
   );
 }
 

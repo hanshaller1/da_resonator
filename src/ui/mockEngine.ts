@@ -12,7 +12,7 @@ import type { EngineAPI, EngineState, MeterBusAPI, SourceInfo, SourceKind, Unsub
 import type { MeterFrame } from '../shared/messages';
 import type { ModConfig } from '../shared/mod/rules';
 import { MAX_BLOCK, ModEngine } from '../dsp/ModEngine';
-import { SPREAD_CLASSIC_DB } from '../shared/paramdefs/modules';
+import { SPREAD_CLASSIC_DB, dynGainChange } from '../shared/paramdefs/modules';
 import { NUM_BANDS, bandParamId, bandParamIdR, dbToGain } from '../shared/params';
 import { bandResFb } from './response';
 
@@ -212,9 +212,10 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       const thr = params.get('dyn.threshold');
       const slope = 1 - 1 / params.get('dyn.ratio');
       const range = params.get('dyn.range');
+      const mode = Math.round(params.get('dyn.mode'));
       for (let i = 0; i < NUM_BANDS; i++) {
         const over = 20 * Math.log10(Math.max(1e-6, bands[i] * 1.6)) - thr;
-        const gc = over > 0 ? Math.max(-range, Math.min(range, over * slope)) : 0;
+        const gc = dynGainChange(over, slope, range, mode);
         dynGR[i] = gc * params.get(`band${i}.dyn`);
       }
     }

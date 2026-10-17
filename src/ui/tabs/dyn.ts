@@ -1,6 +1,6 @@
 /**
  * DYN EQ tab: band dynamics (a compressor / upward expander per resonator band).
- * Status line = on + the five global settings, what the dynamics measure (SRC BAND · IN · OUT, the input
+ * Status line = on + MODE (CUT · BOOST · BALANCE) + the five global settings, what the dynamics measure (SRC BAND · IN · OUT, the input
  * filter FILT / FREQ before the IN / OUT analysis), DLY and R DLY (docs/hardware-modi-und-pools-2026-10-16.md)
  * + a live readout of the largest gain change.
  * Control row = per band (slot k = band k) its amount and its gain-reduction mod source GR.
@@ -16,7 +16,7 @@ import { h, toggleClass } from '../dom';
 import { frameLoop } from '../scheduler';
 import { freqText } from '../shell/faders';
 import { registerTab } from '../shell/tabs';
-import { buildDynViz, effective } from './dyn/viz';
+import { buildDynViz } from './dyn/viz';
 
 registerTab({
   id: 'dyn',
@@ -27,9 +27,12 @@ registerTab({
 
     /* ---------- status line ---------- */
     const on = new ParamToggle(p, 'dyn.on', { label: 'ON', ariaLabel: 'Band dynamics on' });
+    const modeField = new ParamField(p, 'dyn.mode', { ariaLabel: 'Dynamics mode: cut above the threshold, boost below it, or both (balance)' });
+    modeField.el.title = 'CUT lowers bands above the threshold, BOOST raises bands below it (with a gate 40 dB under it and a level correction), BALANCE does both';
     const fields = [
+      modeField,
       new ParamField(p, 'dyn.threshold', { ariaLabel: 'Dynamics threshold' }),
-      new ParamField(p, 'dyn.ratio', { ariaLabel: 'Dynamics ratio (below 1:1 expands)' }),
+      new ParamField(p, 'dyn.ratio', { ariaLabel: 'Dynamics ratio' }),
       new ParamField(p, 'dyn.attack', { ariaLabel: 'Dynamics attack' }),
       new ParamField(p, 'dyn.release', { ariaLabel: 'Dynamics release' }),
       new ParamField(p, 'dyn.range', { ariaLabel: 'Dynamics range (maximum gain change)' }),
@@ -41,10 +44,9 @@ registerTab({
     srcField.el.title = 'BAND measures each band itself; IN the input and OUT the output, each through an analysis filter per band';
     filt.el.title = freq.el.title = 'Bandpass before the IN / OUT analysis, so only that range drives the dynamics';
     const srcBox = h('span', { class: 'dyn-fields dyn-src' }, srcField.el, filt.el, freq.el, ...delays.map((f) => f.el));
-    const mode = h('span', { class: 'dyn-mode' });
     const readout = h('b', { class: 'dyn-readout' });
     const live = h('span', { class: 'dyn-live' }, 'GR ', readout);
-    tab.status.append(on.el, h('span', { class: 'dyn-fields' }, ...fields.map((f) => f.el)), srcBox, mode, h('span', { class: 'tp-spacer' }), live);
+    tab.status.append(on.el, h('span', { class: 'dyn-fields' }, ...fields.map((f) => f.el)), srcBox, h('span', { class: 'tp-spacer' }), live);
     // the input filter only counts for IN / OUT, its frequency only while it is on
     const syncSrc = () => {
       const band = Math.round(p.get('dyn.source')) === 0;
@@ -73,14 +75,10 @@ registerTab({
     p.subscribe('dyn.on', syncOn);
 
     /* ---------- live readout (~15 Hz while shown) ---------- */
-    let shownMode = '';
     let shownGr = '';
     let tick = 0;
     frameLoop.add(() => {
       if (!tab.visible || (tick++ & 3) !== 0) return;
-      const ratio = effective(p, 'dyn.ratio');
-      const m = ratio > 1.02 ? 'COMP' : ratio < 0.98 ? 'EXP' : '1:1';
-      if (m !== shownMode) mode.textContent = shownMode = m;
       const running = engine.state === 'running';
       const dynOn = p.get('dyn.on') >= 0.5;
       const { db, band } = peakGr();

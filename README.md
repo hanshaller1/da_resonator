@@ -122,6 +122,22 @@ Stand nach dem DSP-Durchgang vom 16.10.2026, siehe `docs/dsp-durchgang-2026-10-1
   Filters (5 ms Attack), −48…0 dBFS verschieben den Cutoff um ENV AMT, also Auto-Wah ohne Route.
 - **SPREAD** (±2 Oktaven): L-Cutoff um die Hälfte nach unten, R nach oben (links andersherum).
 
+### DYN EQ: CUT, BOOST, BALANCE
+
+**MODE** vorne in der Statuszeile des DYN-EQ-Registers (Standard CUT, ältere Presets klingen gleich):
+- **CUT** senkt Bänder über dem Threshold ab, wie die Hardware.
+- **BOOST** hebt Bänder unter dem Threshold an (Upward Compression), höchstens um RANGE. Eine automatische
+  Pegelkorrektur senkt dabei alle Bänder um die Leistung, die die Anhebung dazugibt (Bandpegel × Fader × Makeup,
+  etwa 150 ms geglättet). Laute Bänder bleiben, leise kommen hoch, der Gesamtpegel bleibt etwa gleich.
+- **BALANCE** zieht jedes Band zum Threshold: darüber absenken, darunter anheben, ohne Pegelkorrektur.
+- **Gate:** Mehr als 40 dB unter dem Threshold wird nicht angehoben, darüber blendet die Anhebung über 12 dB ein.
+  So bleiben Stille und Grundrauschen unten.
+- RATIO gilt in beide Richtungen und geht nur noch ab 1:1 (unter 1:1 war es eine Expansion, das deckt BOOST ab).
+  ATK wirkt, wenn die Verstärkung sinkt (mehr Absenkung, weniger Anhebung), REL, wenn sie wieder steigt.
+- Die GR-Quellen dyn1–10 zeigen in allen Modi den Betrag der Änderung / RANGE (0..1).
+- Code: `dynStep` in `src/dsp/resonator.worklet.ts`, Kurve `dynGainChange` in `src/shared/paramdefs/modules.ts`.
+  Tests: `scripts/test-dyn.mjs` 2a–2c.
+
 ### L/R pro Band
 
 Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.

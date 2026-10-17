@@ -21,6 +21,7 @@ import {
   clockParams,
   cmodParams,
   dynParams,
+  dynParams2,
   efParams,
   efParams2,
   filterParams,
@@ -177,6 +178,7 @@ for (const slot of FILTER_SLOTS) addModule(slot, 'filter', filterParams2(slot));
 for (let n = 1; n <= NUM_LFOS; n++) addModule(`lfo${n}`, 'lfo', lfoParams2(n));
 for (let n = 1; n <= NUM_EFS; n++) addModule(`ef${n}`, 'ef', efParams2(n));
 addModule('morph', 'macro', macroMorphParams());
+addModule('dyn', 'dyn', dynParams2());
 
 export const NUM_PARAMS = PARAMS.length;
 
