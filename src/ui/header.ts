@@ -397,9 +397,10 @@ export function buildHeader(engine: EngineAPI, theme: ThemeController, notify: N
 
   const themeBtn = h('button', { type: 'button', class: 'btn btn--icon theme-btn' });
   const syncTheme = () => {
-    const names = { auto: 'System theme', light: 'Light theme', dark: 'Dark theme' } as const;
+    const names = { auto: 'Generated theme', light: 'Light theme', dark: 'Dark theme' } as const;
     themeBtn.replaceChildren(icon(theme.pref === 'auto' ? 'auto' : theme.pref === 'light' ? 'sun' : 'moon'));
-    themeBtn.title = `${names[theme.pref]} (click to change)`;
+    const gen = theme.generated ? ` "${theme.generated.name}"` : '';
+    themeBtn.title = `${names[theme.pref]}${gen} (click to change)`;
     themeBtn.setAttribute('aria-label', `Theme: ${names[theme.pref]}`);
   };
   syncTheme();

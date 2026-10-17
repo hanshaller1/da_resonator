@@ -1,53 +1,68 @@
+import { generateTheme, newSeed, type GeneratedTheme } from './themeGen';
+
+/** 'auto' = a generated theme (ui/themeGen.ts), new every time AUTO is picked */
 export type ThemePref = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
 const KEY = 'resonator.theme';
+const SEED_KEY = 'resonator.themeSeed';
 
-function readPref(): ThemePref {
+function read(key: string): string | null {
   try {
-    const v = localStorage.getItem(KEY);
-    if (v === 'light' || v === 'dark' || v === 'auto') return v;
+    return localStorage.getItem(key);
   } catch {
-    /* storage unavailable */
+    return null; /* storage unavailable */
   }
-  return 'auto';
 }
 
-function writePref(p: ThemePref): void {
+function write(key: string, v: string): void {
   try {
-    localStorage.setItem(KEY, p);
+    localStorage.setItem(key, v);
   } catch {
     /* storage unavailable */
   }
 }
 
 /**
- * Theme controller: follows prefers-color-scheme while pref === 'auto',
- * otherwise pins light/dark. Writes data-theme on <html>.
+ * Theme controller: dark by default; light/dark pin the hand-made themes, 'auto' applies a
+ * generated theme (same one after a reload, a new one each time AUTO is picked).
+ * Writes data-theme (the base the generated colours sit on) and data-theme-seed on <html>.
  */
 export class ThemeController {
-  pref: ThemePref = readPref();
-  private mq = window.matchMedia('(prefers-color-scheme: light)');
+  pref: ThemePref = 'dark';
+  /** the generated theme while pref === 'auto' */
+  generated: GeneratedTheme | null = null;
   private listeners = new Set<(pref: ThemePref, resolved: ResolvedTheme) => void>();
 
   constructor() {
-    this.mq.addEventListener('change', () => this.apply());
+    const p = read(KEY);
+    const seed = Number(read(SEED_KEY));
+    if (p === 'light' || p === 'dark') this.pref = p;
+    // 'auto' used to mean "follow the system"; without a stored seed it falls back to dark
+    else if (p === 'auto' && read(SEED_KEY) !== null && Number.isFinite(seed)) {
+      this.pref = 'auto';
+      this.generated = generateTheme(seed >>> 0);
+    }
     this.apply();
   }
 
   get resolved(): ResolvedTheme {
-    if (this.pref === 'auto') return this.mq.matches ? 'light' : 'dark';
-    return this.pref;
+    return this.pref === 'auto' && this.generated ? this.generated.mode : this.pref === 'light' ? 'light' : 'dark';
   }
 
   cycle(): void {
-    const order: ThemePref[] = ['auto', 'light', 'dark'];
+    const order: ThemePref[] = ['dark', 'light', 'auto'];
     this.set(order[(order.indexOf(this.pref) + 1) % order.length]);
   }
 
+  /** picking 'auto' always makes a new theme, also when it is already selected */
   set(p: ThemePref): void {
     this.pref = p;
-    writePref(p);
+    write(KEY, p);
+    if (p === 'auto') {
+      this.generated = generateTheme(newSeed());
+      write(SEED_KEY, String(this.generated.seed));
+    } else this.generated = null;
     this.apply();
   }
 
@@ -58,8 +73,12 @@ export class ThemeController {
 
   private apply(): void {
     const root = document.documentElement;
+    for (const name of [...root.style].filter((n) => n.startsWith('--c-'))) root.style.removeProperty(name);
+    if (this.generated) for (const [k, v] of Object.entries(this.generated.vars)) root.style.setProperty(k, v);
     root.dataset.theme = this.resolved;
     root.dataset.themePref = this.pref;
+    if (this.generated) root.dataset.themeSeed = String(this.generated.seed);
+    else delete root.dataset.themeSeed;
     for (const l of this.listeners) l(this.pref, this.resolved);
   }
 }

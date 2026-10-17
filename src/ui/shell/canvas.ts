@@ -53,6 +53,6 @@ export function readVars<K extends string>(el: Element, names: Record<K, string>
 /** call `cb` whenever the colour theme changes */
 export function onThemeChange(cb: () => void): Unsubscribe {
   const mo = new MutationObserver(cb);
-  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-seed'] });
   return () => mo.disconnect();
 }

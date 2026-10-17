@@ -273,8 +273,13 @@ registerTab({
     );
 
     /* ---------- display ---------- */
-    const themeBtns = (['auto', 'light', 'dark'] as ThemePref[]).map((pref) => {
-      const b = h('button', { type: 'button', class: 'inst-btn' }, pref.toUpperCase());
+    const THEME_TITLES: Record<ThemePref, string> = {
+      dark: 'Dark theme (default)',
+      light: 'Light theme',
+      auto: 'A new generated colour theme every click',
+    };
+    const themeBtns = (['dark', 'light', 'auto'] as ThemePref[]).map((pref) => {
+      const b = h('button', { type: 'button', class: 'inst-btn', title: THEME_TITLES[pref] }, pref.toUpperCase());
       b.addEventListener('click', () => theme.set(pref));
       return { pref, b };
     });
@@ -282,6 +287,7 @@ registerTab({
       themeBtns.forEach(({ pref, b }) => {
         toggleClass(b, 'is-selected', theme.pref === pref);
         b.setAttribute('aria-pressed', String(theme.pref === pref));
+        if (pref === 'auto') b.title = theme.generated ? `${THEME_TITLES.auto} (now: ${theme.generated.name})` : THEME_TITLES.auto;
       });
     syncTheme();
     theme.onChange(syncTheme);
