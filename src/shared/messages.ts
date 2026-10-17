@@ -11,7 +11,8 @@ export type ToWorklet =
   | { type: 'reset' } // clear all filter / feedback state (panic)
   | { type: 'meterRate'; hz: number } // meter frames per second (default 30)
   | { type: 'clockOn'; int: boolean; midi: boolean } // which clocks are on (a clock that is off stands still)
-  | { type: 'midiClock'; ev: number; t: number }; // MIDI clock event (dsp/extClock.ts MIDI_TICK …) at AudioContext time t
+  | { type: 'midiClock'; ev: number; t: number } // MIDI clock event (dsp/extClock.ts MIDI_TICK …) at AudioContext time t
+  | { type: 'wobble'; band: number; ch: 0 | 1 | 2; on: boolean }; // FB function key held / let go (ch 0 = L and R, 1 = L, 2 = R)
 
 /** One meter frame. All values linear amplitude (not dB). */
 export interface MeterFrame {

@@ -31,6 +31,12 @@ export interface BlockCtx {
    * so update() sees the previous block and analyse() sees the current one.
    */
   taps: Float32Array[];
+  /**
+   * The same taps per channel (L, R), filled only while a follower that is on listens to L or R
+   * (ModEngine.lrTaps); otherwise they hold stale samples.
+   */
+  tapsL: Float32Array[];
+  tapsR: Float32Array[];
   /** true if trigger input `inIndex` (TRIGGER_INS) fired since this module last ran */
   triggered(inIndex: number): boolean;
   /** emit trigger output `outIndex` (TRIGGER_OUTS); reaches modules later in the graph this block */

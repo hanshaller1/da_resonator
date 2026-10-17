@@ -490,6 +490,10 @@ export class AudioEngine implements EngineAPI {
     this.post({ type: 'reset' });
   }
 
+  wobble(band: number, on: boolean, ch: 0 | 1 | 2 = 0): void {
+    this.post({ type: 'wobble', band, ch, on });
+  }
+
   getState(): EngineSnapshot {
     return this.stateHub.get();
   }

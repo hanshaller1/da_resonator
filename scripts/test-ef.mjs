@@ -1,5 +1,5 @@
 // Offline tests for the envelope followers (src/dsp/modules/ef.ts): time constants, mapping, gain,
-// band taps, gate trigger, NaN safety, cost. Run: node scripts/test-ef.mjs
+// band taps, gate trigger, NaN safety, cost, CH (L / R / both) and DLY. Run: node scripts/test-ef.mjs
 import { BLOCK, FS, check, importTs, loadProcessor, results, run } from './testkit.mjs';
 
 const P = importTs('src/shared/params.ts');
@@ -292,6 +292,66 @@ const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
   };
   const off = measure(false, false), on = measure(true, false), routed = measure(true, true);
   check('8 cost of 4 followers (10 s stereo)', on > 15 && routed > 15, `${on.toFixed(1)}x realtime with 4 EFs on, ${routed.toFixed(1)}x with 4 EF → resonator routes, ${off.toFixed(1)}x all off`);
+}
+
+/* ---------- 9. CH: L, R or both (hardware sources L IN, R IN, L OUT, R OUT) ---------- */
+{
+  const proc = loadProcessor();
+  const v = P.defaultValues();
+  const set = [
+    [1, 'In', 1], // L IN
+    [2, 'In', 2], // R IN
+    [3, 'In', 0], // both (mono sum)
+    [4, 'Out', 1], // L OUT
+  ];
+  for (const [n, tap, ch] of set) Object.entries({ on: 1, tap: TAP[tap], ch, attack: 1, release: 2000, threshold: -60 }).forEach(([k, x]) => (v[idx(`ef${n}.${k}`)] = x));
+  send(proc, v);
+  // a sine in L only
+  const iL = new Float32Array(BLOCK), iR = new Float32Array(BLOCK);
+  const oL = new Float32Array(BLOCK), oR = new Float32Array(BLOCK);
+  for (let k = 0, i = 0; k < Math.round((0.5 * FS) / BLOCK); k++) {
+    for (let j = 0; j < BLOCK; j++, i++) iL[j] = 0.25 * Math.sin((2 * Math.PI * 440 * i) / FS);
+    proc.process([[iL, iR]], [[oL, oR]]);
+  }
+  const last = (id) => srcSeries(proc, id).at(-1);
+  const l = outDb(last('ef1')), r = last('ef2'), both = outDb(last('ef3')), out = outDb(last('ef4'));
+  check(
+    '9 CH: L IN hears the L sine, R IN nothing, L+R the mono sum (−6 dB), L OUT the left output',
+    Math.abs(l - db(0.25)) < 0.3 && r === 0 && Math.abs(l - both - 6.02) < 0.3 && out > -40 && proc.mod.lrTaps === true,
+    `L IN ${l.toFixed(2)} dB, R IN ${r}, L+R ${both.toFixed(2)} dB, L OUT ${out.toFixed(1)} dB`,
+  );
+  // no follower on L or R: the per-channel taps are not filled
+  for (let n = 1; n <= 4; n++) v[idx(`ef${n}.ch`)] = 0;
+  send(proc, v);
+  run(proc, 2);
+  check('9b all on L+R: per-channel taps stay off', proc.mod.lrTaps === false);
+}
+
+/* ---------- 10. DLY: the follower and its gate react later ---------- */
+{
+  const series = (delay) => {
+    const { ctx, feed } = direct({ attack: 5, release: 50, threshold: -20, delay }, BLOCK);
+    const fireAt = [];
+    let fired = 0;
+    const out = [];
+    // silence, a burst from block 40 to 120, silence
+    for (let k = 0; k < 400; k++) {
+      out.push(feed(BLOCK, () => (k >= 40 && k < 120 ? 0.5 : 0))[0]);
+      if (ctx.fires > fired) {
+        fired = ctx.fires;
+        fireAt.push(k);
+      }
+    }
+    return { out, fireAt };
+  };
+  const a = series(0), b = series(100);
+  const d = Math.round((0.1 * FS) / BLOCK);
+  const shifted = b.out.slice(d).every((x, k) => x === a.out[k]) && b.out.slice(0, d).every((x) => x === 0);
+  check(
+    '10 DLY 100 ms: the output and the gate come exactly that much later',
+    shifted && a.fireAt.length === 1 && b.fireAt.length === 1 && b.fireAt[0] - a.fireAt[0] === d,
+    `shift ${d} blocks (${((d * BLOCK * 1000) / FS).toFixed(1)} ms), gate at block ${a.fireAt[0]} → ${b.fireAt[0]}`,
+  );
 }
 
 console.log('\nEnvelope follower tests');

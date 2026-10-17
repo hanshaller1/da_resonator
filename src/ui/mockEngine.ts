@@ -143,6 +143,7 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
   const smooth = new Float32Array(NUM_BANDS);
   let inS = 0;
   let outS = 0;
+  const wob = new Uint8Array(NUM_BANDS * 2); // FB function keys held (slot = band·2 + channel)
   let timer = 0;
 
   const step = () => {
@@ -191,6 +192,10 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       const sR = gA > 0 ? gR / gA : 0;
       bandsL[i] = bands[i] * sL * (classic ? 1 / cg : toL ? near : far);
       bandsR[i] = bands[i] * sR * (classic ? cg : toL ? far : near);
+      // a held FB function key: the level swings once per beat
+      const sw = 1 + 0.5 * Math.sin(2 * Math.PI * t * (params.get('clock.bpm') / 60));
+      if (wob[i * 2]) bandsL[i] *= sw;
+      if (wob[i * 2 + 1]) bandsR[i] *= sw;
       if (fb > 0.8 && smooth[i] > 0.3) hot = true;
       inSum += env[i] * inGain * 0.35;
       outSum += bands[i] * 0.35;
@@ -291,6 +296,12 @@ export function createMockEngine(opts: MockEngineOptions = { demoModulation: tru
       params.set('fbAllOnR', 0);
       env.fill(0);
       smooth.fill(0);
+      wob.fill(0);
+    },
+    wobble(band, on, ch = 0) {
+      if (band < 0 || band >= NUM_BANDS) return;
+      if (!on || ch !== 2) wob[band * 2] = on ? 1 : 0;
+      if (!on || ch !== 1) wob[band * 2 + 1] = on ? 1 : 0;
     },
     analyserOut: null,
     analyserIn: null,

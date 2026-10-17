@@ -195,6 +195,10 @@ export const TAP_BAND0 = 1;
 export const TAP_RES_OUT = 1 + NUM_BANDS;
 export const TAP_OUT = 2 + NUM_BANDS;
 export const NUM_TAPS = 3 + NUM_BANDS;
+/** which channel of the tap a follower listens to: both (mono sum), L or R (hardware: L IN, R IN, L OUT, R OUT) */
+export const EF_CHANNELS = ['L+R', 'L', 'R'] as const;
+/** delay before the follower reacts (hardware: delay before the attack) */
+export const EF_DELAY_MAX_MS = 2000;
 export function efParams(n: number): ParamDef[] {
   const m = `ef${n}`;
   const L = `Env Follower ${n}`;
@@ -207,6 +211,8 @@ export function efParams(n: number): ParamDef[] {
     cont(`${m}.threshold`, `${L} Threshold`, 'THR', -60, 0, -60, 'dB'),
     cont(`${m}.curve`, `${L} Curve`, 'CURVE', -1, 1, 0),
     cont(`${m}.level`, `${L} Level`, 'LEVEL', 0, 1, 1, '%'),
+    fixedDef(discrete(`${m}.ch`, `${L} Channel`, 'CH', EF_CHANNELS, 0)),
+    cont(`${m}.delay`, `${L} Delay`, 'DLY', 0, EF_DELAY_MAX_MS, 0, 'ms'),
   ];
 }
 

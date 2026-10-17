@@ -125,6 +125,8 @@ import {
   bandParamIndex,
   bandParamIndexR,
   dbToGain,
+  faderDbToNorm,
+  faderNormToDb,
   fbKnobFactor,
   feedbackTapGain,
   paramIndex,
@@ -195,6 +197,10 @@ const NOISE_FLOOR = 1e-9;
 const SQRT2 = Math.SQRT2;
 const QUARTER_PI = Math.PI / 4;
 const HALF_PI = Math.PI / 2;
+/** FB function keys: a held band wobbles by ±10 % of fader travel, one sine per beat of the master clock */
+const WOB_DEPTH = 0.1;
+/** the wobble fades in on press and out on release over this time (s), so the level never steps */
+const WOB_FADE_S = 0.03;
 const DYN_SUB = 16; // band dynamics gain computer interval (samples); the gain is interpolated in between
 const DYN_DET = 8; // detector sampling interval (samples, divides DYN_SUB): A² is smooth, see header
 const DYN_ANA_Q = 1.5; // analysis bandpass per band for the IN / OUT sources (about one band wide)
@@ -284,6 +290,11 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private lyrFast = false; // the layers move (scanner, modulated band filter): the band gains glide fast
   private bfL = new Float64Array(NB);
   private bfR = new Float64Array(NB);
+  // FB function keys (hold a band: it wobbles), a layer like the modes; not a param, never saved
+  private wobHeld = new Uint8Array(NS); // 1 while the band's key is held, per slot
+  private wobAmt = new Float64Array(NS); // depth 0..1 per slot (fades in / out)
+  private wobOn = false; // a slot is held or still fading out
+  private wobPhase = 0; // wobble phase (cycles); runs at the clock's TEMPO while that clock stands
   private iBfOn = paramIndex('filterBand.on');
   private iBfType = paramIndex('filterBand.type');
   private iBfCut = paramIndex('filterBand.cutoff');
@@ -500,7 +511,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'ready' });
   }
 
-  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; int?: boolean; midi?: boolean; ev?: number; t?: number }) {
+  private onMessage(msg: { type: string; values?: Float32Array; hz?: number; config?: ModConfig; int?: boolean; midi?: boolean; ev?: number; t?: number; band?: number; ch?: number; on?: boolean }) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'params':
@@ -529,6 +540,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       case 'reset':
         this.resetState();
         this.mod.reset();
+        this.wobHeld.fill(0);
+        this.wobAmt.fill(0);
         break;
       case 'meterRate':
         if (typeof msg.hz === 'number' && msg.hz > 0) this.meterInterval = Math.max(1, Math.round(this.fs / msg.hz));
@@ -539,6 +552,17 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       case 'midiClock':
         if (typeof msg.ev === 'number' && typeof msg.t === 'number') this.mod.pushClock(msg.ev, msg.t);
         break;
+      case 'wobble': {
+        // ch 0 = L and R, 1 = L, 2 = R; a release lets go of both channels of the band
+        const b = msg.band;
+        if (typeof b !== 'number' || !(b >= 0 && b < NB)) break;
+        const on = msg.on === true;
+        const ch = on ? msg.ch ?? 0 : 0;
+        if (ch !== 2) this.wobHeld[b * 2] = on ? 1 : 0;
+        if (ch !== 1) this.wobHeld[b * 2 + 1] = on ? 1 : 0;
+        if (on) this.wobOn = true;
+        break;
+      }
     }
   }
 
@@ -564,14 +588,34 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.bfModulated = [this.iBfType, this.iBfCut, this.iBfSlope, this.iBfWidth, this.iBfDepth, this.iBfOffset, this.iBfRofs].some((i) => m[i] === 1);
   }
 
+  /** FB function keys: fade every slot's wobble depth towards held / released; true while one moves */
+  private wobbleStep(dt: number): boolean {
+    if (!this.wobOn) return false;
+    const held = this.wobHeld, amt = this.wobAmt;
+    const step = dt / WOB_FADE_S;
+    let any = false;
+    for (let i = 0; i < NS; i++) {
+      let a = amt[i];
+      if (held[i]) a = a + step < 1 ? a + step : 1;
+      else if (a > 0) a = a - step > 0 ? a - step : 0;
+      amt[i] = a;
+      if (a > 0 || held[i]) any = true;
+    }
+    this.wobOn = any;
+    return any;
+  }
+
   /**
    * mode layers, once per block: the band filter curve at the band centres plus the scanner's values,
    * in dB on top of every slot's fader (locked bands of a mode get 0 dB from it). Off = nothing to do.
+   * The FB function keys add the wobble of a held band: its fader position ± WOB_DEPTH · sin, one cycle
+   * per beat of the master clock (in phase with its beats while it runs, at its TEMPO while it stands).
    */
   private applyLayers(p: Float32Array) {
     const fOn = p[this.iBfOn] >= 0.5;
     const scan = this.mod.scan;
-    if (!fOn && !scan.on && !this.lyrLive) return;
+    const wob = this.wobbleStep(this.mod.ctx.dt);
+    if (!fOn && !scan.on && !wob && !this.lyrLive) return;
     const ly = this.lyrDb;
     if (fOn) {
       const type = Math.round(p[this.iBfType]);
@@ -589,10 +633,23 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       }
     } else ly.fill(0);
     if (scan.on) for (let i = 0; i < NS; i++) ly[i] += scan.layerDb[i];
-    // both off: this last pass set the targets back to the bare faders
-    this.lyrLive = fOn || scan.on;
+    if (wob) {
+      const c = this.mod.masterClock;
+      if (c.running) this.wobPhase = c.beats - Math.floor(c.beats);
+      else this.wobPhase = (this.wobPhase + (this.mod.ctx.dt * c.bpm) / 60) % 1;
+      const sw = WOB_DEPTH * Math.sin(2 * Math.PI * this.wobPhase);
+      for (let i = 0; i < NS; i++) {
+        const a = this.wobAmt[i];
+        if (!(a > 0)) continue;
+        const f = this.bFaderDb[i];
+        const n = faderDbToNorm(f) + a * sw;
+        ly[i] += faderNormToDb(n < 0 ? 0 : n > 1 ? 1 : n) - f;
+      }
+    }
+    // all off: this last pass set the targets back to the bare faders
+    this.lyrLive = fOn || scan.on || wob;
     for (let i = 0; i < NS; i++) this.bGainTgt[i] = dbToGain(this.bFaderDb[i] + ly[i]);
-    const fast = scan.on || (fOn && this.bfModulated);
+    const fast = scan.on || (fOn && this.bfModulated) || wob;
     if (fast !== this.lyrFast) {
       this.lyrFast = fast;
       this.updateSmoothing();
@@ -1023,6 +1080,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const inL = preL, inR = preR;
     const taps = mod.taps;
     const tapIn = taps[TAP_IN], tapRes = taps[TAP_RES_OUT], tapOut = taps[TAP_OUT];
+    // per channel taps, only while a follower listens to L or R
+    const lrTaps = mod.lrTaps, tapsL = mod.tapsL, tapsR = mod.tapsR;
+    const tapInL = tapsL[TAP_IN], tapResL = tapsL[TAP_RES_OUT], tapOutL = tapsL[TAP_OUT];
+    const tapInR = tapsR[TAP_IN], tapResR = tapsR[TAP_RES_OUT], tapOutR = tapsR[TAP_OUT];
 
     const gCur = this.gCur, gTgt = this.gTgt;
     const bGainCur = this.bGainCur, bGainTgt = this.bGainTgt;
@@ -1104,6 +1165,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       const dryL = inL[s];
       const dryR = inR[s];
       tapIn[s] = 0.5 * (dryL + dryR);
+      if (lrTaps) {
+        tapInL[s] = dryL;
+        tapInR[s] = dryR;
+      }
       const aL = Math.abs(dryL), aR = Math.abs(dryR);
       if (aL > inPk0) inPk0 = aL;
       if (aR > inPk1) inPk1 = aR;
@@ -1340,6 +1405,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         }
         mBandSq[b] += 0.5 * (yL * yL + yR * yR);
         taps[TAP_BAND0 + b][s] = 0.5 * (yL + yR);
+        if (lrTaps) {
+          tapsL[TAP_BAND0 + b][s] = yL;
+          tapsR[TAP_BAND0 + b][s] = yR;
+        }
         sumL += yL;
         sumR += yR;
         // ODD/EVEN spread: mid panned, side faded
@@ -1369,6 +1438,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       }
 
       tapRes[s] = 0.5 * (wetL + wetR);
+      if (lrTaps) {
+        tapResL[s] = wetL;
+        tapResR[s] = wetR;
+      }
       if (dynAna) this.dynAnalyse(dynIn ? sL : wetL, dynIn ? sR : wetR);
       if (dynAct) {
         if (++dSub >= DYN_SUB) dSub = 0;
@@ -1436,6 +1509,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         if (r > 0.8 || r < -0.8 || r !== r) r = postR[s] = r === r ? safetyClip(r) : 0;
       }
       tapOut[s] = 0.5 * (l + r);
+      if (lrTaps) {
+        tapOutL[s] = l;
+        tapOutR[s] = r;
+      }
       const pL = Math.abs(l), pR = Math.abs(r);
       if (pL > outPk0) outPk0 = pL;
       if (pR > outPk1) outPk1 = pR;

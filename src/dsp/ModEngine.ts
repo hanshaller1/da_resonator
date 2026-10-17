@@ -70,6 +70,11 @@ export class ModEngine {
   /** time at the end of the current block (seconds; AudioContext time in the worklet) */
   private time = 0;
   readonly taps: Float32Array[] = [];
+  readonly tapsL: Float32Array[] = [];
+  readonly tapsR: Float32Array[] = [];
+  /** a follower that is on listens to L or R: the worklet fills tapsL / tapsR this block */
+  lrTaps = false;
+  private efCh: { on: number; ch: number }[] = [];
   readonly preFilter = new FilterStage('filterPre');
   readonly postFilter = new FilterStage('filterPost');
   /** band scanner (CLK MOD → SCAN): runs after the graph, so every source has its value of this block */
@@ -92,7 +97,12 @@ export class ModEngine {
   readonly ctx: BlockCtx;
 
   constructor(readonly fs: number, private post: (m: ModReadout) => void) {
-    for (let t = 0; t < NUM_TAPS; t++) this.taps.push(new Float32Array(MAX_BLOCK));
+    for (let t = 0; t < NUM_TAPS; t++) {
+      this.taps.push(new Float32Array(MAX_BLOCK));
+      this.tapsL.push(new Float32Array(MAX_BLOCK));
+      this.tapsR.push(new Float32Array(MAX_BLOCK));
+    }
+    for (let n = 1; n <= NUM_EFS; n++) this.efCh.push({ on: paramIndex(`ef${n}.on`), ch: paramIndex(`ef${n}.ch`) });
     for (let t = 0; t < NUM_TRIGGER_OUTS; t++) this.trigTargets.push([]);
     const add = (id: string, dsp: SourceDsp) =>
       this.sources.set(id, { dsp, onIdx: paramIndex(`${id}.on`), srcIdx: SOURCE_BY_ID[id].index, clkIdx: PARAM_BY_ID[`${id}.clk`]?.index ?? -1, wasOn: false });
@@ -108,6 +118,8 @@ export class ModEngine {
       eff: this.eff,
       clock: this.clock,
       taps: this.taps,
+      tapsL: this.tapsL,
+      tapsR: this.tapsR,
       triggered(i: number) {
         const t = self.trigPending[i] === 1;
         self.trigPending[i] = 0;
@@ -296,6 +308,14 @@ export class ModEngine {
     for (let k = 0; k < this.steps.length; k++) this.steps[k]();
     this.ctx.clock = this.usesMidi(this.scanClk) ? this.midiClock : this.clock;
     this.scan.update(this.ctx, this.srcVals);
+    let lr = false;
+    for (const f of this.efCh) if (this.eff[f.on] >= 0.5 && this.eff[f.ch] >= 0.5) lr = true;
+    this.lrTaps = lr;
+  }
+
+  /** the master clock (hardware: internal or MIDI): INT, or MIDI while INT is off */
+  get masterClock(): ClockState {
+    return this.usesMidi(-1) ? this.midiClock : this.clock;
   }
 
   /** after the audio pass: analysers + UI readout */

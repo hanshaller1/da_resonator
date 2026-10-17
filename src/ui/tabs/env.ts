@@ -87,6 +87,9 @@ registerTab({
     st.slot(4, knob('threshold', 'THR'));
     st.slot(5, knob('curve', 'CURVE'));
     st.slot(6, knob('level', 'LEVEL'));
+    // hardware: delay before the attack, and the sources L IN, R IN, L OUT, R OUT (= INPUT + CH)
+    st.slot(7, knob('delay', 'DLY'));
+    st.slot(8, (i, m) => new ParamSelect(p, `${m}.ch`, { label: 'CH', ariaLabel: `${L(i)} channel` }).el);
 
     /* ---------- feedback warning (in the picture, top right) ---------- */
     const badge = h('span', { class: 'env-fb', title: FEEDBACK_HINT, role: 'note' }, icon('panic', 'env-fb-icon'), 'FEEDBACK');
@@ -96,7 +99,16 @@ registerTab({
     const syncView = () => {
       const m = st.module;
       const v = (k: string) => formatValue(p.spec(`${m}.${k}`), effective(engine, `${m}.${k}`));
-      st.desc.textContent = [`Env Follower ${st.current + 1}`, v('tap'), `ATK ${v('attack')}`, `REL ${v('release')}`, `THR ${v('threshold')}`].join(' · ');
+      const ch = Math.round(p.get(`${m}.ch`));
+      const dly = p.get(`${m}.delay`);
+      st.desc.textContent = [
+        `Env Follower ${st.current + 1}`,
+        ch ? `${v('tap')} ${v('ch')}` : v('tap'),
+        ...(dly > 0 ? [`DLY ${v('delay')}`] : []),
+        `ATK ${v('attack')}`,
+        `REL ${v('release')}`,
+        `THR ${v('threshold')}`,
+      ].join(' · ');
       syncFeedback();
       viz.dirty = true;
     };

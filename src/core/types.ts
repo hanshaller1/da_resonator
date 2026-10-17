@@ -227,6 +227,12 @@ export interface EngineAPI {
   /** stop all feedback (band FB to 0, Feedback All off) and clear all filter / feedback state */
   panic(): void;
 
+  /**
+   * FB function key of a band held (on) or let go: while held the band's level wobbles ±10 % of
+   * fader travel, one sine per beat of the master clock. ch 0 = L and R, 1 = L, 2 = R. Not saved.
+   */
+  wobble(band: number, on: boolean, ch?: 0 | 1 | 2): void;
+
   /** post-resonator analyser for visualisation (null before start) */
   readonly analyserOut: AnalyserNode | null;
   /** pre-resonator analyser (null before start) */

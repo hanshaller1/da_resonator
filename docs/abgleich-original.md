@@ -60,7 +60,7 @@ Bewertung:
 | K8 | Stereo | Jeder Parameter existiert pro Kanal. Die Fader steuern L und R gemeinsam; einzeln geht es über FB CH-SELECT oder getrennte MIDI-Kanäle (S. 7, 18–19). | L und R sind immer identisch eingestellt | B |
 | K9 | Spread | Hängt vom Modus ab. FB: Versatz eines Kanals. FILTER: R bekommt eine versetzte Frequenz. CLK und DYN: Modulation auf L oder R verzögert. Mit FB CH-SELECT wählt Spread im FB-Modus den Kanal L, beide oder R (S. 5, 7, 9–11, 18). | Odd/Even-Panning (ungerade Bänder links, gerade rechts) | **A** |
 | K10 | Bandgüte | 17 dB/Dekade, also breite Bänder mit Q von etwa 0,7 | Standardgüte Q ≈ 6,5, schmale Bänder | **A**: klingt deutlich anders |
-| K11 | Funktionstasten im FB-Modus | Gedrückt halten wackelt das Band mit einem Sinus im internen Takt, 10 % Tiefe. SHIFT + Encoder würfelt alle Bandpegel (S. 7). | Fehlt | C |
+| K11 | Funktionstasten im FB-Modus | Gedrückt halten wackelt das Band mit einem Sinus im internen Takt, 10 % Tiefe. SHIFT + Encoder würfelt alle Bandpegel (S. 7). | Seit 17.10.2026: WOB je Band im FB-Register (±10 % Faderweg, Sinus pro Schlag des Master-Takts), DICE würfelt alle Bandpegel. | – |
 | K12 | Input, Volume, Dry/Wet | Input und Volume sind analog: nicht per MIDI und nicht im Snapshot (S. 5, 15) | Alles normale, speicherbare Parameter | C |
 | K13 | Regler „Analog“ | Gibt es nicht | Zusatz der Emulation (Toleranzen, Drift) | C |
 | K14 | Bypass | Über den Fußschalter (S. 5, 19) | Bypass-Schalter | gleich im Prinzip |
@@ -81,7 +81,7 @@ Bewertung:
 |---|---|---|---|---|
 | X1 | Modulationsmodell | Pro Ziel ein LFO und ein Follower, beide addiert. Ziele sind die Parameter des aktiven Modus sowie Resonance, Mix und Spread. Bis zu 20 LFOs und 20 Follower (S. 6, 13–14). | 4 LFOs und 4 Follower als Quellen-Pool, Matrix mit 64 Routen | **A** |
 | X2 | LFO | Parameter: Wave, Gain, Source (FREE, interner Master-Takt, MIDI-Clock), Freq bzw. Teilerfaktor, Phase in 15°-Schritten, an/aus. Wirkung auf L und R je ON/INV/OFF (S. 14). | 6 Formen, Morph, Smooth, Unipolar. Kein L/R-Verhalten, kein MIDI-Sync. | B |
-| X3 | Envelope Follower | Parameter: Attack, Decay, Delay vor dem Attack, Source (eine von vier: L IN, R IN, L OUT, R OUT), Gain, an/aus. L/R je ON/INV/OFF (S. 13). | Abgriff wählbar (Eingang, jedes Band, Resonator-Ausgang, Ausgang), Threshold, Kurve. Kein Delay, kein L/R-Verhalten. | B |
+| X3 | Envelope Follower | Parameter: Attack, Decay, Delay vor dem Attack, Source (eine von vier: L IN, R IN, L OUT, R OUT), Gain, an/aus. L/R je ON/INV/OFF (S. 13). | Abgriff wählbar (Eingang, jedes Band, Resonator-Ausgang, Ausgang), Threshold, Kurve. Seit 17.10.2026 mit DLY (bis 2 s) und CH (L+R, L, R); L/R je Ziel über die Kanalwahl der Routen. | – |
 | X4 | Makros | Die 10 **Fader** werden auf Parameter gelegt: UNLINK, Parameter des aktiven Modus (auch Gruppen BAND LOW/MID/HIGH/ALL), LFO- oder ENV-Parameter eines Ziels. Die Seite wird im Snapshot gespeichert (S. 12). | 8 Makro-Drehregler als Modulationsquellen | **A** |
 | X5 | Clock-Modulator als Quelle | Gibt es nicht. Getaktete Modulation ist ein eigener Modus (M3). | Zwei Clock-Mods mit Euklid, Swing, Wahrscheinlichkeit | Zusatz |
 | X6 | Trigger-Routen, Modulation von Routen | Gibt es nicht | vorhanden | Zusatz |

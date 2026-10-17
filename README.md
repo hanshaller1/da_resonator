@@ -53,7 +53,8 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
   SPREAD mit der Kanalwahl, die Befehle für alle Bänder unter RESET (R = L, FADER, RES/BAND, FB/BAND), FB ALL, DRY/WET,
   OUTPUT.
 - Neben jedem Fader zwei Pegelanzeigen nebeneinander: links L, rechts R, gemessen nach Fader und SPREAD (was das
-  Band auf diese Seite schickt).
+  Band auf diese Seite schickt). Ist die Banddynamik an, hängt ihre Pegeländerung in beiden von oben herab
+  (Absenkung rot, Anhebung grün).
 - **SRC** im Kopf öffnet die Quelle in CONFIG (keine Liste im Kopf). Die Register-LED zeigt, dass ein Modul an
   ist; PLAY/LOAD und CONFIG haben keine.
 - **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK · FOOT (rechts in der Statuszeile). GENERAL: Source mit dem
@@ -116,6 +117,13 @@ Stand 16.10.2026, Entscheidungen in `docs/lr-pro-band-2026-10-16.md`.
 - FB-Register: Die Kurve folgt dem Umschalter (L, R oder Mittel), weichen die Kanäle ab, zeigen gestrichelte
   Linien die anderen, und jeder Bandknoten nennt beide Werte (`L+2.9 R-8.6`). Das gilt auch für SPREAD.
   Der Ring eines Bandknotens ist geteilt: links Feedback L, rechts R.
+- FB-Register, Funktionstasten wie an der Hardware:
+  - **WOB** unter jedem Band: Solange du die Taste hältst (Maus, Touch oder Enter), wackelt der Pegel des Bands
+    um ±10 % des Faderwegs, ein Sinus pro Schlag des Master-Takts (INT, oder MIDI, wenn INT aus ist). Läuft der
+    Takt, sitzt der Sinus auf den Schlägen, sonst läuft er in dessen Tempo. Ein- und Ausblenden in 30 ms. Der
+    Fader selbst bleibt stehen, nichts wird gespeichert. Der Umschalter L · L+R · R gilt auch hier.
+  - **DICE** in der Statuszeile setzt alle 10 Bandpegel zufällig zwischen der −24-dB- und der +6-dB-Marke, im
+    Kanal des Umschalters (L+R: in beiden gleich).
 - Jede Route auf einen Bandwert oder FB ALL AMT hat eine Kanalwahl (Knopf in Routenliste, Popup und
   Makro-Karte): L+R, L, R oder INV (R gegenläufig, ein LFO lässt das Band zwischen links und rechts wandern).
   Neue Routen übernehmen die Stellung des Umschalters.
@@ -236,7 +244,7 @@ Drift und Rauschen. Darüber treibt er eine Verzerrerstufe vor den Bändern:
   43 % bei 1.0. Der Pegel steigt dabei um bis zu 5 dB; laute Eingänge landen bei etwa −8 dBFS RMS.
 - Gegen Aliasing rechnet die Stufe mit Stammfunktion (ADAA erster Ordnung).
 - Die Werks-Presets stehen auf 0.5 und klingen wie vorher.
-- Band-Dynamik und Envelope Follower messen weiter beide Kanäle gemeinsam.
+- Die Band-Dynamik misst weiter beide Kanäle gemeinsam. Envelope Follower hören mit CH auf L+R, L oder R.
 
 ### Audio-Eingang (Synths, Elektron)
 
@@ -301,6 +309,9 @@ Stand 16.10.2026, Entscheidungen in `docs/midi-2026-10-16.md` (`1B 2B 3B 4A 5B 6
 - Läuft komplett im AudioWorklet, einmal pro Audio-Block (128 Samples). Dadurch läuft sie auch in einem
   Hintergrund-Tab gleichmäßig weiter und ist an die Audio-Uhr gebunden.
 - Quellen: 8 Makros, 4 LFOs, 2 Clock-Mods, 4 Envelope Follower, 10 Gain-Reduction-Werte der Banddynamik.
+- Envelope Follower: INPUT wählt den Abgriff (In, Band 1–10, Res Out, Out), **CH** den Kanal (L+R, L, R; so
+  ergeben sich auch L IN, R IN, L OUT, R OUT der Hardware). **DLY** (0–2000 ms) verzögert Hüllkurve und Gate,
+  der Follower reagiert also so viel später.
 - Ziele: jeder modulierbare Parameter, auch Parameter anderer Quellen und die Tiefe jeder Route.
 - Regeln (siehe `docs/plan-modulation-und-module.md`, Abschnitt 4): Makros werden nie moduliert, Schalter nie,
   Stufenwerte nur von Makros und Clock-Mods, Tempo nur von Makros, keine Zyklen.

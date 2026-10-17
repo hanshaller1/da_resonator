@@ -7,7 +7,7 @@
  */
 import { Emitter } from '../core/Emitter';
 import type { ParamStoreAPI, RouteChannel, Unsubscribe } from '../core/types';
-import { NUM_BANDS, PARAMS, bandParamId, bandParamIdR, twinId, type BandParamKey } from '../shared/params';
+import { NUM_BANDS, PARAMS, bandParamId, bandParamIdR, faderDbToNorm, faderNormToDb, twinId, type BandParamKey } from '../shared/params';
 
 export type ChannelSel = 'L' | 'LR' | 'R';
 
@@ -62,6 +62,27 @@ export function resetBands(p: ParamStoreAPI, key: BandParamKey): void {
   for (let b = 0; b < NUM_BANDS; b++) {
     edits.push([bandParamId(b, key), p.spec(bandParamId(b, key)).def]);
     edits.push([bandParamIdR(b, key), p.spec(bandParamIdR(b, key)).def]);
+  }
+  setGrouped(p, edits);
+}
+
+/** DICE range: fader positions between the −24 dB and the +6 dB mark (no band falls silent, none jumps to +12) */
+export const DICE_MIN_DB = -24;
+export const DICE_MAX_DB = 6;
+
+/**
+ * DICE (FB tab; hardware: SHIFT + encoder in FB mode): every band level to a random fader position,
+ * evenly spread over the fader travel between DICE_MIN_DB and DICE_MAX_DB, in the channel(s) of the
+ * switch (L+R: the same value in both).
+ */
+export function rollLevels(p: ParamStoreAPI, ch: ChannelSel = sel, rnd: () => number = Math.random): void {
+  const lo = faderDbToNorm(DICE_MIN_DB);
+  const hi = faderDbToNorm(DICE_MAX_DB);
+  const edits: [string, number][] = [];
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const db = Math.round(faderNormToDb(lo + rnd() * (hi - lo)) * 10) / 10;
+    if (ch !== 'R') edits.push([bandParamId(b, 'gain'), db]);
+    if (ch !== 'L') edits.push([bandParamIdR(b, 'gain'), db]);
   }
   setGrouped(p, edits);
 }
