@@ -395,17 +395,16 @@ export function buildHeader(engine: EngineAPI, theme: ThemeController, notify: N
   const bypass = new ParamToggle(engine.params, 'bypass', { label: 'BYPASS', tone: 'neutral', ariaLabel: 'Bypass resonator' });
   const panic = buildPanicButton(engine);
 
-  const themeBtn = h('button', { type: 'button', class: 'btn btn--icon theme-btn' });
+  // rolls a new AUTO theme of any brightness on every click (DARK / LIGHT are in CONFIG)
+  const themeBtn = h('button', { type: 'button', class: 'btn btn--icon theme-btn' }, icon('auto'));
+  themeBtn.setAttribute('aria-label', 'New generated theme');
   const syncTheme = () => {
-    const names = { auto: 'Generated theme', light: 'Light theme', dark: 'Dark theme' } as const;
-    themeBtn.replaceChildren(icon(theme.pref === 'auto' ? 'auto' : theme.pref === 'light' ? 'sun' : 'moon'));
-    const gen = theme.generated ? ` "${theme.generated.name}"` : '';
-    themeBtn.title = `${names[theme.pref]}${gen} (click to change)`;
-    themeBtn.setAttribute('aria-label', `Theme: ${names[theme.pref]}`);
+    const now = theme.generated ? `, now "${theme.generated.name}"` : '';
+    themeBtn.title = `New generated theme, any brightness${now}`;
   };
   syncTheme();
   theme.onChange(syncTheme);
-  themeBtn.addEventListener('click', () => theme.cycle());
+  themeBtn.addEventListener('click', () => theme.roll());
 
   /* ---------- presets: prev / name (opens PLAY/LOAD) / next ---------- */
   const presets = buildPresetBar(engine, notify);

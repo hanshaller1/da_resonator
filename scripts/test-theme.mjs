@@ -46,17 +46,22 @@ const minOver = (f) => Math.min(...themes.map(f));
   const accents = new Set(themes.map((t) => t.vars['--c-accent']));
   const light = themes.filter((t) => t.mode === 'light').length;
   const names = new Set(themes.map((t) => t.name.split(' · ')[0]));
-  check('5 many different themes, both modes, every scheme', accents.size > N * 0.9 && light > N * 0.15 && light < N * 0.45 && names.size === 5, `${accents.size} accents, ${light} light`);
+  check('5 many different themes, both modes, every scheme', accents.size > N * 0.9 && light > N * 0.35 && light < N * 0.65 && names.size === 5, `${accents.size} accents, ${light} light`);
 }
 
-/* ---------- 6. brightness follows the requested mode ---------- */
+/* ---------- 6. range: dark / light stay on their side, any covers all brightness ---------- */
 {
-  const d = Array.from({ length: 100 }, (_, i) => G.generateTheme(i * 7919, 'dark'));
-  const l = Array.from({ length: 100 }, (_, i) => G.generateTheme(i * 7919, 'light'));
+  const d = Array.from({ length: 200 }, (_, i) => G.generateTheme(i * 7919, 'dark'));
+  const l = Array.from({ length: 200 }, (_, i) => G.generateTheme(i * 7919, 'light'));
   const Y = (t) => G.luminance(G.hexToLinear(t.vars['--c-panel']));
-  const ok = d.every((t) => t.mode === 'dark' && Y(t) < 0.06) && l.every((t) => t.mode === 'light' && Y(t) > 0.6);
-  const textOk = [...d, ...l].every((t) => G.contrast(lin(t, '--c-text'), lin(t, '--c-panel')) >= 7);
-  check('6 dark / light on request: dark or bright panels, text still readable', ok && textOk);
+  const sides = d.every((t) => t.mode === 'dark' && Y(t) < 0.12) && l.every((t) => t.mode === 'light' && Y(t) > 0.45);
+  const steps = new Set(themes.map((t) => t.name.split(' · ')[2]));
+  const ys = themes.map(Y);
+  check(
+    '6 DARK→dark, LIGHT→light, any brightness spans dark…light',
+    sides && steps.size === 4 && Math.min(...ys) < 0.01 && Math.max(...ys) > 0.85,
+    `panel Y ${Math.min(...ys).toFixed(3)}…${Math.max(...ys).toFixed(2)}, ${[...steps].join('/')}`,
+  );
 }
 
 console.log("\nTheme generator tests");

@@ -276,7 +276,7 @@ registerTab({
     const THEME_TITLES: Record<ThemePref, string> = {
       dark: 'Dark theme (default)',
       light: 'Light theme',
-      auto: 'A new generated colour theme every click',
+      auto: 'A new generated colour theme every click, dark after DARK, light after LIGHT',
     };
     const themeBtns = (['dark', 'light', 'auto'] as ThemePref[]).map((pref) => {
       const b = h('button', { type: 'button', class: 'inst-btn', title: THEME_TITLES[pref] }, pref.toUpperCase());

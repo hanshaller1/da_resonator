@@ -1,8 +1,9 @@
-import { generateTheme, newSeed, type GeneratedTheme } from './themeGen';
+import { generateTheme, newSeed, type GeneratedTheme, type ThemeRange } from './themeGen';
 
 /**
- * 'auto' = a generated theme (ui/themeGen.ts), new every time AUTO is picked: light (brighter) when
- * picked from DARK, dark when picked from LIGHT, the same brightness when picked again from AUTO
+ * 'auto' = a generated theme (ui/themeGen.ts), new every time AUTO is picked: dark when picked
+ * from DARK, light when picked from LIGHT, the same side again from AUTO. The header button only
+ * rolls AUTO themes, of any brightness.
  */
 export type ThemePref = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
@@ -45,7 +46,8 @@ export class ThemeController {
     // 'auto' used to mean "follow the system"; without a stored seed it falls back to dark
     else if (p === 'auto' && read(SEED_KEY) !== null && Number.isFinite(seed)) {
       this.pref = 'auto';
-      this.generated = generateTheme(seed >>> 0, read(MODE_KEY) === 'light' ? 'light' : 'dark');
+      const r = read(MODE_KEY);
+      this.generated = generateTheme(seed >>> 0, r === 'light' || r === 'dark' ? r : 'any');
     }
     this.apply();
   }
@@ -54,24 +56,26 @@ export class ThemeController {
     return this.pref === 'auto' && this.generated ? this.generated.mode : this.pref === 'light' ? 'light' : 'dark';
   }
 
-  /** header button: DARK → AUTO (light) → LIGHT → AUTO (dark) → DARK */
-  cycle(): void {
-    if (this.pref !== 'auto') this.set('auto');
-    else this.set(this.resolved);
+  /** header button: a new AUTO theme of any brightness, dark, dim, pale or light */
+  roll(): void {
+    this.generate('any');
   }
 
-  /** picking 'auto' always makes a new theme, also when it is already selected */
+  /** picking 'auto' always makes a new theme, also when it is already selected: dark or light like the theme before */
   set(p: ThemePref): void {
-    // from DARK brighter, from LIGHT darker, from AUTO the same brightness again
-    const from = this.resolved;
-    const flip = this.pref !== 'auto';
+    if (p === 'auto') return this.generate(this.resolved);
     this.pref = p;
     write(KEY, p);
-    if (p === 'auto') {
-      this.generated = generateTheme(newSeed(), flip ? (from === 'dark' ? 'light' : 'dark') : from);
-      write(SEED_KEY, String(this.generated.seed));
-      write(MODE_KEY, this.generated.mode);
-    } else this.generated = null;
+    this.generated = null;
+    this.apply();
+  }
+
+  private generate(range: ThemeRange): void {
+    this.pref = 'auto';
+    write(KEY, 'auto');
+    this.generated = generateTheme(newSeed(), range);
+    write(SEED_KEY, String(this.generated.seed));
+    write(MODE_KEY, range);
     this.apply();
   }
 

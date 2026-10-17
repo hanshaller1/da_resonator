@@ -60,12 +60,13 @@ Quelle -> Source-Gain -> AnalyserIn -> [Worklet: Pre-Filter -> Resonator -> Post
 - **CONFIG** hat die Seiten GENERAL · MIDI · CLOCK · FOOT (rechts in der Statuszeile). GENERAL: Source mit dem
   Audio-Eingang unter LOAD FILE, Clock (nur Anzeige) mit Spread und Display (eine Zeile) darunter, Resonance mit
   der Karte Wobble · Dice darunter, Help.
-- **Theme** (CONFIG → Display und Knopf rechts im Kopf): DARK (Standard), LIGHT, AUTO. AUTO erzeugt bei jedem
-  Klick ein neues Farbschema (`src/ui/themeGen.ts`), hell wenn vorher DARK aktiv war, dunkel nach LIGHT, nach
-  AUTO in derselben Helligkeit. Der Kopf-Knopf läuft DARK → AUTO (hell) → LIGHT → AUTO (dunkel). Das Schema: Flächen mit leichter Tönung, Akzent, Feedback und Modulation
-  nach einem Farbkreis-Schema (triadisch, split, square …), Kontrast geprüft. Es bleibt nach einem Neuladen
-  erhalten (`localStorage` `resonator.theme`, `resonator.themeSeed`, `resonator.themeMode`); der Tooltip nennt Schema und Grundton.
-  Der Audio-Zustand steht im Kopf.
+- **Theme:** CONFIG → Display hat DARK (Standard), LIGHT und AUTO. AUTO erzeugt bei jedem Klick ein neues
+  Farbschema (`src/ui/themeGen.ts`), dunkel wenn vorher DARK aktiv war, hell nach LIGHT, nach AUTO auf derselben
+  Seite. Der Knopf rechts im Kopf würfelt nur AUTO-Themes, in jeder Helligkeit (dark, dim, pale, light; mittleres
+  Grau bleibt aus, weil dort keine Schrift gut lesbar ist). Das Schema: Flächen mit leichter Tönung, Akzent,
+  Feedback und Modulation nach einem Farbkreis-Schema (triadisch, split, square …), Schriftfarben über den
+  Kontrast zur Fläche bestimmt. Es bleibt nach einem Neuladen erhalten (`localStorage` `resonator.theme`,
+  `resonator.themeSeed`, `resonator.themeMode`); der Tooltip nennt Schema, Grundton und Helligkeit.
 - **Clock:** Der interne Takt und die MIDI-Clock laufen nebeneinander. Jeder Clock-Mod und jeder LFO wählt
   seinen Takt selbst (Clock-Mod INT · MIDI, LFO RATE · INT · MIDI; Parameter `cmodN.clk`, `lfoN.clk` und
   `lfoN.sync`, im Preset gespeichert).

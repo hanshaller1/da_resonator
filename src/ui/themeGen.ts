@@ -119,23 +119,31 @@ export function newSeed(): number {
   return (Math.random() * 0xffffffff) >>> 0;
 }
 
+/** which brightness a generated theme may have: 'any' spans dark, dim, pale and light */
+export type ThemeRange = ThemeMode | 'any';
+
 /**
- * build the theme of `seed` (the same seed and mode always give the same theme); without `mode`
- * the seed picks dark or light too
+ * build the theme of `seed` (the same seed and range always give the same theme). The brightness
+ * is a value 0…1 from the seed, within `range`: 0–0.5 dark (panel from near black up to a dim
+ * grey), 0.5–1 light (from pale grey up to near white). Mid grey itself is left out: there no
+ * text colour reads well.
  */
-export function generateTheme(seed: number, mode?: ThemeMode): GeneratedTheme {
+export function generateTheme(seed: number, range: ThemeRange = 'any'): GeneratedTheme {
   const r = rng(seed);
   const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)];
-  const range = (a: number, b: number) => a + (b - a) * r();
+  const between = (a: number, b: number) => a + (b - a) * r();
 
-  const seedMode: ThemeMode = r() < 0.7 ? 'dark' : 'light';
-  mode ??= seedMode;
+  const u = r();
+  const bright = range === 'dark' ? u * 0.5 : range === 'light' ? 0.5 + u * 0.5 : u;
+  const mode: ThemeMode = bright < 0.5 ? 'dark' : 'light';
   const dark = mode === 'dark';
+  // panel lightness (OKLCH): dark 0.16…0.36, light 0.78…0.96
+  const P = dark ? 0.16 + bright * 2 * 0.2 : 0.78 + (bright - 0.5) * 2 * 0.18;
 
   /* signal hues */
   const scheme = pick(SCHEMES);
   const dir = r() < 0.5 ? 1 : -1;
-  const hA = range(0, 360);
+  const hA = between(0, 360);
   const hF = wrap(hA + dir * scheme.fb);
   const hM = wrap(hA + dir * scheme.mod);
   // the "running / healthy" green, pushed away from the signal hues when they are close
@@ -145,36 +153,48 @@ export function generateTheme(seed: number, mode?: ThemeMode): GeneratedTheme {
   );
 
   /* surfaces: faint tint, either the accent's hue, its complement or a free hue */
-  const hS = pick([hA, wrap(hA + 180), range(0, 360)]);
-  const cS = range(0.006, dark ? 0.03 : 0.022);
-  const lift = range(-0.025, 0.03); // whole ladder slightly darker / lighter
-  const surf = (L: number, cMul = 1) => oklch(Math.min(1, Math.max(0, L + lift)), cS * cMul, hS);
-  const ink = (L: number) => oklch(L, Math.min(0.02, cS * 0.6), hS);
+  const hS = pick([hA, wrap(hA + 180), between(0, 360)]);
+  const cS = between(0.006, dark ? 0.03 : 0.022);
+  const surf = (dL: number, cMul = 1) => oklch(Math.min(1, Math.max(0, P + dL)), cS * cMul, hS);
+  const inkAt = (L: number) => oklch(L, Math.min(0.02, cS * 0.6), hS);
 
   /* signal colours: one lightness and chroma for the family */
-  const sigL = dark ? range(0.74, 0.84) : range(0.58, 0.66);
-  const sigC = range(0.13, 0.19);
+  const sigL = dark ? between(0.74, 0.84) : between(0.58, 0.66);
+  const sigC = between(0.13, 0.19);
   const sig = (h: number, dL = 0) => oklch(sigL + dL, sigC, h);
 
+  // the ladders of the hand-made themes, relative to the panel
   const s = dark
     ? {
-        bg: surf(0.135), chassis: surf(0.17), panel: surf(0.195), panel2: surf(0.215), raised: surf(0.275),
-        raisedHi: surf(0.315), well: surf(0.15), meterOff: surf(0.205), knobTrack: surf(0.265),
-        knobCap: surf(0.28), knobEdge: surf(0.335), capTop: surf(0.43), capBottom: surf(0.285),
+        bg: surf(-0.06), chassis: surf(-0.025), panel: surf(0), panel2: surf(0.02), raised: surf(0.08),
+        raisedHi: surf(0.12), well: surf(-0.045), meterOff: surf(0.01), knobTrack: surf(0.07),
+        knobCap: surf(0.085), knobEdge: surf(0.14), capTop: surf(0.235), capBottom: surf(0.09),
       }
     : {
-        bg: surf(0.875), chassis: surf(0.92), panel: surf(0.955, 0.7), panel2: surf(0.935, 0.8),
-        raised: surf(0.995, 0.3), raisedHi: surf(1, 0.2), well: surf(0.9), meterOff: surf(0.875),
-        knobTrack: surf(0.875), knobCap: surf(0.985, 0.4), knobEdge: surf(0.84), capTop: surf(1, 0.2),
-        capBottom: surf(0.9),
+        bg: surf(-0.08), chassis: surf(-0.035), panel: surf(0, 0.7), panel2: surf(-0.02, 0.8),
+        raised: surf(0.04, 0.3), raisedHi: surf(0.045, 0.2), well: surf(-0.055), meterOff: surf(-0.08),
+        knobTrack: surf(-0.08), knobCap: surf(0.03, 0.4), knobEdge: surf(-0.115), capTop: surf(0.045, 0.2),
+        capBottom: surf(-0.055),
       };
-  const text = dark ? [ink(0.94), ink(0.76), ink(0.58), ink(0.44)] : [ink(0.2), ink(0.44), ink(0.6), ink(0.75)];
-  const pointer = dark ? ink(0.96) : ink(0.24);
+  // ink: the lightness that reaches a contrast on the panel (or as far as it goes)
+  const ink = (target: number) => {
+    let lo = dark ? P : 0;
+    let hi = dark ? 1 : P;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      const ok = contrast(inkAt(mid), s.panel) >= target;
+      if (dark === ok) hi = mid;
+      else lo = mid;
+    }
+    return inkAt(dark ? hi : lo);
+  };
+  const text = [ink(13), ink(6.5), ink(3.6), ink(2.2)];
+  const pointer = ink(11);
 
   let accent = sig(hA);
   let fb = sig(hF, dark ? -0.04 : -0.02);
   let mod = sig(hM, dark ? 0.02 : -0.02);
-  const ok = oklch(dark ? 0.8 : 0.6, 0.16, hOk);
+  let ok = oklch(dark ? 0.8 : 0.6, 0.16, hOk);
 
   // signal colours must stand out from the panel (≥ 3:1, with room for rounding); nudge lightness until they do
   const fix = (c: RGB, h: number, L: number) => {
@@ -188,6 +208,7 @@ export function generateTheme(seed: number, mode?: ThemeMode): GeneratedTheme {
   accent = fix(accent, hA, sigL);
   fb = fix(fb, hF, sigL);
   mod = fix(mod, hM, sigL);
+  ok = fix(ok, hOk, dark ? 0.8 : 0.6);
 
   // text on accent: dark ink or white, whichever reads better
   const inkDark = oklch(0.17, 0.03, hA);
@@ -202,7 +223,7 @@ export function generateTheme(seed: number, mode?: ThemeMode): GeneratedTheme {
     '--c-raised': hex(s.raised),
     '--c-raised-hi': hex(s.raisedHi),
     '--c-well': hex(s.well),
-    '--c-scrim': rgba(dark ? surf(0.1) : surf(0.9), dark ? 0.72 : 0.78),
+    '--c-scrim': rgba(dark ? surf(-0.09) : surf(-0.05), dark ? 0.72 : 0.78),
     '--c-text': hex(text[0]),
     '--c-text-2': hex(text[1]),
     '--c-text-3': hex(text[2]),
@@ -231,5 +252,5 @@ export function generateTheme(seed: number, mode?: ThemeMode): GeneratedTheme {
     '--c-spec-in': rgba(text[1], 0.16),
     '--c-spec-out': rgba(accent, dark ? 0.2 : 0.18),
   };
-  return { seed, mode, name: `${scheme.name} · ${hueName(hA)}`, vars };
+  return { seed, mode, name: `${scheme.name} · ${hueName(hA)} · ${['dark', 'dim', 'pale', 'light'][Math.min(3, Math.floor(bright * 4))]}`, vars };
 }
