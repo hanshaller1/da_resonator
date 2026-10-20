@@ -587,8 +587,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.driftCur[i] = this.driftTgt[i] = (rng() * 2 - 1) * DRIFT_AMT;
       this.driftTimer[i] = rng() * 2;
     }
+    // SPREAD: one deviation per band, the same in L and R (near the onset any L/R difference in loop gain
+    // makes one side ring much louder; the L/R detune of the analog tolerances stays as it is)
     const prng = makeRng(0x70c5);
-    for (let i = 0; i < NS; i++) this.protoTol[i] = prng() * 2 - 1;
+    for (let b = 0; b < NB; b++) this.protoTol[b * 2] = this.protoTol[b * 2 + 1] = prng() * 2 - 1;
 
     this.applyParams(this.mod.eff, true);
     this.updateCoefs();
