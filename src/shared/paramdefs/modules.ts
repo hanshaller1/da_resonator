@@ -338,6 +338,7 @@ export const RES_WEIGHTS = ['All', 'Highs', 'Lows'] as const;
  */
 export const SPREAD_MODES = ['Odd/Even', 'Classic'] as const;
 export const SPREAD_CLASSIC_DB = 6;
+export const PROTO_SWITCH = ['Off', 'On'] as const;
 export function resoParams(): ParamDef[] {
   const fixed = (d: ParamDef): ParamDef => ({ ...d, modulatable: false });
   return [
@@ -346,6 +347,14 @@ export function resoParams(): ParamDef[] {
     fixed(discrete('reso.curve', 'Resonance Curve', 'CURVE', RES_CURVES, 0)),
     fixed(discrete('reso.weight', 'Resonance Bands', 'BANDS', RES_WEIGHTS, 0)),
     fixed(discrete('reso.spread', 'Spread Function', 'SPRD', SPREAD_MODES, 1)),
+    // prototype switches for docs/klang-original-2026-10-20.md (points 2 to 8); off = today's sound
+    fixed(discrete('proto.loop', 'Proto Loop Saturation', 'LOOP', PROTO_SWITCH, 0)),
+    fixed(discrete('proto.reserve', 'Proto Reserve', 'RSV', PROTO_SWITCH, 0)),
+    fixed(discrete('proto.input', 'Proto Input Stage', 'INPUT', PROTO_SWITCH, 0)),
+    fixed(discrete('proto.build', 'Proto Gradual Build-up', 'BUILD', PROTO_SWITCH, 0)),
+    fixed(discrete('proto.spread', 'Proto Band Spread', 'TOL', PROTO_SWITCH, 0)),
+    fixed(discrete('proto.notch', 'Proto Notches Left', 'NOTCH', PROTO_SWITCH, 0)),
+    fixed(discrete('proto.noise', 'Proto Noise', 'NOISE', PROTO_SWITCH, 0)),
   ];
 }
 

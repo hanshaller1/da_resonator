@@ -3,7 +3,8 @@
  * GENERAL: the source (select, play, level, file) with the audio input under it (channels,
  * Elektron AUTO; the device is chosen in the source list), the clocks as information (INT and
  * MIDI with tempo and beats, the MIDI source), the resonance setup (feedback route, what the
- * RESONANCE knob does, its curve and bands) over display (theme, window scale), and a short help.
+ * RESONANCE knob does, its curve and bands) over display (theme, window scale), and the prototype
+ * switches of the sound evaluation (trial build, in place of the short help).
  * The source controls share the header's Transport, so both always agree; SRC in the header opens
  * this page.
  * MIDI: device, channels and CC map (configMidi.ts).
@@ -25,20 +26,7 @@ import { buildFootPage } from './configFoot';
 import { buildMidiPage, runWhileVisible } from './configMidi';
 import { playKit } from '../pool';
 import { fbKeys, WOBBLE_MAX, WOBBLE_MIN } from '../fbKeys';
-import { FADER_MAX_DB, FADER_MIN_DB } from '../../shared/params';
-
-const HELP: [string, string][] = [
-  ['Drag', 'Change a value (up / down)'],
-  ['Shift + drag', 'Fine adjustment'],
-  ['Wheel · ↑ ↓', 'Step a value'],
-  ['Double-click', 'Back to default'],
-  ['Right-click', 'Modulation and MIDI learn of that control'],
-  ['ASSIGN', 'Arm a source, then drag a control'],
-  ['← →', 'Next tab (on the tab row)'],
-  ['Esc', 'Panic: all feedback off, ringing cleared'],
-  ['Space', 'Footswitch (FOOT page)'],
-  ['Drop a file', 'Load audio anywhere in the window'],
-];
+import { bandParamId, bandParamIdR, FADER_MAX_DB, FADER_MIN_DB, NUM_BANDS } from '../../shared/params';
 
 function card(title: string, cls: string, ...children: (Node | null)[]): HTMLElement {
   return h('section', { class: `cfg-card ${cls}` }, h('h3', { class: 'cfg-title micro-label' }, title), ...children);
@@ -234,6 +222,50 @@ registerTab({
       resoNote,
     );
 
+    /* ---------- prototype switches (docs/klang-original-2026-10-20.md, points 1 to 8; all off = today) ---------- */
+    const PROTO: [string, string, string][] = [
+      ['proto.loop', 'LOOP', '2 · Loops saturate (RAW), pitch moves with level'],
+      ['proto.reserve', 'RSV', '3 · More feedback past 3:30'],
+      ['proto.input', 'INPUT', '4 · Input clips at full scale, FB ALL through it'],
+      ['proto.notch', 'NOTCH', '5 · Left of centre: notches at the band centres'],
+      ['proto.noise', 'NOISE', '6 · Noise −80 dBFS at ANALOG 1'],
+      ['proto.build', 'BUILD', '7 · Resonance builds up evenly from the centre'],
+      ['proto.spread', 'TOL', '8 · Bands differ like analog parts (with ANALOG)'],
+    ];
+    const protoBtns = PROTO.map(([id, label, title]) => {
+      const b = h('button', { type: 'button', class: 'inst-btn cfg-proto-btn', title }, label);
+      b.addEventListener('click', () => p.set(id, p.get(id) >= 0.5 ? 0 : 1));
+      const sync = () => {
+        const on = p.get(id) >= 0.5;
+        toggleClass(b, 'is-selected', on);
+        b.setAttribute('aria-pressed', String(on));
+      };
+      sync();
+      p.subscribe(id, sync);
+      return h('div', { class: 'cfg-row' }, h('span', { class: 'inst' }, b), h('span', { class: 'cfg-proto-text' }, title));
+    });
+    const allProto = (v: number) => () => PROTO.forEach(([id]) => p.set(id, v));
+    const hwSetup = h('button', { type: 'button', class: 'inst-btn', title: '1 · Like the hardware: KNOB FEEDBACK, FB COMMON, FB of every band 1' }, 'HW SETUP');
+    hwSetup.addEventListener('click', () => {
+      p.set('reso.knob', 1);
+      p.set('reso.route', 1);
+      for (let b = 0; b < NUM_BANDS; b++) {
+        p.set(bandParamId(b, 'fb'), 1);
+        p.set(bandParamIdR(b, 'fb'), 1);
+      }
+    });
+    // trial build for docs/klang-original-2026-10-20.md: the numbers are its points, all off = today's sound
+    const allOn = h('button', { type: 'button', class: 'inst-btn', title: 'All prototype switches on' }, 'ALL ON');
+    allOn.addEventListener('click', allProto(1));
+    const allOff = h('button', { type: 'button', class: 'inst-btn', title: 'All prototype switches off (today\'s sound)' }, 'ALL OFF');
+    allOff.addEventListener('click', allProto(0));
+    const protoCard = card(
+      'Prototype',
+      'cfg-proto',
+      ...protoBtns,
+      h('div', { class: 'cfg-row cfg-sep' }, h('span', { class: 'inst' }, hwSetup), h('span', { class: 'cfg-grow' }), h('span', { class: 'inst' }, allOn, allOff)),
+    );
+
     /* ---------- spread: what the SPREAD knob does (centre = neutral) ---------- */
     const spreadNote = h('p', { class: 'cfg-note' });
     const syncSpread = () => {
@@ -311,15 +343,8 @@ registerTab({
     // the scale readout without its key (no room in the row); the tooltip says what it is
     scale.title = `Window scale. The window is a fixed ${DESIGN_W} × ${DESIGN_H} layout scaled to fit the browser. Use the browser's full screen for the largest view.`;
 
-    /* ---------- help ---------- */
-    const help = card(
-      'Help',
-      'cfg-help',
-      h('dl', { class: 'cfg-help-list' }, ...HELP.flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
-    );
-
-    // columns: source | clock, spread, display | resonance with the FB keys | help
-    general.append(source, h('div', { class: 'cfg-col cfg-col2' }, clock, spreadCard, display), h('div', { class: 'cfg-col cfg-col3' }, reso, keysCard), help);
+    // columns: source | clock, spread, display | resonance with the FB keys | prototype (trial build: in place of help)
+    general.append(source, h('div', { class: 'cfg-col cfg-col2' }, clock, spreadCard, display), h('div', { class: 'cfg-col cfg-col3' }, reso, keysCard), protoCard);
 
     /* ---------- status line: state, page switch GENERAL · MIDI ---------- */
     const status = h('span', { class: 'cfg-status' });

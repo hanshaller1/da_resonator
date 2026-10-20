@@ -12,6 +12,10 @@
 .cfg-col3 { grid-area: col3; }
 .cfg-col > .cfg-card:last-child { flex: 1 1 auto; }
 .cfg-help { grid-area: help; }
+/* prototype trial build: the Prototype card takes the place of Help */
+.cfg-proto { grid-area: help; }
+.cfg-proto-btn { min-width: 58px; }
+.cfg-proto-text { font-size: var(--fs-2xs); color: var(--c-text-3); }
 .cfg-card {
   display: flex;
   flex-direction: column;

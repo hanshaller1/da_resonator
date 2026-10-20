@@ -230,6 +230,38 @@ const BF_ENV_ATK_SEC = 0.005; // band filter envelope: attack, and −48 … 0 d
 const BF_ENV_SPAN_DB = 48;
 const DYN_GATE_P = Math.exp(-DYN_GATE_DB / DB_PER_LN_POW); // BOOST gate below the threshold, as an A² factor
 
+/*
+ * Prototype switches (CONFIG → Prototype, params proto.*), see docs/klang-original-2026-10-20.md.
+ * All off = today's sound. LOOP: a waveshaper in the band and COMMON loops instead of the envelope
+ * limiter (applied as its secant gain at the previous output, so the delay-free solve stays);
+ * RESERVE: knob reaches ×1.3 and more loop gain above the edge; INPUT: rail near full scale and
+ * FB ALL through the input stage; BUILD: below the edge the loop gain grows evenly in dB;
+ * SPREAD: fixed per-slot loop-gain spread, ±0.3 × analog; NOTCH: left of centre a notch at every band
+ * centre before the bands, deeper and narrower towards the stop; NOISE: noise floor −80 dBFS at analog 1.
+ */
+const PROTO_LOOP_N = 4; // knee hardness of the loop waveshaper
+const PROTO_LOOP_ASYM = 0.15; // offset of the loop waveshaper (even harmonics)
+const PROTO_EXC_ADD = 0.6; // RESERVE: extra loop gain at fb 1
+const PROTO_FB_CLAMP = 1.3; // RESERVE: knob × fb may reach this
+const PROTO_IN_RAIL = 1.2; // INPUT: rail of the input stage (minus 0.3 × analog)
+const PROTO_TAPER_DB = 30; // BUILD: resonance range below the edge, even in dB
+const PROTO_TAPER_END = Math.pow(10, -PROTO_TAPER_DB / 20);
+const PROTO_TOL = 0.3; // SPREAD: loop-gain spread at analog = 1
+const PROTO_NOTCH_DB = 30; // NOTCH: depth at the left stop
+const PROTO_NOTCH_Q0 = 1.5; // NOTCH: Q just left of centre …
+const PROTO_NOTCH_Q1 = 8; // … and at the stop
+const PROTO_NOISE_X = Math.pow(10, 16 / 20); // NOISE: −96 → −80 dBFS
+function protoRail(u: number): number {
+  const a = u < 0 ? -u : u;
+  return u / Math.pow(1 + Math.pow(a, PROTO_LOOP_N), 1 / PROTO_LOOP_N);
+}
+const PROTO_RAIL_B = protoRail(PROTO_LOOP_ASYM);
+/** secant gain of the loop waveshaper at v (rail 1) */
+function protoLoopGain(v: number): number {
+  if (v < 1e-9 && v > -1e-9) return 1;
+  return (protoRail(v + PROTO_LOOP_ASYM) - PROTO_RAIL_B) / v;
+}
+
 function fastTanh(x: number): number {
   if (x > 3) return 1;
   if (x < -3) return -1;
@@ -344,6 +376,22 @@ class ResonatorProcessor extends AudioWorkletProcessor {
   private iCurve = paramIndex('reso.curve');
   private iWeight = paramIndex('reso.weight');
   private iSpreadMode = paramIndex('reso.spread');
+  private iProto = ['proto.loop', 'proto.reserve', 'proto.input', 'proto.build', 'proto.spread', 'proto.notch', 'proto.noise'].map((id) => paramIndex(id));
+  private pLoop = false;
+  private pReserve = false;
+  private pInput = false;
+  private pBuild = false;
+  private pSpread = false;
+  private pNotch = false;
+  private pNoise = false;
+  private notchD = 0; // NOTCH: depth factor (0 = off); per slot TPT coefficients and state
+  private nA1 = new Float64Array(NS);
+  private nA2 = new Float64Array(NS);
+  private nA3 = new Float64Array(NS);
+  private nK = new Float64Array(NS);
+  private nC1 = new Float64Array(NS);
+  private nC2 = new Float64Array(NS);
+  private protoTol = new Float64Array(NS); // SPREAD: fixed per-slot deviation, −1…1
   private fbRoute = 0; // 0 = each band into itself before its fader, 1 = after the faders into the common input
   private knobMode = 0;
   private knobCurve = 0;
@@ -539,6 +587,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       this.driftCur[i] = this.driftTgt[i] = (rng() * 2 - 1) * DRIFT_AMT;
       this.driftTimer[i] = rng() * 2;
     }
+    const prng = makeRng(0x70c5);
+    for (let i = 0; i < NS; i++) this.protoTol[i] = prng() * 2 - 1;
 
     this.applyParams(this.mod.eff, true);
     this.updateCoefs();
@@ -998,6 +1048,13 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     this.fbOnTgt[1] = p[I_FBALLON_R] >= 0.5 ? 1 : 0;
     this.bypTgt = p[G.bypass] >= 0.5 ? 1 : 0;
     this.fbRoute = p[this.iRoute] >= 0.5 ? 1 : 0;
+    this.pLoop = p[this.iProto[0]] >= 0.5;
+    this.pReserve = p[this.iProto[1]] >= 0.5;
+    this.pInput = p[this.iProto[2]] >= 0.5;
+    this.pBuild = p[this.iProto[3]] >= 0.5;
+    this.pSpread = p[this.iProto[4]] >= 0.5;
+    this.pNotch = p[this.iProto[5]] >= 0.5;
+    this.pNoise = p[this.iProto[6]] >= 0.5;
     this.knobMode = resKnobMode(p[this.iKnob]);
     this.knobCurve = clamp(Math.round(p[this.iCurve]), 0, 3);
     const w = clamp(Math.round(p[this.iWeight]), 0, 2);
@@ -1083,6 +1140,13 @@ class ResonatorProcessor extends AudioWorkletProcessor {
     const focus = this.knobMode === RES_KNOB_FOCUS;
     this.fbAllFactor = fbMode ? fbKnobFactor(knob) : 1;
     const fMax = 0.45 * fs;
+    const nAmt = this.pNotch && knob < 0 ? -knob : 0;
+    if (nAmt === 0 && this.notchD !== 0) {
+      this.nC1.fill(0);
+      this.nC2.fill(0);
+    }
+    this.notchD = nAmt === 0 ? 0 : 1 - Math.pow(10, (-PROTO_NOTCH_DB * nAmt) / 20);
+    const nk = 1 / (PROTO_NOTCH_Q0 + (PROTO_NOTCH_Q1 - PROTO_NOTCH_Q0) * nAmt);
     const dt = SUB / fs;
     const driftSlew = 1 - Math.exp(-dt / 1.5);
     for (let b = 0; b < NB; b++) {
@@ -1096,7 +1160,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         let r = this.bResCur[i] + (fbMode ? 0 : kb) + lr;
         r = r < 0 ? 0 : r > 1 ? 1 : r;
         const qNom = Q_MIN * Math.exp(r * Q_RANGE_LN);
-        this.bFbExcess[i] = 0.15 + 0.03 * qNom;
+        this.bFbExcess[i] = 0.15 + 0.03 * qNom + (this.pReserve ? PROTO_EXC_ADD : 0);
         this.bMakeup[i] = resonanceMakeup(qNom);
         this.bTap[i] = feedbackTapGain(qNom);
         // flush denormal-range state
@@ -1112,6 +1176,14 @@ class ResonatorProcessor extends AudioWorkletProcessor {
 
         let f = BAND_FREQS[b] * (1 + an * (this.tolF[i] + this.driftCur[i]));
         if (f > fMax) f = fMax;
+        if (nAmt > 0) {
+          const ng = Math.tan((Math.PI * f) / fs);
+          const na1 = 1 / (1 + ng * (ng + nk));
+          this.nA1[i] = na1;
+          this.nA2[i] = ng * na1;
+          this.nA3[i] = ng * ng * na1;
+          this.nK[i] = nk;
+        }
         const q = qNom * (1 + an * this.tolQ[i]);
         // skip when nothing moved meaningfully (< 1e-5 relative ≈ 0.02 cent)
         if (Math.abs(f - this.cLastF[i]) < 1e-5 * f && Math.abs(q - this.cLastQ[i]) < 1e-5 * q) continue;
@@ -1294,14 +1366,15 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       if (aR > inPk1) inPk1 = aR;
 
       // analog saturator: L*(tanh(u+b) - tanh(b)) / (1 - tanh²b), u = x/L
-      const satL = 2.5 - an;
+      const pFaPre = this.pInput;
+      const satL = pFaPre ? PROTO_IN_RAIL - 0.3 * an : 2.5 - an;
       const satInv = 1 / satL;
       const bias = 0.15 * an;
       const tb = fastTanh(bias);
       const satNorm = satL / (1 - tb * tb);
-      const noiseAmp = NOISE_FLOOR + NOISE_ANALOG * an;
-      let sL = (fastTanh(dryL * inGain * satInv + bias) - tb) * satNorm;
-      let sR = (fastTanh(dryR * inGain * satInv + bias) - tb) * satNorm;
+      const noiseAmp = NOISE_FLOOR + NOISE_ANALOG * an * (this.pNoise ? PROTO_NOISE_X : 1);
+      let sL = (fastTanh((dryL * inGain + (pFaPre ? faRet[0] : 0)) * satInv + bias) - tb) * satNorm;
+      let sR = (fastTanh((dryR * inGain + (pFaPre ? faRet[1] : 0)) * satInv + bias) - tb) * satNorm;
       // ANALOG drive: upper half of the knob
       if (an > 0.5) {
         if (an !== this.drvAn) this.setDrive(an);
@@ -1312,8 +1385,24 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         this.drvU[0] = sL;
         this.drvU[1] = sR;
       }
-      const xL = sL + this.noise() * noiseAmp + faRet[0];
-      const xR = sR + this.noise() * noiseAmp + faRet[1];
+      let xL = sL + this.noise() * noiseAmp + (pFaPre ? 0 : faRet[0]);
+      let xR = sR + this.noise() * noiseAmp + (pFaPre ? 0 : faRet[1]);
+      const nD = this.notchD;
+      if (nD > 0) {
+        // NOTCH: x − d·(unity-peak bandpass) at every band centre, in series
+        const nA1 = this.nA1, nA2 = this.nA2, nA3 = this.nA3, nK = this.nK, nC1 = this.nC1, nC2 = this.nC2;
+        for (let i = 0; i < NS; i++) {
+          const x = i & 1 ? xR : xL;
+          const c1 = nC1[i], c2 = nC2[i];
+          const v3 = x - c2;
+          const v1 = nA1[i] * c1 + nA2[i] * v3;
+          const v2 = c2 + nA2[i] * c1 + nA3[i] * v3;
+          nC1[i] = 2 * v1 - c1;
+          nC2[i] = 2 * v2 - c2;
+          if (i & 1) xR = x - nD * nK[i] * v1;
+          else xL = x - nD * nK[i] * v1;
+        }
+      }
 
       /* --- spread gains (ODD/EVEN: right of centre odd bands → L, even → R; left of centre mirrored) --- */
       const spr = gCur[S_SPREAD];
@@ -1350,6 +1439,10 @@ class ResonatorProcessor extends AudioWorkletProcessor {
       } else if (glide || dynAct || needPre) {
         needPre = false;
         const bFbExcess = this.bFbExcess;
+        const fbMax = this.pReserve ? PROTO_FB_CLAMP : 1;
+        const build = this.pBuild;
+        const tolAmt = this.pSpread ? PROTO_TOL * an : 0;
+        const protoTol = this.protoTol;
         for (let b = 0; b < NB; b++) {
           // band dynamics are stereo-linked: one gain per band, after the band's own loop, before makeup
           // and the taps (folded into the fader gain)
@@ -1363,10 +1456,16 @@ class ResonatorProcessor extends AudioWorkletProcessor {
           }
           for (let i = b * 2; i < b * 2 + 2; i++) {
             let fbRaw = bFbCur[i] * bFbFactor[b];
-            if (fbRaw > 1) fbRaw = 1;
-            else if (fbRaw < -1) fbRaw = -1;
+            if (fbRaw > fbMax) fbRaw = fbMax;
+            else if (fbRaw < -fbMax) fbRaw = -fbMax;
             const fa = fbRaw < 0 ? -fbRaw : fbRaw;
-            const gl = fa <= BAND_FB_EDGE ? fa * BAND_FB_SLOPE : 1 + ((fa - BAND_FB_EDGE) / (1 - BAND_FB_EDGE)) * bFbExcess[i];
+            let gl: number;
+            if (fa <= BAND_FB_EDGE) {
+              const uu = fa * BAND_FB_SLOPE;
+              // BUILD: 1 − gl falls evenly in dB from 1 to PROTO_TAPER_END (plus a linear term that ends at 1)
+              gl = build ? 1 - Math.pow(10, (-PROTO_TAPER_DB * uu) / 20) + uu * PROTO_TAPER_END : uu;
+            } else gl = 1 + ((fa - BAND_FB_EDGE) / (1 - BAND_FB_EDGE)) * bFbExcess[i];
+            if (tolAmt > 0) gl *= 1 + tolAmt * protoTol[i];
             fbgA[i] = fbRaw < 0 ? -gl : gl;
             fgA[i] = dynAct ? bGainCur[i] * (i & 1 ? dgr : dg) : bGainCur[i];
             tapA[i] = glide ? (bTapCur[i] += (bTap[i] - bTapCur[i]) * 0.002) : bTapCur[i];
@@ -1374,6 +1473,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
         }
       }
 
+      const pLoop = this.pLoop;
       if (fbRoute === 0) {
         /* --- BAND route: every band feeds back into itself, before its fader --- */
         for (let b = 0; b < NB; b++) {
@@ -1405,7 +1505,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
             if (fbMag > 1e-6) {
               // limiter acts on the amplified loop signal, so the fed-back level stays ≤ BAND_CLIP_L
               const u = fbMag * e * BAND_CLIP_INV;
-              const cg = 1 / Math.sqrt(1 + u * u);
+              const cg = pLoop ? protoLoopGain(fbg * yPrev[i]) : 1 / Math.sqrt(1 + u * u);
               if (cg < 0.8 && fbMag > HOT_LOOP_GAIN) hot = true;
               ge = fbg * cg;
             }
@@ -1470,7 +1570,7 @@ class ResonatorProcessor extends AudioWorkletProcessor {
           // u = x + sc·Σ w·y  →  u = (x + sc·Σ w·P) / (1 − sc·Σ w·B)
           const ef = envF[ch];
           const ul = ef * COMMON_CLIP_INV;
-          let sc = 1 / Math.sqrt(1 + ul * ul);
+          let sc = pLoop ? protoLoopGain(ef) : 1 / Math.sqrt(1 + ul * ul);
           if (sc < 0.8) hot = true;
           let d = sc * sWB;
           if (d > COMMON_D_MAX) {
@@ -1503,7 +1603,8 @@ class ResonatorProcessor extends AudioWorkletProcessor {
           const fAbs = F < 0 ? -F : F;
           let e2 = ef * envRel;
           if (fAbs > e2) e2 = fAbs;
-          envF[ch] = e2 < 1e8 ? e2 : 0;
+          // LOOP: envF holds the signed return of the previous sample (the waveshaper reads its value)
+          envF[ch] = pLoop ? (fAbs < 1e8 ? F : 0) : e2 < 1e8 ? e2 : 0;
         }
       }
 
